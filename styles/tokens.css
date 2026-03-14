@@ -1,0 +1,121 @@
+:root {
+
+  /* COLORS - shadcn default (light) mapped to project tokens */
+
+  --color-primary: #171717;
+  --color-primary-hover: #262626;
+
+  --color-bg: #ffffff;
+  --color-surface: #fafafa;
+
+  --color-border: #e5e5e5;
+
+  --color-text: #0a0a0a;
+  --color-text-muted: rgba(115, 115, 115, 0.9);
+  --color-button-text: #dcdbdb;
+
+  --color-success: #22c55e;
+  --color-danger: #e7000b;
+  --color-warning: #eab308;
+
+
+  /* SPACING (8px scale) */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+
+
+  /* BORDER RADIUS */
+
+  --radius-sm: 10px;
+  --radius-md: 15px;
+  --radius-lg: 20px;
+
+
+  /* SHADOWS */
+
+  --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
+
+
+  /* TYPOGRAPHY */
+
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 20px;
+  --font-size-xl: 28px;
+
+
+  /* SEMANTIC: Badge variants */
+
+  --color-badge-success-bg: rgba(34, 197, 94, 0.12);
+  --color-badge-success-border: rgba(34, 197, 94, 0.28);
+  --color-badge-danger-bg: rgba(231, 0, 11, 0.12);
+  --color-badge-danger-border: rgba(231, 0, 11, 0.28);
+  --color-badge-warning-bg: rgba(234, 179, 8, 0.14);
+  --color-badge-warning-border: rgba(234, 179, 8, 0.30);
+  --color-badge-info-bg: rgba(23, 23, 23, 0.08);
+  --color-badge-info-border: rgba(23, 23, 23, 0.18);
+
+
+  /* SEMANTIC: Alert variants */
+
+  --color-alert-success-bg: rgba(34, 197, 94, 0.08);
+  --color-alert-success-border: rgba(34, 197, 94, 0.22);
+  --color-alert-danger-bg: rgba(231, 0, 11, 0.08);
+  --color-alert-danger-border: rgba(231, 0, 11, 0.22);
+  --color-alert-warning-bg: rgba(234, 179, 8, 0.10);
+  --color-alert-warning-border: rgba(234, 179, 8, 0.24);
+  --color-alert-info-bg: rgba(23, 23, 23, 0.06);
+  --color-alert-info-border: rgba(23, 23, 23, 0.16);
+
+
+  /* SEMANTIC: Overlay */
+
+  --color-overlay: rgba(10, 10, 10, 0.68);
+
+}
+
+.dark {
+  --color-primary: #e5e5e5;
+  --color-primary-hover: #fafafa;
+
+  --color-bg: #0a0a0a;
+  --color-surface: #171717;
+
+  --color-border: #282828;
+
+  --color-text: #fafafa;
+  --color-text-muted: rgba(161, 161, 161, 0.9);
+  --color-button-text: #171717;
+
+  --color-success: #22c55e;
+  --color-danger: #ff6467;
+  --color-warning: #eab308;
+
+  --color-badge-success-bg: rgba(34, 197, 94, 0.16);
+  --color-badge-success-border: rgba(34, 197, 94, 0.30);
+  --color-badge-danger-bg: rgba(255, 100, 103, 0.18);
+  --color-badge-danger-border: rgba(255, 100, 103, 0.32);
+  --color-badge-warning-bg: rgba(234, 179, 8, 0.18);
+  --color-badge-warning-border: rgba(234, 179, 8, 0.32);
+  --color-badge-info-bg: rgba(250, 250, 250, 0.10);
+  --color-badge-info-border: rgba(250, 250, 250, 0.20);
+
+  --color-alert-success-bg: rgba(34, 197, 94, 0.10);
+  --color-alert-success-border: rgba(34, 197, 94, 0.24);
+  --color-alert-danger-bg: rgba(255, 100, 103, 0.12);
+  --color-alert-danger-border: rgba(255, 100, 103, 0.26);
+  --color-alert-warning-bg: rgba(234, 179, 8, 0.12);
+  --color-alert-warning-border: rgba(234, 179, 8, 0.26);
+  --color-alert-info-bg: rgba(250, 250, 250, 0.08);
+  --color-alert-info-border: rgba(250, 250, 250, 0.18);
+
+  --color-overlay: rgba(0, 0, 0, 0.72);
+}

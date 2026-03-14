@@ -1,0 +1,22 @@
+.heading-xl {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+}
+
+.heading-lg {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.body {
+  font-size: var(--font-size-md);
+}
+
+.body-sm {
+  font-size: var(--font-size-sm);
+}
+
+.caption {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}

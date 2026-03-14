@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/typography.css";
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-md);
+  font-family: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
