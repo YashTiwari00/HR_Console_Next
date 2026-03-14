@@ -4,7 +4,8 @@ import { login } from "@/services/authService";
 import { Alert, Button, Card, Input } from "@/src/components/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getUserRole } from "@/services/authService";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,33 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [session, setSession] = useState(null);
+
+  const redirectUserByRole = async () => {
+    const role = await getUserRole();
+
+    if (role === "employee") {
+      router.push("/employee");
+    }
+
+    if (role === "manager") {
+      router.push("/manager");
+    }
+
+    if (role === "hr") {
+      router.push("/hr");
+    }
+  };
+
+  useEffect(() => {
+    if (!session) return;
+
+    redirectUserByRole();
+  }, [session, router]);
+
+  useEffect(() => {
+    redirectUserByRole();
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -23,15 +51,20 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    const session = await login(email, password);
-    setLoading(false);
+    try {
+      const loginSession = await login(email, password);
 
-    if (!session) {
+      if (!loginSession) {
+        setError("Login failed. Please check your credentials.");
+        return;
+      }
+
+      setSession(loginSession);
+    } catch (error) {
       setError("Login failed. Please check your credentials.");
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/");
   };
 
   return (
@@ -43,11 +76,7 @@ export default function LoginPage() {
         >
           <form className="flex flex-col gap-3" onSubmit={handleLogin}>
             {error && (
-              <Alert
-                variant="error"
-                title="Login failed"
-                description={error}
-              />
+              <Alert variant="error" title="Login failed" description={error} />
             )}
 
             <Input
@@ -73,7 +102,10 @@ export default function LoginPage() {
 
           <p className="caption mt-4 text-center">
             New here?{" "}
-            <Link className="text-[var(--color-primary)] hover:underline" href="/signup">
+            <Link
+              className="text-[var(--color-primary)] hover:underline"
+              href="/signup"
+            >
               Create an account
             </Link>
           </p>

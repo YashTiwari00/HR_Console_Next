@@ -3,15 +3,48 @@
 import { signup } from "@/services/authService";
 import { Alert, Button, Card, Input } from "@/src/components/ui";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getUserRole } from "@/services/authService";
 
 export default function SignupPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [signedUpUser, setSignedUpUser] = useState(null);
+
+  const getRoleAndRedirect = async () => {
+    try {
+      const role = await getUserRole();
+
+      if (role === "employee") {
+        router.push("/employee");
+      }
+
+      if (role === "manager") {
+        router.push("/manager");
+      }
+
+      if (role === "hr") {
+        router.push("/hr");
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+  useEffect(() => {
+    if (!signedUpUser) return;
+
+    getRoleAndRedirect();
+  }, [signedUpUser, router]);
+
+  useEffect(() => {
+    getRoleAndRedirect();
+  }, []);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -26,10 +59,13 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const user = await signup(name, email, password);
+
       if (!user) {
         setError("Signup failed. Please check details and try again.");
         return;
       }
+
+      setSignedUpUser(user);
     } catch (error) {
       setError("Signup failed. Please check details and try again.");
     } finally {
