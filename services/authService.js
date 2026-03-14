@@ -1,7 +1,7 @@
 import { account, databases } from "@/lib/appwrite";
 import { ID } from "appwrite";
 
-const DATABASE_ID = "hr_database";
+const DATABASE_ID = process.env.NEXT_PUBLIC_DATABASE_ID;
 const USERS_TABLE = "users";
 
 export async function signup(name, email, password) {
@@ -14,18 +14,18 @@ export async function signup(name, email, password) {
       name
     );
 
+
     // STEP 2: Create HR profile row
     await databases.createDocument(
       DATABASE_ID,
       USERS_TABLE,
       ID.unique(),
       {
-        userId: user.$id,
+        $id: user.$id,
         name: name,
         email: email,
         role: "employee",
         department: "engineering",
-        createdAt: new Date().toISOString()
       }
     );
 

@@ -24,12 +24,16 @@ export default function SignupPage() {
     }
 
     setLoading(true);
-    const user = await signup(name, email, password);
-    setLoading(false);
-
-    if (!user) {
+    try {
+      const user = await signup(name, email, password);
+      if (!user) {
+        setError("Signup failed. Please check details and try again.");
+        return;
+      }
+    } catch (error) {
       setError("Signup failed. Please check details and try again.");
-      return;
+    } finally {
+      setLoading(false);
     }
 
     setSuccess("Account created successfully. You can now login.");
@@ -55,11 +59,7 @@ export default function SignupPage() {
             )}
 
             {success && (
-              <Alert
-                variant="success"
-                title="Success"
-                description={success}
-              />
+              <Alert variant="success" title="Success" description={success} />
             )}
 
             <Input
@@ -92,7 +92,10 @@ export default function SignupPage() {
 
           <p className="caption mt-4 text-center">
             Already have an account?{" "}
-            <Link className="text-[var(--color-primary)] hover:underline" href="/login">
+            <Link
+              className="text-[var(--color-primary)] hover:underline"
+              href="/login"
+            >
               Login
             </Link>
           </p>
