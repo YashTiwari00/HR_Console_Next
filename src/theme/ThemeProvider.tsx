@@ -58,6 +58,13 @@ function readThemePreference(): ThemePreference {
   return "light";
 }
 
+function getInitialThemeState() {
+  return {
+    themePreference: "light" as ThemePreference,
+    systemTheme: "light" as EffectiveTheme,
+  };
+}
+
 function applyRootTheme(effectiveTheme: EffectiveTheme) {
   const root = document.documentElement;
   root.classList.toggle("dark", effectiveTheme === "dark");
@@ -66,8 +73,12 @@ function applyRootTheme(effectiveTheme: EffectiveTheme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [themePreference, setThemePreferenceState] = useState<ThemePreference>(readThemePreference);
-  const [systemTheme, setSystemTheme] = useState<EffectiveTheme>(getSystemTheme);
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>(
+    getInitialThemeState().themePreference
+  );
+  const [systemTheme, setSystemTheme] = useState<EffectiveTheme>(
+    getInitialThemeState().systemTheme
+  );
 
   const effectiveTheme = useMemo<EffectiveTheme>(() => {
     if (themePreference === "system") {
@@ -76,6 +87,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     return themePreference;
   }, [systemTheme, themePreference]);
+
+  useEffect(() => {
+    setThemePreferenceState(readThemePreference());
+    setSystemTheme(getSystemTheme());
+  }, []);
 
   useEffect(() => {
     applyRootTheme(effectiveTheme);

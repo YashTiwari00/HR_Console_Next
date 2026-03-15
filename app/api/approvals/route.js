@@ -78,6 +78,27 @@ export async function POST(request) {
       goalId
     );
 
+    if (profile.role === "hr") {
+      let goalOwner = null;
+      try {
+        goalOwner = await databases.getDocument(
+          databaseId,
+          appwriteConfig.usersCollectionId,
+          String(goal.employeeId || "").trim()
+        );
+      } catch {
+        goalOwner = null;
+      }
+
+      const ownerAssignedHrId = String(goalOwner?.hrId || "").trim();
+      if (goalOwner?.role === "manager" && ownerAssignedHrId && ownerAssignedHrId !== profile.$id) {
+        return Response.json(
+          { error: "Forbidden: this manager is assigned to a different HR owner." },
+          { status: 403 }
+        );
+      }
+    }
+
     if (profile.role === "manager" && goal.managerId !== profile.$id) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }

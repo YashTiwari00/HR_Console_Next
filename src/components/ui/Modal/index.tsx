@@ -13,6 +13,7 @@ export interface ModalProps {
   footer?: ReactNode;
   children?: ReactNode;
   className?: string;
+  allowContentOverflow?: boolean;
 }
 
 export default function Modal({
@@ -23,6 +24,7 @@ export default function Modal({
   footer,
   children,
   className,
+  allowContentOverflow = false,
 }: ModalProps) {
   const modalId = useId();
   const titleId = `${modalId}-title`;
@@ -71,7 +73,7 @@ export default function Modal({
           'rounded-[var(--radius-md)]',
           'shadow-[var(--shadow-lg)]',
           'flex flex-col',
-          'max-h-[90vh] overflow-hidden',
+          allowContentOverflow ? 'overflow-visible' : 'max-h-[90vh] overflow-hidden',
           className
         )}
       >
@@ -124,7 +126,12 @@ export default function Modal({
 
         {/* Content */}
         {children && (
-          <div className="px-[var(--space-4)] py-[var(--space-3)] overflow-y-auto flex-1">
+          <div
+            className={cn(
+              'px-[var(--space-4)] py-[var(--space-3)]',
+              allowContentOverflow ? 'overflow-visible' : 'overflow-y-auto flex-1'
+            )}
+          >
             {children}
           </div>
         )}

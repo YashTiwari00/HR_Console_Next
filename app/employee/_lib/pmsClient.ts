@@ -69,6 +69,34 @@ export interface TeamMemberItem {
   managerAssignedAt?: string | null;
   managerAssignedBy?: string;
   assignmentVersion?: number;
+  hrId?: string;
+  hrAssignedAt?: string | null;
+  hrAssignedBy?: string;
+  hrAssignmentVersion?: number;
+}
+
+export interface ManagerAssignmentItem {
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  department?: string;
+  hrId?: string;
+  hrName?: string;
+  hrEmail?: string;
+  hrAssignedAt?: string | null;
+  hrAssignedBy?: string;
+  hrAssignmentVersion?: number;
+}
+
+export interface ManagerAssignmentsMeta {
+  hrUsers: TeamMemberItem[];
+  totalManagers: number;
+  unassignedManagers: number;
+}
+
+export interface ManagerAssignmentsResponse {
+  data: ManagerAssignmentItem[];
+  meta: ManagerAssignmentsMeta;
 }
 
 export interface HrManagerSummary {
@@ -136,6 +164,8 @@ export interface CurrentUserContext {
     email?: string;
     role?: string;
     department?: string;
+    managerId?: string;
+    hrId?: string;
   };
 }
 
@@ -344,6 +374,56 @@ export async function removeEmployeeManagerAssignment(employeeId: string) {
   });
 
   return payload?.data as TeamMemberItem;
+}
+
+export async function fetchManagerAssignments(input?: { hrId?: string; unassigned?: boolean }) {
+  const params = new URLSearchParams();
+
+  if (input?.hrId) {
+    params.set("hrId", input.hrId);
+  }
+
+  if (typeof input?.unassigned === "boolean") {
+    params.set("unassigned", String(input.unassigned));
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/manager-assignments${query}`);
+
+  return {
+    data: (payload?.data || []) as ManagerAssignmentItem[],
+    meta: {
+      hrUsers: (payload?.meta?.hrUsers || []) as TeamMemberItem[],
+      totalManagers: Number(payload?.meta?.totalManagers || 0),
+      unassignedManagers: Number(payload?.meta?.unassignedManagers || 0),
+    },
+  } as ManagerAssignmentsResponse;
+}
+
+export async function assignManagerToHr(input: { managerId: string; hrId: string }) {
+  const payload = await requestJson("/api/manager-assignments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as ManagerAssignmentItem;
+}
+
+export async function updateManagerHrAssignment(managerId: string, hrId: string) {
+  const payload = await requestJson(`/api/manager-assignments/${encodeURIComponent(managerId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ hrId }),
+  });
+
+  return payload?.data as ManagerAssignmentItem;
+}
+
+export async function removeManagerHrAssignment(managerId: string) {
+  const payload = await requestJson(`/api/manager-assignments/${encodeURIComponent(managerId)}`, {
+    method: "DELETE",
+  });
+
+  return payload?.data as ManagerAssignmentItem;
 }
 
 export async function fetchMe() {

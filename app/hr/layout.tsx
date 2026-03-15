@@ -16,11 +16,13 @@ interface HrLayoutProps {
 
 const navItems = [
   { label: "Dashboard", href: "/hr", route: "/hr" },
+  { label: "Team Assignments", href: "/hr/team-assignments", route: "/hr/team-assignments" },
   { label: "Approval Queue", href: "/hr/approvals", route: "/hr/approvals" },
   { label: "Check-in Monitoring", href: "/hr/check-ins", route: "/hr/check-ins" },
 ];
 
 const quickActions = [
+  { label: "Manage Team Mapping", href: "/hr/team-assignments" },
   { label: "Review Manager Goals", href: "/hr/approvals" },
   { label: "Review Manager Check-ins", href: "/hr/approvals" },
   { label: "Monitor Manager Cadence", href: "/hr/check-ins" },

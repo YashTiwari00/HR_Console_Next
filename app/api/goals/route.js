@@ -71,9 +71,13 @@ async function listManagerGoalsByScope(databases, profile, scope) {
   return teamResult.documents;
 }
 
-async function resolveManagerApproverId(databases, profile) {
+async function resolveManagerApprover(databases, profile) {
+  if (profile.hrId) {
+    return { id: String(profile.hrId).trim(), source: "profile.hrId" };
+  }
+
   if (profile.managerId) {
-    return String(profile.managerId).trim();
+    return { id: String(profile.managerId).trim(), source: "profile.managerId" };
   }
 
   const hrProfiles = await databases.listDocuments(
@@ -82,7 +86,11 @@ async function resolveManagerApproverId(databases, profile) {
     [Query.equal("role", "hr"), Query.orderAsc("$createdAt"), Query.limit(1)]
   );
 
-  return hrProfiles.documents[0]?.$id || "";
+  const firstHrId = hrProfiles.documents[0]?.$id || "";
+  return {
+    id: firstHrId,
+    source: firstHrId ? "firstHrFallback" : "missing",
+  };
 }
 
 export async function GET(request) {
@@ -156,8 +164,11 @@ export async function POST(request) {
     const cycleId = normalizeCycleId(cycleIdInput);
     const frameworkType = (body.frameworkType || "").trim();
     const managerIdInput = (body.managerId || "").trim();
+    const managerApproverResolution = profile.role === "manager" && !managerIdInput
+      ? await resolveManagerApprover(databases, profile)
+      : null;
     const managerId = profile.role === "manager"
-      ? managerIdInput || (await resolveManagerApproverId(databases, profile))
+      ? managerIdInput || String(managerApproverResolution?.id || "").trim()
       : managerIdInput || String(profile.managerId || "").trim();
     const dueDate = body.dueDate || null;
     const lineageRef = body.lineageRef || "";
@@ -236,7 +247,24 @@ export async function POST(request) {
       }
     );
 
-    return Response.json({ data: goal }, { status: 201 });
+    const warning =
+      profile.role === "manager" &&
+      managerApproverResolution &&
+      managerApproverResolution.source !== "profile.hrId"
+        ? managerApproverResolution.source === "profile.managerId"
+          ? "Using legacy managerId field for manager-to-HR mapping. Configure users.hrId for manager profile."
+          : managerApproverResolution.source === "firstHrFallback"
+            ? "No explicit manager-to-HR mapping found. Using first HR profile as fallback."
+            : "Manager-to-HR mapping is missing."
+        : "";
+
+    return Response.json(
+      {
+        data: goal,
+        meta: warning ? { warning } : undefined,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return errorResponse(error);
   }

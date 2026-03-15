@@ -30,6 +30,10 @@ const required = {
     { key: "managerAssignedAt", type: "datetime", required: false },
     { key: "managerAssignedBy", type: "string", size: 64, required: false },
     { key: "assignmentVersion", type: "integer", required: false, min: 0, max: 999999 },
+    { key: "hrId", type: "string", size: 64, required: false },
+    { key: "hrAssignedAt", type: "datetime", required: false },
+    { key: "hrAssignedBy", type: "string", size: 64, required: false },
+    { key: "hrAssignmentVersion", type: "integer", required: false, min: 0, max: 999999 },
   ],
   [collections.goals]: [
     { key: "employeeId", type: "string", size: 64, required: true },

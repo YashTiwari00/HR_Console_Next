@@ -177,6 +177,25 @@ export async function POST(request) {
       return Response.json({ error: "Only completed check-ins can be reviewed by HR." }, { status: 400 });
     }
 
+    let managerProfile = null;
+    try {
+      managerProfile = await databases.getDocument(
+        databaseId,
+        appwriteConfig.usersCollectionId,
+        String(checkIn.managerId || "").trim()
+      );
+    } catch {
+      managerProfile = null;
+    }
+
+    const assignedHrId = String(managerProfile?.hrId || "").trim();
+    if (managerProfile?.role === "manager" && assignedHrId && assignedHrId !== profile.$id) {
+      return Response.json(
+        { error: "Forbidden: this manager is assigned to a different HR owner." },
+        { status: 403 }
+      );
+    }
+
     try {
       const approval = await databases.createDocument(
         databaseId,
