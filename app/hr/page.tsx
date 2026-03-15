@@ -174,16 +174,16 @@ export default function HrDashboardPage() {
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
 
       <Grid cols={1} colsMd={4} gap="3">
-        <Card title="Managers Tracked">
+        <Card title="Managers Tracked" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.managers}</p>
         </Card>
-        <Card title="Team Goals">
+        <Card title="Team Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.teamGoals}</p>
         </Card>
-        <Card title="Pending Manager Goals">
+        <Card title="Pending Manager Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.pendingGoalApprovals}</p>
         </Card>
-        <Card title="Pending Manager Check-ins">
+        <Card title="Pending Manager Check-ins" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.pendingCheckInApprovals}</p>
         </Card>
       </Grid>
@@ -218,7 +218,7 @@ export default function HrDashboardPage() {
                   {selectedManager.teamMembers.map((member) => (
                     <div
                       key={member.$id}
-                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2"
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
                     >
                       <p className="body-sm text-[var(--color-text)]">{member.name || member.email || member.$id}</p>
                       <p className="caption">{member.email || "No email"}</p>

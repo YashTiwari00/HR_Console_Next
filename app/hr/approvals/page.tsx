@@ -184,7 +184,7 @@ export default function HrApprovalsPage() {
               <form
                 key={goal.$id}
                 onSubmit={(event) => handleGoalDecision(event, goal.$id)}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
+                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -194,7 +194,7 @@ export default function HrApprovalsPage() {
                   <Badge variant="info">{goal.status}</Badge>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
                   <span className="caption">Manager: {goal.employeeId}</span>
                   <span className="caption">Cycle: {goal.cycleId}</span>
                   <span className="caption">Weightage: {goal.weightage}%</span>
@@ -289,14 +289,14 @@ export default function HrApprovalsPage() {
               <form
                 key={row.checkInId}
                 onSubmit={(event) => handleCheckInDecision(event, row.checkInId)}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
+                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="body-sm text-[var(--color-text)]">{row.goalTitle}</p>
                   <Badge variant="warning">pending</Badge>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
                   <span className="caption">Manager: {row.managerName}</span>
                   <span className="caption">Employee: {row.employeeName}</span>
                   <span className="caption">Scheduled: {formatDate(row.scheduledAt)}</span>

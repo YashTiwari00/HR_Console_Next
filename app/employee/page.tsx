@@ -65,13 +65,13 @@ export default function EmployeePage() {
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
 
       <Grid cols={1} colsMd={3} gap="3">
-        <Card title="Total Goals">
+        <Card title="Total Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : goals.length}</p>
         </Card>
-        <Card title="Approved Goals">
+        <Card title="Approved Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : approvedCount}</p>
         </Card>
-        <Card title="Average Progress">
+        <Card title="Average Progress" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : `${averageProgress}%`}</p>
         </Card>
       </Grid>
@@ -79,16 +79,16 @@ export default function EmployeePage() {
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Feature Pages" description="Use focused pages for each workflow.">
           <Stack gap="2">
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/employee/goals">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/goals">
               Open Goals Workspace
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/employee/progress">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/progress">
               Open Progress Updates
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/employee/check-ins">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/check-ins">
               Open Check-ins
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/employee/timeline">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/timeline">
               Open Cycle Timeline
             </Link>
           </Stack>
@@ -98,7 +98,7 @@ export default function EmployeePage() {
           <Stack gap="2">
             {!loading && goals.length === 0 && <p className="caption">No goals yet.</p>}
             {goals.slice(0, 4).map((goal) => (
-              <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+              <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="body-sm text-[var(--color-text)]">{goal.title}</p>
                   <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
@@ -113,7 +113,7 @@ export default function EmployeePage() {
         <Stack gap="2">
           {!loading && checkIns.length === 0 && <p className="caption">No check-ins yet.</p>}
           {checkIns.slice(0, 5).map((item) => (
-            <div key={item.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+            <div key={item.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="body-sm text-[var(--color-text)]">{formatDate(item.scheduledAt)}</p>
                 <Badge variant={item.status === "completed" ? "success" : "info"}>{item.status}</Badge>

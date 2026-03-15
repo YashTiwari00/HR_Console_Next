@@ -71,9 +71,9 @@ export default function DataTable<T extends Record<string, unknown>>({
                 key={col.key}
                 style={col.width ? { width: col.width } : undefined}
                 className={cn(
-                  'px-4 py-2',
+                  'px-4 py-3',
                   'caption font-medium',
-                  'bg-[var(--color-bg)]',
+                  'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
                   'whitespace-nowrap',
                   alignMap[col.align ?? 'left']
                 )}
@@ -140,7 +140,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                   key={key}
                   className={cn(
                     'border-b border-[var(--color-border)] last:border-b-0',
-                    'hover:bg-[var(--color-bg)] transition-colors duration-100'
+                    'hover:bg-[var(--color-surface-muted)] transition-colors duration-100'
                   )}
                 >
                   {columns.map((col) => (

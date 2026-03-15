@@ -124,6 +124,21 @@ export interface HrCheckInApprovalItem {
   };
 }
 
+export interface CurrentUserContext {
+  user: {
+    $id: string;
+    name?: string;
+    email?: string;
+  };
+  profile: {
+    $id?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+    department?: string;
+  };
+}
+
 async function getJwtHeader() {
   try {
     const jwt = await account.createJWT();
@@ -188,6 +203,11 @@ export async function requestJson(url: string, init?: RequestInit) {
   }
 
   return payload;
+}
+
+export async function fetchCurrentUserContext() {
+  const payload = await requestJson("/api/me");
+  return (payload?.data || {}) as CurrentUserContext;
 }
 
 export async function uploadAttachment(file: File) {

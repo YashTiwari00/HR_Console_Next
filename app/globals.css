@@ -3,10 +3,14 @@
 @import "../styles/typography.css";
 
 body {
-  background: var(--color-bg);
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--color-primary) 8%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--color-primary) 5%, transparent) 0%, transparent 34%);
+  background-attachment: fixed;
   color: var(--color-text);
   font-size: var(--font-size-md);
-  font-family: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+  font-family: var(--font-geist-sans, "Segoe UI", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

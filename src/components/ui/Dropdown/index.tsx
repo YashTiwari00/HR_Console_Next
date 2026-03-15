@@ -108,10 +108,10 @@ export default function Dropdown({
           className={cn(
             'group w-full rounded-[var(--radius-md)] border border-[var(--color-border)]',
             'px-[var(--space-3)] py-[var(--space-2)] text-left',
-            'bg-[color-mix(in_srgb,var(--color-surface)_86%,var(--color-bg)_14%)]',
+            'bg-[var(--color-surface)]',
             'shadow-[var(--shadow-sm)] transition-all duration-200',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]',
-            'hover:border-[color-mix(in_srgb,var(--color-primary)_35%,var(--color-border))] hover:shadow-[var(--shadow-md)]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]',
+            'hover:border-[color-mix(in_srgb,var(--color-primary)_35%,var(--color-border))] hover:bg-[var(--color-surface-muted)] hover:shadow-[var(--shadow-md)]',
             'disabled:cursor-not-allowed disabled:opacity-60',
             error && 'border-[var(--color-danger)]'
           )}
@@ -136,7 +136,7 @@ export default function Dropdown({
             <span
               className={cn(
                 'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                'bg-[color-mix(in_srgb,var(--color-primary)_18%,transparent)]',
+                'bg-[color-mix(in_srgb,var(--color-primary)_14%,transparent)]',
                 'text-[var(--color-text)] transition-transform duration-200',
                 open && 'rotate-180'
               )}

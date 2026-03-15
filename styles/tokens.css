@@ -1,37 +1,23 @@
 :root {
+  /* COLORS - corporate navy/slate, light-first */
 
-  /*
-    COLOR BACKUP (previous values)
-    --color-primary: #171717;
-    --color-primary-hover: #262626;
-    --color-bg: #ffffff;
-    --color-surface: #fafafa;
-    --color-border: #e5e5e5;
-    --color-text: #0a0a0a;
-    --color-text-muted: rgba(115, 115, 115, 0.9);
-    --color-button-text: #dcdbdb;
-    --color-success: #22c55e;
-    --color-danger: #e7000b;
-    --color-warning: #eab308;
-  */
+  --color-primary: #1f3a5f;
+  --color-primary-hover: #17314f;
+  --color-focus-ring: #2c5a8e;
 
-  /* COLORS - shadcn dark mapped to project tokens */
+  --color-bg: #eef3f9;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f8fc;
 
-  --color-primary: #fafafa;
-  --color-primary-hover: #e5e5e5;
+  --color-border: #d2dae7;
 
-  --color-bg: #0a0a0a;
-  --color-surface: #191919;
+  --color-text: #162033;
+  --color-text-muted: rgba(70, 86, 112, 0.9);
+  --color-button-text: #f5f8ff;
 
-  --color-border: #403e3e;
-
-  --color-text: #fafafa;
-  --color-text-muted: rgba(161, 161, 170, 0.9);
-  --color-button-text: #0a0a0a;
-
-  --color-success: #22c55e;
-  --color-danger: #7f1d1d;
-  --color-warning: #eab308;
+  --color-success: #1f8a52;
+  --color-danger: #b42318;
+  --color-warning: #a05a00;
 
 
   /* SPACING (8px scale) */
@@ -53,9 +39,9 @@
 
   /* SHADOWS */
 
-  --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0 hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 10px 22px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 16px 34px rgba(15, 23, 42, 0.14);
 
 
   /* TYPOGRAPHY */
@@ -69,68 +55,74 @@
 
   /* SEMANTIC: Badge variants */
 
-  --color-badge-success-bg: rgba(34, 197, 94, 0.12);
-  --color-badge-success-border: rgba(34, 197, 94, 0.28);
-  --color-badge-danger-bg: rgba(231, 0, 11, 0.12);
-  --color-badge-danger-border: rgba(231, 0, 11, 0.28);
-  --color-badge-warning-bg: rgba(234, 179, 8, 0.14);
-  --color-badge-warning-border: rgba(234, 179, 8, 0.30);
-  --color-badge-info-bg: rgba(23, 23, 23, 0.08);
-  --color-badge-info-border: rgba(23, 23, 23, 0.18);
+  --color-badge-success-bg: rgba(31, 138, 82, 0.10);
+  --color-badge-success-border: rgba(31, 138, 82, 0.26);
+  --color-badge-danger-bg: rgba(180, 35, 24, 0.10);
+  --color-badge-danger-border: rgba(180, 35, 24, 0.26);
+  --color-badge-warning-bg: rgba(160, 90, 0, 0.12);
+  --color-badge-warning-border: rgba(160, 90, 0, 0.28);
+  --color-badge-info-bg: rgba(31, 58, 95, 0.10);
+  --color-badge-info-border: rgba(31, 58, 95, 0.24);
 
 
   /* SEMANTIC: Alert variants */
 
-  --color-alert-success-bg: rgba(34, 197, 94, 0.08);
-  --color-alert-success-border: rgba(34, 197, 94, 0.22);
-  --color-alert-danger-bg: rgba(231, 0, 11, 0.08);
-  --color-alert-danger-border: rgba(231, 0, 11, 0.22);
-  --color-alert-warning-bg: rgba(234, 179, 8, 0.10);
-  --color-alert-warning-border: rgba(234, 179, 8, 0.24);
-  --color-alert-info-bg: rgba(23, 23, 23, 0.06);
-  --color-alert-info-border: rgba(23, 23, 23, 0.16);
+  --color-alert-success-bg: rgba(31, 138, 82, 0.08);
+  --color-alert-success-border: rgba(31, 138, 82, 0.22);
+  --color-alert-danger-bg: rgba(180, 35, 24, 0.08);
+  --color-alert-danger-border: rgba(180, 35, 24, 0.22);
+  --color-alert-warning-bg: rgba(160, 90, 0, 0.09);
+  --color-alert-warning-border: rgba(160, 90, 0, 0.22);
+  --color-alert-info-bg: rgba(31, 58, 95, 0.08);
+  --color-alert-info-border: rgba(31, 58, 95, 0.20);
 
 
   /* SEMANTIC: Overlay */
 
-  --color-overlay: rgba(10, 10, 10, 0.68);
+  --color-overlay: rgba(17, 28, 46, 0.46);
 
 }
 
 .dark {
-  --color-primary: #e5e5e5;
-  --color-primary-hover: #fafafa;
+  --color-primary: #8cb4ff;
+  --color-primary-hover: #a9c7ff;
+  --color-focus-ring: #5eead4;
 
-  --color-bg: #0a0a0a;
-  --color-surface: #0a0a0a;
+  --color-bg: #0d1117;
+  --color-surface: #171c24;
+  --color-surface-muted: #202734;
 
-  --color-border: #262626;
+  --color-border: #344256;
 
-  --color-text: #fafafa;
-  --color-text-muted: rgba(161, 161, 170, 0.9);
-  --color-button-text: #0a0a0a;
+  --color-text: #e7edf7;
+  --color-text-muted: rgba(169, 182, 205, 0.86);
+  --color-button-text: #0d1117;
 
-  --color-success: #22c55e;
-  --color-danger: #7f1d1d;
-  --color-warning: #eab308;
+  --color-success: #34d399;
+  --color-danger: #ff8f82;
+  --color-warning: #f6c177;
 
-  --color-badge-success-bg: rgba(34, 197, 94, 0.16);
-  --color-badge-success-border: rgba(34, 197, 94, 0.30);
-  --color-badge-danger-bg: rgba(255, 100, 103, 0.18);
-  --color-badge-danger-border: rgba(255, 100, 103, 0.32);
-  --color-badge-warning-bg: rgba(234, 179, 8, 0.18);
-  --color-badge-warning-border: rgba(234, 179, 8, 0.32);
-  --color-badge-info-bg: rgba(250, 250, 250, 0.10);
-  --color-badge-info-border: rgba(250, 250, 250, 0.20);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 12px 24px rgba(0, 0, 0, 0.42);
+  --shadow-lg: 0 18px 36px rgba(0, 0, 0, 0.50);
 
-  --color-alert-success-bg: rgba(34, 197, 94, 0.10);
-  --color-alert-success-border: rgba(34, 197, 94, 0.24);
-  --color-alert-danger-bg: rgba(255, 100, 103, 0.12);
-  --color-alert-danger-border: rgba(255, 100, 103, 0.26);
-  --color-alert-warning-bg: rgba(234, 179, 8, 0.12);
-  --color-alert-warning-border: rgba(234, 179, 8, 0.26);
-  --color-alert-info-bg: rgba(250, 250, 250, 0.08);
-  --color-alert-info-border: rgba(250, 250, 250, 0.18);
+  --color-badge-success-bg: rgba(52, 211, 153, 0.18);
+  --color-badge-success-border: rgba(52, 211, 153, 0.34);
+  --color-badge-danger-bg: rgba(255, 143, 130, 0.18);
+  --color-badge-danger-border: rgba(255, 143, 130, 0.34);
+  --color-badge-warning-bg: rgba(246, 193, 119, 0.20);
+  --color-badge-warning-border: rgba(246, 193, 119, 0.36);
+  --color-badge-info-bg: rgba(125, 211, 252, 0.18);
+  --color-badge-info-border: rgba(125, 211, 252, 0.34);
 
-  --color-overlay: rgba(0, 0, 0, 0.72);
+  --color-alert-success-bg: rgba(52, 211, 153, 0.14);
+  --color-alert-success-border: rgba(52, 211, 153, 0.30);
+  --color-alert-danger-bg: rgba(255, 143, 130, 0.14);
+  --color-alert-danger-border: rgba(255, 143, 130, 0.30);
+  --color-alert-warning-bg: rgba(246, 193, 119, 0.14);
+  --color-alert-warning-border: rgba(246, 193, 119, 0.30);
+  --color-alert-info-bg: rgba(125, 211, 252, 0.14);
+  --color-alert-info-border: rgba(125, 211, 252, 0.30);
+
+  --color-overlay: rgba(2, 6, 12, 0.74);
 }

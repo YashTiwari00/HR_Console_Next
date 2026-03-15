@@ -85,25 +85,25 @@ export default function ManagerPage() {
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
 
       <Grid cols={1} colsMd={3} gap="3">
-        <Card title="My Goals">
+        <Card title="My Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : myGoals.length}</p>
         </Card>
-        <Card title="My Average Progress">
+        <Card title="My Average Progress" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : `${myAvgProgress}%`}</p>
         </Card>
-        <Card title="My Check-ins">
+        <Card title="My Check-ins" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : myCheckIns.length}</p>
         </Card>
       </Grid>
 
       <Grid cols={1} colsMd={3} gap="3">
-        <Card title="Team Goals">
+        <Card title="Team Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : teamGoals.length}</p>
         </Card>
-        <Card title="Team Average Progress">
+        <Card title="Team Average Progress" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : `${teamAvgProgress}%`}</p>
         </Card>
-        <Card title="Team Updates Logged">
+        <Card title="Team Updates Logged" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : teamUpdates.length}</p>
         </Card>
       </Grid>
@@ -112,25 +112,25 @@ export default function ManagerPage() {
         <Card title="Manager Workspaces" description="Self-service and team operations.">
           <Stack gap="2">
             <p className="caption">My updates logged: {loading ? "..." : myUpdates.length}</p>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/goals">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/goals">
               Open My Goals Workspace
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/progress">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/progress">
               Open My Progress Updates
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/team-progress">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/team-progress">
               Open Team Progress Updates
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/check-ins">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/check-ins">
               Open My Check-ins
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/timeline">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/timeline">
               Open My Cycle Timeline
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/team-check-ins">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/team-check-ins">
               Open Team Check-ins
             </Link>
-            <Link className="body-sm text-[var(--color-primary)] hover:underline" href="/manager/approvals">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/approvals">
               Open Approval Queue
             </Link>
           </Stack>
@@ -140,7 +140,7 @@ export default function ManagerPage() {
           <Stack gap="2">
             {!loading && myGoals.length === 0 && <p className="caption">No goals yet.</p>}
             {myGoals.slice(0, 4).map((goal) => (
-              <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+              <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="body-sm text-[var(--color-text)]">{goal.title}</p>
                   <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
@@ -155,7 +155,7 @@ export default function ManagerPage() {
         <Stack gap="3">
           {!loading && teamCheckIns.length === 0 && <p className="caption">No team check-ins yet.</p>}
           {teamCheckIns.slice(0, 5).map((item) => (
-            <div key={item.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+            <div key={item.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="body-sm text-[var(--color-text)]">{formatDate(item.scheduledAt)}</p>
                 <Badge variant={item.status === "completed" ? "success" : "info"}>{item.status}</Badge>

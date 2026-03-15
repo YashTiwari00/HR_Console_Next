@@ -86,9 +86,35 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-5xl grid gap-4 md:grid-cols-[1.1fr_1fr]">
+        <section className="hidden md:flex rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[linear-gradient(165deg,var(--color-primary)_0%,color-mix(in_srgb,var(--color-primary)_72%,black)_100%)] p-[var(--space-5)] text-[var(--color-button-text)] shadow-[var(--shadow-lg)]">
+          <div className="flex flex-col justify-between gap-[var(--space-4)]">
+            <div>
+              <p className="caption uppercase tracking-[0.14em] text-[color-mix(in_srgb,var(--color-button-text)_76%,transparent)]">
+                HR Console
+              </p>
+              <h1 className="mt-[var(--space-2)] heading-xl text-[var(--color-button-text)] max-w-md">
+                Set up your account and start your performance cycle.
+              </h1>
+              <p className="body mt-[var(--space-3)] text-[color-mix(in_srgb,var(--color-button-text)_86%,transparent)] max-w-sm">
+                Choose your role and get access to role-specific dashboards and workflows.
+              </p>
+            </div>
+
+            <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--color-button-text)_28%,transparent)] bg-[color-mix(in_srgb,var(--color-button-text)_10%,transparent)] px-[var(--space-3)] py-[var(--space-2)]">
+              <p className="caption text-[color-mix(in_srgb,var(--color-button-text)_86%,transparent)]">
+                Role-based onboarding
+              </p>
+              <p className="body-sm mt-1 text-[var(--color-button-text)]">
+                Employee, manager, and HR experiences are tailored from the first login.
+              </p>
+            </div>
+          </div>
+        </section>
+
         <Card
+          className="shadow-[var(--shadow-lg)]"
           title="Create your account"
           description="Join HR Console to manage your profile and workspace."
         >

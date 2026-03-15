@@ -15,23 +15,23 @@ export default function SidebarLayout({
 }: SidebarLayoutProps) {
   return (
     <div
-      className={cn('flex h-screen overflow-hidden bg-[var(--color-bg)]', className)}
+      className={cn('flex h-screen min-h-screen overflow-hidden overflow-x-hidden bg-[var(--color-bg)]', className)}
       {...props}
     >
-      {/* Sidebar — fixed height, independently scrollable */}
+      {/* Sidebar — independently scrollable */}
       <aside
         className={cn(
-          'shrink-0 flex flex-col h-full',
-          'bg-[var(--color-surface)] border-r border-[var(--color-border)]',
-          'overflow-y-auto'
+          'shrink-0 flex h-full min-h-screen flex-col overflow-y-scroll overflow-x-hidden',
+          'bg-[var(--color-surface)] border-r border-[color-mix(in_srgb,var(--color-border)_75%,transparent)] shadow-[var(--shadow-sm)]',
+          'overscroll-contain'
         )}
         style={{ width: sidebarWidth }}
       >
         {sidebar}
       </aside>
 
-      {/* Main content — fills remaining width, independently scrollable */}
-      <main className="flex-1 overflow-y-auto min-w-0">
+      {/* Main content — independently scrollable */}
+      <main className="flex-1 min-w-0 min-h-0 h-full overflow-y-auto overflow-x-hidden overscroll-contain bg-[color-mix(in_srgb,var(--color-bg)_88%,var(--color-surface)_12%)]">
         {children}
       </main>
     </div>

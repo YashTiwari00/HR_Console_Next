@@ -3,16 +3,17 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
-  Badge,
   Button,
   Card,
   Divider,
 } from '@/src/components/ui';
 import { SidebarLayout, Stack } from '@/src/components/layout';
+import SidebarThemeToggle from '@/src/components/theme/SidebarThemeToggle';
 import { logout } from '@/services/authService';
+import { fetchCurrentUserContext } from '@/app/employee/_lib/pmsClient';
 
 interface EmployeeLayoutProps {
   children: ReactNode;
@@ -38,6 +39,41 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState('');
+  const [userName, setUserName] = useState('Employee User');
+  const [userRole, setUserRole] = useState('employee');
+  const [userDepartment, setUserDepartment] = useState('Engineering');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadUserContext() {
+      try {
+        const ctx = await fetchCurrentUserContext();
+        if (!active) return;
+
+        const name = ctx?.profile?.name || ctx?.user?.name || 'Employee User';
+        const role = ctx?.profile?.role || 'employee';
+        const department = ctx?.profile?.department || 'General';
+
+        setUserName(name);
+        setUserRole(role);
+        setUserDepartment(department);
+      } catch {
+        // Keep fallback values when profile lookup fails.
+      }
+    }
+
+    loadUserContext();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const userInitials = useMemo(() => {
+    const parts = userName.trim().split(/\s+/).filter(Boolean);
+    return (parts[0]?.[0] || 'E') + (parts[1]?.[0] || 'U');
+  }, [userName]);
 
   async function handleLogout() {
     setLogoutError('');
@@ -63,18 +99,18 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
   const sidebar = (
     <Stack
       gap="4"
-      className="h-full px-[var(--space-3)] py-[var(--space-4)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-bg)_100%)]"
+      className="px-[var(--space-3)] py-[var(--space-4)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-bg)_100%)]"
     >
       <Card className="border-transparent shadow-[var(--shadow-md)]">
         <div className="flex items-start justify-between gap-[var(--space-2)]">
           <div className="flex items-center gap-[var(--space-2)]">
-            <Avatar initials="ER" size="md" />
+            <Avatar initials={userInitials.toUpperCase()} size="md" />
             <div>
-              <p className="body font-medium text-[var(--color-text)]">Employee Performance</p>
-              <p className="caption">Goals and growth hub</p>
+              <p className="body font-medium text-[var(--color-text)]">{userName}</p>
+              <p className="caption">{userRole} • {userDepartment}</p>
             </div>
           </div>
-          <Badge variant="info">ACTIVE CYCLE</Badge>
+          <SidebarThemeToggle />
         </div>
       </Card>
 
@@ -91,8 +127,8 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
             href={item.href}
             className={
               isActive
-                ? 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)]'
-                : 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 text-[var(--color-text)] hover:bg-[var(--color-surface)]'
+                ? 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)] shadow-[var(--shadow-sm)]'
+                : 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 text-[var(--color-text)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'
             }
           >
             {item.label}
@@ -108,7 +144,7 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
           <Link
             key={action.label}
             href={action.href}
-            className="inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-2 body-sm font-medium text-[var(--color-text)] transition-colors duration-150 hover:bg-[var(--color-surface)]"
+            className="inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 body-sm font-medium text-[var(--color-text)] transition-colors duration-150 hover:bg-[var(--color-surface-muted)]"
           >
             {action.label}
           </Link>

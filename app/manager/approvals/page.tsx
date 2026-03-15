@@ -152,7 +152,7 @@ export default function ManagerPage() {
               <form
                 key={goal.$id}
                 onSubmit={(event) => handleDecision(event, goal.$id)}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
+                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
@@ -162,7 +162,7 @@ export default function ManagerPage() {
                   <Badge variant="info">{goal.status}</Badge>
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
                   <span className="caption">Employee: {goal.employeeId}</span>
                   <span className="caption">Cycle: {goal.cycleId}</span>
                   <span className="caption">Weightage: {goal.weightage}%</span>

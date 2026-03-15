@@ -18,7 +18,7 @@ export default function PageHeader({
     <div
       className={cn(
         'flex items-start justify-between gap-4',
-        'py-6',
+        'py-5 border-b border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] mb-2',
         className
       )}
       {...props}

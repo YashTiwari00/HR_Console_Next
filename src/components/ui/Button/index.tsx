@@ -15,13 +15,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-button-text)]',
+    'bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-button-text)] shadow-[var(--shadow-sm)]',
   secondary:
-    'bg-transparent border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface)]',
+    'bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]',
   ghost:
-    'bg-transparent text-[var(--color-text)] hover:bg-[var(--color-surface)]',
+    'bg-transparent text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]',
   danger:
-    'bg-[var(--color-danger)] hover:opacity-90 text-[var(--color-button-text)]',
+    'bg-[var(--color-danger)] hover:opacity-90 text-white shadow-[var(--shadow-sm)]',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -52,7 +52,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           'font-medium rounded-[var(--radius-sm)]',
           'transition-colors duration-150',
           'focus-visible:outline-none focus-visible:ring-2',
-          'focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2',
+          'focus-visible:ring-[var(--color-focus-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--color-bg)]',
           'disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer',
           variantClasses[variant],

@@ -27,9 +27,9 @@ export default function Card({
       {...props}
     >
       {(title || description) && (
-        <div className="px-[var(--space-4)] pt-[var(--space-4)] pb-[var(--space-3)] flex flex-col gap-[var(--space-1)]">
+        <div className="px-[var(--space-4)] pt-[var(--space-4)] pb-[var(--space-3)] flex flex-col gap-[var(--space-1)] border-b border-[color-mix(in_srgb,var(--color-border)_70%,transparent)]">
           {title && (
-            <h3 className="heading-lg text-[var(--color-text)]">{title}</h3>
+            <h3 className="heading-lg text-[var(--color-text)] tracking-tight">{title}</h3>
           )}
           {description && (
             <p className="caption">{description}</p>
