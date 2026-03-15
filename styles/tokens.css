@@ -1,21 +1,36 @@
 :root {
 
-  /* COLORS - shadcn default (light) mapped to project tokens */
+  /*
+    COLOR BACKUP (previous values)
+    --color-primary: #171717;
+    --color-primary-hover: #262626;
+    --color-bg: #ffffff;
+    --color-surface: #fafafa;
+    --color-border: #e5e5e5;
+    --color-text: #0a0a0a;
+    --color-text-muted: rgba(115, 115, 115, 0.9);
+    --color-button-text: #dcdbdb;
+    --color-success: #22c55e;
+    --color-danger: #e7000b;
+    --color-warning: #eab308;
+  */
 
-  --color-primary: #171717;
-  --color-primary-hover: #262626;
+  /* COLORS - shadcn dark mapped to project tokens */
 
-  --color-bg: #ffffff;
-  --color-surface: #fafafa;
+  --color-primary: #fafafa;
+  --color-primary-hover: #e5e5e5;
 
-  --color-border: #e5e5e5;
+  --color-bg: #0a0a0a;
+  --color-surface: #191919;
 
-  --color-text: #0a0a0a;
-  --color-text-muted: rgba(115, 115, 115, 0.9);
-  --color-button-text: #dcdbdb;
+  --color-border: #403e3e;
+
+  --color-text: #fafafa;
+  --color-text-muted: rgba(161, 161, 170, 0.9);
+  --color-button-text: #0a0a0a;
 
   --color-success: #22c55e;
-  --color-danger: #e7000b;
+  --color-danger: #7f1d1d;
   --color-warning: #eab308;
 
 
@@ -87,16 +102,16 @@
   --color-primary-hover: #fafafa;
 
   --color-bg: #0a0a0a;
-  --color-surface: #171717;
+  --color-surface: #0a0a0a;
 
-  --color-border: #282828;
+  --color-border: #262626;
 
   --color-text: #fafafa;
-  --color-text-muted: rgba(161, 161, 161, 0.9);
-  --color-button-text: #171717;
+  --color-text-muted: rgba(161, 161, 170, 0.9);
+  --color-button-text: #0a0a0a;
 
   --color-success: #22c55e;
-  --color-danger: #ff6467;
+  --color-danger: #7f1d1d;
   --color-warning: #eab308;
 
   --color-badge-success-bg: rgba(34, 197, 94, 0.16);

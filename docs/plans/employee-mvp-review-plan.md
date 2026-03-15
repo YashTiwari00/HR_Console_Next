@@ -2,6 +2,20 @@
 
 This document captures the employee-first implementation plan using Appwrite backend and Next.js server APIs.
 
+### Current Implementation Status (2026-03-15)
+- Completed: Phase 1 Appwrite setup baseline (collections, indexes, bucket, env wiring).
+- Completed: Core Phase 2 and Phase 3 workflows for employee goals, approvals, check-ins, progress, timeline, and role-protected APIs.
+- Completed: Phase 4 basic AI assistance.
+	- Goal suggestion endpoint with explainability metadata.
+	- Check-in summary endpoint with explainability metadata.
+	- Per-user, per-cycle usage cap enforcement and tracking via ai_events.
+	- Manager check-ins UI integration for AI summary generation.
+- Completed: Phase 5 quality gates.
+	- Route protection and role checks on active APIs.
+	- Loading, empty, and error states on core employee/manager pages.
+	- Lint clean and production build successful.
+- Remaining: manual workflow QA pass with real seeded data and cross-role access validation in live-like environment.
+
 ### Scope for this MVP
 - Include: employee goals, manager approval, check-ins, progress tracking, basic AI assistance.
 - Exclude for now: Google Calendar/Meet integration, full review/rating engine, HR/leadership advanced analytics.

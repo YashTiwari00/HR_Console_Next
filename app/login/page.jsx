@@ -1,11 +1,10 @@
 "use client";
 
-import { login } from "@/services/authService";
+import { getUserRole, login } from "@/services/authService";
 import { Alert, Button, Card, Input } from "@/src/components/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getUserRole } from "@/services/authService";
+import { useCallback, useEffect, useState } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,7 +14,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [session, setSession] = useState(null);
 
-  const redirectUserByRole = async () => {
+  const redirectUserByRole = useCallback(async () => {
     const role = await getUserRole();
 
     if (role === "employee") {
@@ -29,17 +28,17 @@ export default function LoginPage() {
     if (role === "hr") {
       router.push("/hr");
     }
-  };
+  }, [router]);
 
   useEffect(() => {
     if (!session) return;
 
     redirectUserByRole();
-  }, [session, router]);
+  }, [session, redirectUserByRole]);
 
   useEffect(() => {
     redirectUserByRole();
-  }, []);
+  }, [redirectUserByRole]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -60,7 +59,7 @@ export default function LoginPage() {
       }
 
       setSession(loginSession);
-    } catch (error) {
+    } catch {
       setError("Login failed. Please check your credentials.");
     } finally {
       setLoading(false);

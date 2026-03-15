@@ -35,12 +35,22 @@ export async function login(email, password) {
   }
 }
 
+export async function logout() {
+  try {
+    await account.deleteSession("current");
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
 export async function getCurrentUser() {
   try {
     const user = await account.get();
 
     return user;
-  } catch (error) {
+  } catch {
     return null;
   }
 }

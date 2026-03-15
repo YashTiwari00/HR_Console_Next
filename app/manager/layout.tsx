@@ -1,59 +1,49 @@
 "use client";
 
-import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import {
-  Avatar,
-  Badge,
-  Button,
-  Card,
-  Divider,
-} from '@/src/components/ui';
-import { SidebarLayout, Stack } from '@/src/components/layout';
-import { logout } from '@/services/authService';
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { Avatar, Badge, Button, Card, Divider } from "@/src/components/ui";
+import { SidebarLayout, Stack } from "@/src/components/layout";
+import { logout } from "@/services/authService";
 
-interface EmployeeLayoutProps {
+interface ManagerLayoutProps {
   children: ReactNode;
 }
 
 const navItems = [
-  { label: 'Dashboard', href: '/employee', route: '/employee' },
-  { label: 'Goals Workspace', href: '/employee/goals', route: '/employee/goals' },
-  { label: 'Progress Updates', href: '/employee/progress', route: '/employee/progress' },
-  { label: 'Check-ins', href: '/employee/check-ins', route: '/employee/check-ins' },
-  { label: 'Cycle Timeline', href: '/employee/timeline', route: '/employee/timeline' },
+  { label: "Approval Queue", href: "/manager", route: "/manager" },
+  { label: "Check-ins", href: "/manager/check-ins", route: "/manager/check-ins" },
 ];
 
 const quickActions = [
-  { label: 'Create Draft Goal', href: '/employee/goals' },
-  { label: 'Submit Progress Update', href: '/employee/progress' },
-  { label: 'Plan Check-in', href: '/employee/check-ins' },
+  { label: "Review Pending Goals", href: "/manager" },
+  { label: "Close Planned Check-ins", href: "/manager/check-ins" },
 ];
 
-export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
+export default function ManagerLayout({ children }: ManagerLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [loggingOut, setLoggingOut] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   async function handleLogout() {
-    setLogoutError('');
+    setLogoutError("");
     setLoggingOut(true);
 
     try {
       const ok = await logout();
       if (!ok) {
-        setLogoutError('Unable to logout right now. Please try again.');
+        setLogoutError("Unable to logout right now. Please try again.");
         return;
       }
 
-      router.push('/login');
+      router.push("/login");
       router.refresh();
     } catch {
-      setLogoutError('Unable to logout right now. Please try again.');
+      setLogoutError("Unable to logout right now. Please try again.");
     } finally {
       setLoggingOut(false);
       setMenuOpen(false);
@@ -68,32 +58,31 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
       <Card className="border-transparent shadow-[var(--shadow-md)]">
         <div className="flex items-start justify-between gap-[var(--space-2)]">
           <div className="flex items-center gap-[var(--space-2)]">
-            <Avatar initials="ER" size="md" />
+            <Avatar initials="MN" size="md" />
             <div>
-              <p className="body font-medium text-[var(--color-text)]">Employee Performance</p>
-              <p className="caption">Goals and growth hub</p>
+              <p className="body font-medium text-[var(--color-text)]">Manager Console</p>
+              <p className="caption">Approvals and guidance</p>
             </div>
           </div>
-          <Badge variant="info">ACTIVE CYCLE</Badge>
+          <Badge variant="info">TEAM VIEW</Badge>
         </div>
       </Card>
 
       <Stack gap="2" className="px-[var(--space-1)]">
         {navItems.map((item) => {
           const isActive = pathname === item.route;
-
           return (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={
-              isActive
-                ? 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)]'
-                : 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 text-[var(--color-text)] hover:bg-[var(--color-surface)]'
-            }
-          >
-            {item.label}
-          </Link>
+            <Link
+              key={item.label}
+              href={item.href}
+              className={
+                isActive
+                  ? "inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)]"
+                  : "inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] px-4 py-2 body-sm font-medium transition-colors duration-150 text-[var(--color-text)] hover:bg-[var(--color-surface)]"
+              }
+            >
+              {item.label}
+            </Link>
           );
         })}
       </Stack>
@@ -114,15 +103,15 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
 
       <div className="mt-auto">
         <Card className="bg-[var(--color-bg)]">
-          <p className="caption mb-[var(--space-2)]">Cycle snapshot</p>
-          <p className="body font-medium">Keep updates flowing this week</p>
-          <p className="caption mt-[var(--space-1)]">Submit goals and plan your next check-in</p>
+          <p className="caption mb-[var(--space-2)]">Manager reminder</p>
+          <p className="body font-medium">Close pending approvals quickly</p>
+          <p className="caption mt-[var(--space-1)]">Fast feedback keeps employee momentum high</p>
         </Card>
 
         <Card className="mt-[var(--space-2)] bg-[var(--color-bg)]">
           <div className="flex items-center justify-between gap-[var(--space-2)]">
             <div className="flex items-center gap-[var(--space-2)]">
-              <Avatar initials="ER" size="sm" />
+              <Avatar initials="MN" size="sm" />
               <div>
                 <p className="body-sm font-medium text-[var(--color-text)]">Account</p>
                 <p className="caption">Profile and session options</p>
@@ -134,13 +123,13 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
               variant="secondary"
               onClick={() => setMenuOpen((prev) => !prev)}
             >
-              {menuOpen ? 'Close' : 'Open'}
+              {menuOpen ? "Close" : "Open"}
             </Button>
           </div>
 
           {menuOpen && (
             <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] p-[var(--space-2)]">
-              <p className="caption">Signed in as employee role</p>
+              <p className="caption">Signed in as manager role</p>
               <Button
                 type="button"
                 variant="danger"

@@ -1,4 +1,4 @@
-import { HTMLAttributes, ReactNode } from 'react';
+import { HTMLAttributes } from 'react';
 import { cn } from '@/src/lib/cn';
 import Divider from '@/src/components/ui/Divider';
 

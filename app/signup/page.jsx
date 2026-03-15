@@ -1,11 +1,10 @@
 "use client";
 
-import { signup } from "@/services/authService";
+import { getUserRole, signup } from "@/services/authService";
 import { Alert, Button, Card, Input } from "@/src/components/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getUserRole } from "@/services/authService";
+import { useCallback, useEffect, useState } from "react";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -17,7 +16,7 @@ export default function SignupPage() {
   const [success, setSuccess] = useState("");
   const [signedUpUser, setSignedUpUser] = useState(null);
 
-  const getRoleAndRedirect = async () => {
+  const getRoleAndRedirect = useCallback(async () => {
     try {
       const role = await getUserRole();
 
@@ -32,19 +31,19 @@ export default function SignupPage() {
       if (role === "hr") {
         router.push("/hr");
       }
-    } catch (error) {
-      console.log(error);
+    } catch {
+      // Keep user on signup if session role cannot be resolved yet.
     }
-  };
+  }, [router]);
   useEffect(() => {
     if (!signedUpUser) return;
 
     getRoleAndRedirect();
-  }, [signedUpUser, router]);
+  }, [signedUpUser, getRoleAndRedirect]);
 
   useEffect(() => {
     getRoleAndRedirect();
-  }, []);
+  }, [getRoleAndRedirect]);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -66,7 +65,7 @@ export default function SignupPage() {
       }
 
       setSignedUpUser(user);
-    } catch (error) {
+    } catch {
       setError("Signup failed. Please check details and try again.");
     } finally {
       setLoading(false);
