@@ -13,13 +13,21 @@ interface ManagerLayoutProps {
 }
 
 const navItems = [
-  { label: "Approval Queue", href: "/manager", route: "/manager" },
-  { label: "Check-ins", href: "/manager/check-ins", route: "/manager/check-ins" },
+  { label: "Dashboard", href: "/manager", route: "/manager" },
+  { label: "My Goals Workspace", href: "/manager/goals", route: "/manager/goals" },
+  { label: "My Progress Updates", href: "/manager/progress", route: "/manager/progress" },
+  { label: "Team Progress Updates", href: "/manager/team-progress", route: "/manager/team-progress" },
+  { label: "My Check-ins", href: "/manager/check-ins", route: "/manager/check-ins" },
+  { label: "My Cycle Timeline", href: "/manager/timeline", route: "/manager/timeline" },
+  { label: "Team Check-ins", href: "/manager/team-check-ins", route: "/manager/team-check-ins" },
+  { label: "Approval Queue", href: "/manager/approvals", route: "/manager/approvals" },
 ];
 
 const quickActions = [
-  { label: "Review Pending Goals", href: "/manager" },
-  { label: "Close Planned Check-ins", href: "/manager/check-ins" },
+  { label: "Create My Goal", href: "/manager/goals" },
+  { label: "Log My Progress", href: "/manager/progress" },
+  { label: "Review Team Progress", href: "/manager/team-progress" },
+  { label: "Review Pending Goals", href: "/manager/approvals" },
 ];
 
 export default function ManagerLayout({ children }: ManagerLayoutProps) {
@@ -70,7 +78,10 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
 
       <Stack gap="2" className="px-[var(--space-1)]">
         {navItems.map((item) => {
-          const isActive = pathname === item.route;
+          const isActive =
+            item.route === "/manager"
+              ? pathname === item.route
+              : pathname === item.route || pathname.startsWith(`${item.route}/`);
           return (
             <Link
               key={item.label}
@@ -105,7 +116,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
         <Card className="bg-[var(--color-bg)]">
           <p className="caption mb-[var(--space-2)]">Manager reminder</p>
           <p className="body font-medium">Close pending approvals quickly</p>
-          <p className="caption mt-[var(--space-1)]">Fast feedback keeps employee momentum high</p>
+          <p className="caption mt-[var(--space-1)]">Balance team coaching with your own cycle progress</p>
         </Card>
 
         <Card className="mt-[var(--space-2)] bg-[var(--color-bg)]">

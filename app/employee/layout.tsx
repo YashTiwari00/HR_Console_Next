@@ -80,7 +80,10 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
 
       <Stack gap="2" className="px-[var(--space-1)]">
         {navItems.map((item) => {
-          const isActive = pathname === item.route;
+          const isActive =
+            item.route === "/employee"
+              ? pathname === item.route
+              : pathname === item.route || pathname.startsWith(`${item.route}/`);
 
           return (
           <Link

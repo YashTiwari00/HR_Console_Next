@@ -10,6 +10,7 @@ Create these collections with the exact IDs below (recommended):
 - users
 - goals
 - goal_approvals
+- checkin_approvals
 - check_ins
 - progress_updates
 - goal_cycles
@@ -26,6 +27,9 @@ Create these collections with the exact IDs below (recommended):
 - domain (string, optional)
 - businessUnit (string, optional)
 - designation (string, optional)
+- managerAssignedAt (datetime, optional)
+- managerAssignedBy (string, optional)
+- assignmentVersion (integer, optional)
 
 #### goals
 - employeeId (string, required)
@@ -48,6 +52,14 @@ Create these collections with the exact IDs below (recommended):
 - comments (string, optional)
 - decidedAt (datetime, required)
 
+#### checkin_approvals
+- checkInId (string, required)
+- managerId (string, required)
+- hrId (string, required)
+- decision (string, required) values: approved, rejected, needs_changes
+- comments (string, optional)
+- decidedAt (datetime, required)
+
 #### check_ins
 - goalId (string, required)
 - employeeId (string, required)
@@ -58,6 +70,8 @@ Create these collections with the exact IDs below (recommended):
 - managerNotes (string, optional)
 - transcriptText (string, optional)
 - isFinalCheckIn (boolean, required, default false)
+- managerRating (integer, optional) min 1 max 5
+- ratedAt (datetime, optional)
 
 #### progress_updates
 - goalId (string, required)

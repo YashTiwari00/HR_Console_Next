@@ -39,6 +39,11 @@ export async function PATCH(request, context) {
     const managerNotes = (body.managerNotes || "").trim();
     const transcriptText = (body.transcriptText || "").trim();
     const isFinalCheckIn = Boolean(body.isFinalCheckIn);
+    const rawRating = body.managerRating;
+    const parsedRating =
+      rawRating === null || rawRating === undefined || rawRating === ""
+        ? null
+        : Number(rawRating);
 
     if (nextStatus !== CHECKIN_STATUSES.COMPLETED) {
       return Response.json(
@@ -51,17 +56,49 @@ export async function PATCH(request, context) {
       return Response.json({ data: checkIn });
     }
 
-    const updated = await databases.updateDocument(
-      databaseId,
-      appwriteConfig.checkInsCollectionId,
-      checkInId,
-      {
-        status: CHECKIN_STATUSES.COMPLETED,
-        managerNotes,
-        transcriptText,
-        isFinalCheckIn,
+    if (isFinalCheckIn) {
+      if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+        return Response.json(
+          { error: "Final check-in requires managerRating between 1 and 5." },
+          { status: 400 }
+        );
       }
-    );
+    }
+
+    const updatePayload = {
+      status: CHECKIN_STATUSES.COMPLETED,
+      managerNotes,
+      transcriptText,
+      isFinalCheckIn,
+      managerRating: isFinalCheckIn ? parsedRating : null,
+      ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
+    };
+
+    let updated;
+
+    try {
+      updated = await databases.updateDocument(
+        databaseId,
+        appwriteConfig.checkInsCollectionId,
+        checkInId,
+        updatePayload
+      );
+    } catch (error) {
+      if (
+        error?.message &&
+        String(error.message).toLowerCase().includes("unknown attribute")
+      ) {
+        return Response.json(
+          {
+            error:
+              "check_ins schema is missing managerRating and/or ratedAt. Add both attributes in Appwrite and retry.",
+          },
+          { status: 500 }
+        );
+      }
+
+      throw error;
+    }
 
     return Response.json({ data: updated });
   } catch (error) {

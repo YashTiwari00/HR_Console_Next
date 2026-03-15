@@ -20,6 +20,9 @@ export type { CheckboxProps } from './Checkbox';
 export { default as Divider } from './Divider';
 export type { DividerProps } from './Divider';
 
+export { default as Dropdown } from './Dropdown';
+export type { DropdownProps, DropdownOption } from './Dropdown';
+
 export { default as Input } from './Input';
 export type { InputProps } from './Input';
 

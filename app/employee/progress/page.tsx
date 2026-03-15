@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Select, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
 import {
   createProgressUpdate,
   fetchGoals,
@@ -134,10 +134,10 @@ export default function EmployeeProgressPage() {
 
       <Card title="Create Progress Update" description="Capture blockers, wins, and current status.">
         <form className="space-y-3" onSubmit={handleSubmit}>
-          <Select
+          <Dropdown
             label="Goal"
             value={form.goalId}
-            onChange={(event) => setForm((prev) => ({ ...prev, goalId: event.target.value }))}
+            onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
             options={goals.map((goal) => ({ value: goal.$id, label: goal.title }))}
             placeholder={goals.length ? undefined : "Create a goal first"}
             disabled={goals.length === 0}
@@ -153,10 +153,10 @@ export default function EmployeeProgressPage() {
               onChange={(event) => setForm((prev) => ({ ...prev, percentComplete: event.target.value }))}
               required
             />
-            <Select
+            <Dropdown
               label="RAG Status"
               value={form.ragStatus}
-              onChange={(event) => setForm((prev) => ({ ...prev, ragStatus: event.target.value }))}
+              onChange={(ragStatus) => setForm((prev) => ({ ...prev, ragStatus }))}
               options={ragOptions}
             />
           </Grid>

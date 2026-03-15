@@ -1,7 +1,9 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { CHECKIN_STATUSES, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { buildCheckInCode } from "@/lib/cycle";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
+import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 const VALID_STATUSES = Object.values(CHECKIN_STATUSES);
 
@@ -12,26 +14,96 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const goalId = searchParams.get("goalId");
+    const employeeId = (searchParams.get("employeeId") || "").trim();
 
-    const queries = [Query.orderDesc("scheduledAt"), Query.limit(100)];
+    const scope = (searchParams.get("scope") || "team").trim();
+
+    let documents = [];
 
     if (profile.role === "employee") {
-      queries.push(Query.equal("employeeId", profile.$id));
+      if (employeeId && employeeId !== profile.$id) {
+        return Response.json({ error: "Forbidden for requested employee." }, { status: 403 });
+      }
+
+      const result = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.checkInsCollectionId,
+        [
+          Query.equal("employeeId", profile.$id),
+          Query.orderDesc("scheduledAt"),
+          Query.limit(100),
+        ]
+      );
+      documents = result.documents;
     } else if (profile.role === "manager") {
-      queries.push(Query.equal("managerId", profile.$id));
+      await assertManagerCanAccessEmployee(databases, profile.$id, employeeId);
+
+      if (scope === "self") {
+        const selfResult = await databases.listDocuments(
+          databaseId,
+          appwriteConfig.checkInsCollectionId,
+          [
+            Query.equal("employeeId", profile.$id),
+            Query.orderDesc("scheduledAt"),
+            Query.limit(100),
+          ]
+        );
+        documents = selfResult.documents;
+      } else if (scope === "all") {
+        const [selfResult, teamResult] = await Promise.all([
+          databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
+            Query.equal("employeeId", profile.$id),
+            Query.orderDesc("scheduledAt"),
+            Query.limit(100),
+          ]),
+          databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
+            Query.equal("managerId", profile.$id),
+            Query.orderDesc("scheduledAt"),
+            Query.limit(100),
+          ]),
+        ]);
+
+        const merged = [...selfResult.documents];
+        const ids = new Set(selfResult.documents.map((item) => item.$id));
+
+        for (const item of teamResult.documents) {
+          if (!ids.has(item.$id)) {
+            ids.add(item.$id);
+            merged.push(item);
+          }
+        }
+
+        documents = merged;
+      } else {
+        const teamResult = await databases.listDocuments(
+          databaseId,
+          appwriteConfig.checkInsCollectionId,
+          [
+            Query.equal("managerId", profile.$id),
+            Query.orderDesc("scheduledAt"),
+            Query.limit(100),
+          ]
+        );
+        documents = teamResult.documents;
+      }
+    } else {
+      const result = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.checkInsCollectionId,
+        [Query.orderDesc("scheduledAt"), Query.limit(100)]
+      );
+      documents = result.documents;
     }
 
     if (goalId) {
-      queries.push(Query.equal("goalId", goalId));
+      documents = documents.filter((item) => item.goalId === goalId);
     }
 
-    const result = await databases.listDocuments(
-      databaseId,
-      appwriteConfig.checkInsCollectionId,
-      queries
-    );
+    if (employeeId) {
+      documents = documents.filter((item) => item.employeeId === employeeId);
+    }
 
-    return Response.json({ data: result.documents });
+    return Response.json({ data: documents.map((item) => ({ ...item, checkInCode: buildCheckInCode(item) })) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -45,7 +117,7 @@ export async function POST(request) {
     const body = await request.json();
     const goalId = (body.goalId || "").trim();
     const employeeId = (body.employeeId || profile.$id).trim();
-    const managerId = (body.managerId || profile.managerId || "").trim();
+    const managerIdInput = (body.managerId || "").trim();
     const scheduledAt = body.scheduledAt;
     const status = (body.status || CHECKIN_STATUSES.PLANNED).trim();
     const employeeNotes = body.employeeNotes || "";
@@ -54,9 +126,9 @@ export async function POST(request) {
     const isFinalCheckIn = Boolean(body.isFinalCheckIn);
     const attachmentIds = Array.isArray(body.attachmentIds) ? body.attachmentIds : [];
 
-    if (!goalId || !employeeId || !managerId || !scheduledAt) {
+    if (!goalId || !employeeId || !scheduledAt) {
       return Response.json(
-        { error: "goalId, employeeId, managerId and scheduledAt are required." },
+        { error: "goalId, employeeId and scheduledAt are required." },
         { status: 400 }
       );
     }
@@ -70,6 +142,15 @@ export async function POST(request) {
       appwriteConfig.goalsCollectionId,
       goalId
     );
+
+    const managerId = managerIdInput || String(goal.managerId || "").trim();
+
+    if (!managerId) {
+      return Response.json(
+        { error: "managerId is required and could not be resolved from goal." },
+        { status: 400 }
+      );
+    }
 
     if (profile.role === "employee" && goal.employeeId !== profile.$id) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
@@ -148,7 +229,7 @@ export async function POST(request) {
       }
     }
 
-    return Response.json({ data: checkIn }, { status: 201 });
+    return Response.json({ data: { ...checkIn, checkInCode: buildCheckInCode(checkIn) } }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

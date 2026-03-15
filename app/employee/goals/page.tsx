@@ -3,12 +3,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Select, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
 import {
   createGoal,
   fetchGoalFeedback,
   fetchGoals,
   fetchMe,
+  getCycleIdFromDate,
   getGoalSuggestions,
   GoalItem,
   GoalSuggestion,
@@ -36,7 +37,7 @@ export default function EmployeeGoalsPage() {
   const [goalForm, setGoalForm] = useState({
     title: "",
     description: "",
-    cycleId: "Q2-2026",
+    cycleId: getCycleIdFromDate(),
     frameworkType: "OKR",
     managerId: "",
     weightage: "20",
@@ -311,11 +312,11 @@ export default function EmployeeGoalsPage() {
               />
             </Grid>
             <Grid cols={1} colsMd={3} gap="2">
-              <Select
+              <Dropdown
                 label="Framework"
                 value={goalForm.frameworkType}
-                onChange={(event) =>
-                  setGoalForm((prev) => ({ ...prev, frameworkType: event.target.value }))
+                onChange={(frameworkType) =>
+                  setGoalForm((prev) => ({ ...prev, frameworkType }))
                 }
                 options={frameworkOptions}
               />
@@ -390,11 +391,11 @@ export default function EmployeeGoalsPage() {
                         setEditForm((prev) => ({ ...prev, cycleId: event.target.value }))
                       }
                     />
-                    <Select
+                    <Dropdown
                       label="Framework"
                       value={editForm.frameworkType}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, frameworkType: event.target.value }))
+                      onChange={(frameworkType) =>
+                        setEditForm((prev) => ({ ...prev, frameworkType }))
                       }
                       options={frameworkOptions}
                     />

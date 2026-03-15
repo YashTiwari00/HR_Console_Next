@@ -1,112 +1,58 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Stack } from "@/src/components/layout";
+import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Textarea } from "@/src/components/ui";
-import { account } from "@/lib/appwrite";
-
-type CheckInStatus = "planned" | "completed";
-
-interface ManagerCheckIn {
-  $id: string;
-  goalId: string;
-  employeeId: string;
-  managerId: string;
-  scheduledAt: string;
-  status: CheckInStatus;
-  employeeNotes?: string;
-  managerNotes?: string;
-  transcriptText?: string;
-  isFinalCheckIn?: boolean;
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  return date.toLocaleString();
-}
+import { Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Textarea } from "@/src/components/ui";
+import {
+  CheckInItem,
+  checkInStatusVariant,
+  createCheckIn,
+  fetchCheckIns,
+  fetchGoals,
+  formatDate,
+  getAttachmentDownloadPath,
+  GoalItem,
+  uploadAttachments,
+} from "@/app/employee/_lib/pmsClient";
 
 export default function ManagerCheckInsPage() {
-  const [rows, setRows] = useState<ManagerCheckIn[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState(false);
-  const [aiWorking, setAiWorking] = useState<Record<string, boolean>>({});
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
-  const [managerNotes, setManagerNotes] = useState<Record<string, string>>({});
-  const [transcriptText, setTranscriptText] = useState<Record<string, string>>({});
-  const [aiMeta, setAiMeta] = useState<
-    Record<string, { source: string; confidence: string; remaining?: number }>
-  >({});
-  const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
-  const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
+  const [form, setForm] = useState({
+    goalId: "",
+    scheduledAt: "",
+    employeeNotes: "",
+    isFinalCheckIn: false,
+  });
 
-  async function requestJson(url: string, init?: RequestInit) {
-    let jwtHeader: Record<string, string> = {};
+  const approvedGoals = goals.filter((goal) => goal.status === "approved");
 
-    try {
-      const jwt = await account.createJWT();
-      if (jwt?.jwt) {
-        jwtHeader = { "x-appwrite-jwt": jwt.jwt };
-      }
-    } catch {
-      // API will return unauthorized if no session/JWT.
-    }
-
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...jwtHeader,
-        ...(init?.headers || {}),
-      },
-    });
-
-    const payload = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(payload?.error || "Request failed.");
-    }
-
-    return payload;
-  }
-
-  const loadCheckIns = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [checkInsPayload, goalsPayload] = await Promise.all([
-        requestJson("/api/check-ins"),
-        requestJson("/api/goals"),
+      const [nextGoals, nextCheckIns] = await Promise.all([
+        fetchGoals("self"),
+        fetchCheckIns("self"),
       ]);
+      setGoals(nextGoals);
+      setCheckIns(nextCheckIns);
 
-      const data = (checkInsPayload.data || []) as ManagerCheckIn[];
-      const goals = (goalsPayload.data || []) as Array<{
-        $id: string;
-        cycleId?: string;
-        title?: string;
-      }>;
-
-      const cycleMap = goals.reduce<Record<string, string>>((acc, goal) => {
-        if (goal.cycleId) {
-          acc[goal.$id] = goal.cycleId;
+      if (nextGoals.length > 0) {
+        const eligible = nextGoals.filter((goal) => goal.status === "approved");
+        if (eligible.length > 0) {
+          setForm((prev) => ({ ...prev, goalId: prev.goalId || eligible[0].$id }));
         }
-        return acc;
-      }, {});
-
-      const titleMap = goals.reduce<Record<string, string>>((acc, goal) => {
-        if (goal.title) {
-          acc[goal.$id] = goal.title;
-        }
-        return acc;
-      }, {});
-
-      setRows(data);
-      setGoalCycleById(cycleMap);
-      setGoalTitleById(titleMap);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load check-ins.");
     } finally {
@@ -115,194 +61,180 @@ export default function ManagerCheckInsPage() {
   }, []);
 
   useEffect(() => {
-    loadCheckIns();
-  }, [loadCheckIns]);
+    loadData();
+  }, [loadData]);
 
-  async function handleComplete(event: FormEvent, row: ManagerCheckIn) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setWorking(true);
+    setSubmitting(true);
     setError("");
     setSuccess("");
 
     try {
-      await requestJson(`/api/check-ins/${row.$id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "completed",
-          managerNotes: managerNotes[row.$id] || "",
-          transcriptText: transcriptText[row.$id] || "",
-          isFinalCheckIn: false,
-        }),
+      const uploaded = selectedFiles.length > 0 ? await uploadAttachments(selectedFiles) : [];
+
+      await createCheckIn({
+        goalId: form.goalId,
+        scheduledAt: form.scheduledAt,
+        employeeNotes: form.employeeNotes,
+        status: "planned",
+        isFinalCheckIn: form.isFinalCheckIn,
+        attachmentIds: uploaded.map((item) => item.fileId),
       });
 
-      setSuccess("Check-in marked as completed.");
-      await loadCheckIns();
+      setForm((prev) => ({ ...prev, employeeNotes: "", isFinalCheckIn: false }));
+      setSelectedFiles([]);
+      setFileInputKey((prev) => prev + 1);
+      setSuccess("Check-in created.");
+      await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update check-in.");
+      setError(err instanceof Error ? err.message : "Failed to create check-in.");
     } finally {
-      setWorking(false);
-    }
-  }
-
-  async function handleGenerateSummary(row: ManagerCheckIn) {
-    const cycleId = goalCycleById[row.goalId];
-    const notesSource = (managerNotes[row.$id] || row.employeeNotes || "").trim();
-
-    if (!cycleId) {
-      setError("Cycle context not found for this goal. Refresh and try again.");
-      return;
-    }
-
-    if (!notesSource) {
-      setError("Add manager notes or ensure employee notes exist before generating summary.");
-      return;
-    }
-
-    setError("");
-    setAiWorking((prev) => ({ ...prev, [row.$id]: true }));
-
-    try {
-      const payload = await requestJson("/api/ai/checkin-summary", {
-        method: "POST",
-        body: JSON.stringify({
-          cycleId,
-          notes: notesSource,
-          goalTitle: goalTitleById[row.goalId] || row.goalId,
-        }),
-      });
-
-      const summary = payload?.data?.summary || "";
-      const highlights = Array.isArray(payload?.data?.highlights) ? payload.data.highlights : [];
-      const blockers = Array.isArray(payload?.data?.blockers) ? payload.data.blockers : [];
-      const nextActions = Array.isArray(payload?.data?.nextActions) ? payload.data.nextActions : [];
-
-      const composed = [
-        summary,
-        highlights.length ? `Highlights: ${highlights.join("; ")}` : "",
-        blockers.length ? `Blockers: ${blockers.join("; ")}` : "",
-        nextActions.length ? `Next actions: ${nextActions.join("; ")}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      setTranscriptText((prev) => ({
-        ...prev,
-        [row.$id]: composed,
-      }));
-
-      const usage = payload?.data?.usage;
-      const explainability = payload?.data?.explainability;
-
-      setAiMeta((prev) => ({
-        ...prev,
-        [row.$id]: {
-          source: explainability?.source || "extractive_summary",
-          confidence: explainability?.confidence || "medium",
-          remaining: typeof usage?.remaining === "number" ? usage.remaining : undefined,
-        },
-      }));
-
-      setSuccess("AI check-in summary generated. Review before marking completed.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate AI summary.");
-    } finally {
-      setAiWorking((prev) => ({ ...prev, [row.$id]: false }));
+      setSubmitting(false);
     }
   }
 
   return (
     <Stack gap="4">
       <PageHeader
-        title="Manager Check-ins"
-        subtitle="Track planned conversations and close completed sessions."
+        title="My Check-ins"
+        subtitle="Schedule and track your own coaching conversations."
         actions={
-          <Button variant="secondary" onClick={loadCheckIns} disabled={loading || working}>
+          <Button variant="secondary" onClick={loadData} disabled={loading || submitting}>
             Refresh
           </Button>
         }
       />
 
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
-      {success && (
-        <Alert variant="success" title="Saved" description={success} onDismiss={() => setSuccess("")} />
-      )}
+      {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
 
-      <Card title="Team Check-ins" description="Mark planned check-ins as completed with manager notes.">
-        <Stack gap="3">
-          {loading && <p className="caption">Loading check-ins...</p>}
-          {!loading && rows.length === 0 && <p className="caption">No check-ins available.</p>}
+      <Grid cols={1} colsLg={2} gap="3">
+        <Card title="Plan Check-in" description="Book the next touchpoint on one of your goals.">
+          <form className="space-y-3" onSubmit={handleSubmit}>
+            <Dropdown
+              label="Goal"
+              value={form.goalId}
+              onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
+              options={approvedGoals.map((goal) => ({ value: goal.$id, label: goal.title }))}
+              placeholder={approvedGoals.length ? undefined : "No approved goals available"}
+              disabled={approvedGoals.length === 0}
+            />
+            {approvedGoals.length === 0 && (
+              <p className="caption">
+                Check-ins open only after manager approves at least one goal.
+              </p>
+            )}
+            {approvedGoals.length === 0 && (
+              <p className="caption">
+                For manager-owned goals, approval is completed by HR.
+              </p>
+            )}
+            <Input
+              label="When"
+              type="datetime-local"
+              value={form.scheduledAt}
+              onChange={(event) => setForm((prev) => ({ ...prev, scheduledAt: event.target.value }))}
+              required
+            />
+            <Textarea
+              label="Notes"
+              value={form.employeeNotes}
+              onChange={(event) => setForm((prev) => ({ ...prev, employeeNotes: event.target.value }))}
+            />
 
-          {rows.map((row) => (
-            <form
-              key={row.$id}
-              onSubmit={(event) => handleComplete(event, row)}
-              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="body-sm text-[var(--color-text)]">{formatDate(row.scheduledAt)}</p>
-                <Badge variant={row.status === "completed" ? "success" : "info"}>{row.status}</Badge>
-              </div>
+            <Checkbox
+              label="Mark this as my final check-in for this goal"
+              description="Manager will be asked to provide a final rating when completing this check-in."
+              checked={form.isFinalCheckIn}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, isFinalCheckIn: event.target.checked }))
+              }
+            />
 
-              <div className="mt-2 flex flex-wrap gap-3">
-                <span className="caption">Goal: {row.goalId}</span>
-                <span className="caption">Employee: {row.employeeId}</span>
-              </div>
+            <div className="flex flex-col gap-2">
+              <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="checkin-files">
+                Proof Attachments (optional)
+              </label>
+              <input
+                key={fileInputKey}
+                id="checkin-files"
+                type="file"
+                multiple
+                accept=".png,.jpg,.jpeg,.pdf,.eml"
+                className="body-sm"
+                onChange={(event) => {
+                  const files = event.target.files ? Array.from(event.target.files) : [];
+                  setSelectedFiles(files);
+                }}
+              />
+              {selectedFiles.length > 0 && (
+                <p className="caption">Selected files: {selectedFiles.map((file) => file.name).join(", ")}</p>
+              )}
+            </div>
 
-              {row.employeeNotes && <p className="caption mt-2">Employee notes: {row.employeeNotes}</p>}
+            <Button type="submit" loading={submitting} disabled={!form.goalId || approvedGoals.length === 0}>
+              Create Check-in
+            </Button>
+          </form>
+        </Card>
 
-              {row.status === "planned" ? (
-                <div className="mt-3 space-y-2">
-                  <Textarea
-                    label="Manager Notes"
-                    value={managerNotes[row.$id] || ""}
-                    onChange={(event) =>
-                      setManagerNotes((prev) => ({ ...prev, [row.$id]: event.target.value }))
-                    }
-                    placeholder="Summary and coaching notes"
-                  />
+        <Card title="Check-in Activity" description="Planned and completed sessions.">
+          <Stack gap="2">
+            {loading && <p className="caption">Loading check-ins...</p>}
+            {!loading && checkIns.length === 0 && <p className="caption">No check-ins yet.</p>}
+            {checkIns.map((checkIn) => (
+              <div key={checkIn.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="body-sm text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
+                  <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>
+                </div>
+                <p className="caption mt-2">Goal: {checkIn.goalId}</p>
+                {checkIn.employeeNotes && <p className="caption mt-2">{checkIn.employeeNotes}</p>}
+                {checkIn.attachmentIds && checkIn.attachmentIds.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    <p className="caption">Attachments: {checkIn.attachmentIds.length}</p>
+                    {checkIn.attachmentIds.map((fileId) => (
+                      <a
+                        key={fileId}
+                        href={getAttachmentDownloadPath(fileId)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="caption text-[var(--color-primary)] hover:underline"
+                      >
+                        Open attachment {fileId.slice(0, 8)}
+                      </a>
+                    ))}
+                  </div>
+                )}
 
-                  <Textarea
-                    label="Transcript / Summary"
-                    value={transcriptText[row.$id] || ""}
-                    onChange={(event) =>
-                      setTranscriptText((prev) => ({ ...prev, [row.$id]: event.target.value }))
-                    }
-                    placeholder="Optional meeting transcript summary"
-                  />
+                {checkIn.status === "completed" && (
+                  <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                    {checkIn.managerNotes ? (
+                      <p className="caption">Reviewer notes: {checkIn.managerNotes}</p>
+                    ) : (
+                      <p className="caption">Reviewer notes: Not provided.</p>
+                    )}
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleGenerateSummary(row)}
-                      loading={Boolean(aiWorking[row.$id])}
-                    >
-                      Generate AI Summary
-                    </Button>
+                    {checkIn.transcriptText && (
+                      <p className="caption mt-1">Transcript summary: {checkIn.transcriptText}</p>
+                    )}
 
-                    {aiMeta[row.$id] && (
-                      <span className="caption">
-                        Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
-                        {typeof aiMeta[row.$id].remaining === "number"
-                          ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
-                          : ""}
-                      </span>
+                    {checkIn.isFinalCheckIn && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="success">Final check-in</Badge>
+                        {typeof checkIn.managerRating === "number" && (
+                          <span className="caption">Reviewer rating: {checkIn.managerRating}/5</span>
+                        )}
+                      </div>
                     )}
                   </div>
-
-                  <Button type="submit" loading={working}>Mark Completed</Button>
-                </div>
-              ) : (
-                <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                  {row.managerNotes && <p className="caption">Manager notes: {row.managerNotes}</p>}
-                  {row.transcriptText && <p className="caption mt-1">Transcript: {row.transcriptText}</p>}
-                </div>
-              )}
-            </form>
-          ))}
-        </Stack>
-      </Card>
+                )}
+              </div>
+            ))}
+          </Stack>
+        </Card>
+      </Grid>
     </Stack>
   );
 }

@@ -40,7 +40,7 @@ export async function GET(request, context) {
 export async function PUT(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee"]);
+    requireRole(profile, ["employee", "manager"]);
 
     const params = await context.params;
     const goalId = params.goalId;

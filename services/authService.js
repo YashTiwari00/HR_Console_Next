@@ -4,18 +4,21 @@ import { Query } from "appwrite";
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_DATABASE_ID;
 const USERS_TABLE = "users";
+const ALLOWED_ROLES = ["employee", "manager", "hr"];
 
-export async function signup(name, email, password) {
+export async function signup(name, email, password, role = "employee") {
   try {
     // STEP 1: Create auth account
     const user = await account.create(ID.unique(), email, password, name);
+
+    const safeRole = ALLOWED_ROLES.includes(role) ? role : "employee";
 
     // STEP 2: Create HR profile row
     await databases.createDocument(DATABASE_ID, USERS_TABLE, user.$id, {
       // $id: user.$id,
       name: name,
       email: email,
-      role: "employee",
+      role: safeRole,
       department: "engineering",
     });
 

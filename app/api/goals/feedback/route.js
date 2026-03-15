@@ -1,6 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
+import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 export async function GET(request) {
   try {
@@ -9,10 +10,16 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const goalId = searchParams.get("goalId");
+    const scope = (searchParams.get("scope") || "team").trim();
+    const employeeId = (searchParams.get("employeeId") || "").trim();
 
     let goalIds = [];
 
     if (profile.role === "employee") {
+      if (employeeId && employeeId !== profile.$id) {
+        return Response.json({ error: "Forbidden for requested employee." }, { status: 403 });
+      }
+
       const goals = await databases.listDocuments(
         databaseId,
         appwriteConfig.goalsCollectionId,
@@ -20,6 +27,55 @@ export async function GET(request) {
       );
 
       goalIds = goals.documents.map((doc) => doc.$id);
+    } else if (profile.role === "manager") {
+      await assertManagerCanAccessEmployee(databases, profile.$id, employeeId);
+
+      if (scope === "self") {
+        const goals = await databases.listDocuments(
+          databaseId,
+          appwriteConfig.goalsCollectionId,
+          [Query.equal("employeeId", profile.$id), Query.limit(200)]
+        );
+
+        goalIds = goals.documents.map((doc) => doc.$id);
+      } else if (scope === "all") {
+        const [selfGoals, teamGoals] = await Promise.all([
+          databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+            Query.equal("employeeId", profile.$id),
+            Query.limit(200),
+          ]),
+          databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+            Query.equal("managerId", profile.$id),
+            Query.limit(200),
+          ]),
+        ]);
+
+        goalIds = Array.from(
+          new Set([
+            ...selfGoals.documents.map((doc) => doc.$id),
+            ...teamGoals.documents.map((doc) => doc.$id),
+          ])
+        );
+      } else {
+        const goals = await databases.listDocuments(
+          databaseId,
+          appwriteConfig.goalsCollectionId,
+          [Query.equal("managerId", profile.$id), Query.limit(200)]
+        );
+
+        goalIds = goals.documents.map((doc) => doc.$id);
+      }
+
+      if (employeeId) {
+        const authorizedGoals = await databases.listDocuments(
+          databaseId,
+          appwriteConfig.goalsCollectionId,
+          [Query.equal("employeeId", employeeId), Query.limit(200)]
+        );
+
+        const authorizedGoalIds = new Set(authorizedGoals.documents.map((doc) => doc.$id));
+        goalIds = goalIds.filter((id) => authorizedGoalIds.has(id));
+      }
     }
 
     if (goalId) {

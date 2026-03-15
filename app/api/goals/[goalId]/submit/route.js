@@ -6,7 +6,7 @@ import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 export async function POST(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee"]);
+    requireRole(profile, ["employee", "manager"]);
 
     const params = await context.params;
     const goalId = params.goalId;

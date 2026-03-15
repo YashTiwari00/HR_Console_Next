@@ -10,9 +10,9 @@ import Button from '@/src/components/ui/Button';
 import Card from '@/src/components/ui/Card';
 import Checkbox from '@/src/components/ui/Checkbox';
 import Divider from '@/src/components/ui/Divider';
+import Dropdown from '@/src/components/ui/Dropdown';
 import Input from '@/src/components/ui/Input';
 import Modal from '@/src/components/ui/Modal';
-import Select from '@/src/components/ui/Select';
 import Skeleton from '@/src/components/ui/Skeleton';
 import Spinner from '@/src/components/ui/Spinner';
 import Textarea from '@/src/components/ui/Textarea';
@@ -411,7 +411,7 @@ export default function ComponentShowcase() {
           {/* ── Select ────────────────────────────────────────────────── */}
           <Section id="selects" title="Select">
             <Grid cols={1} colsMd={2} gap="3">
-              <Select
+              <Dropdown
                 label="Department"
                 placeholder="Choose a department…"
                 options={[
@@ -421,7 +421,7 @@ export default function ComponentShowcase() {
                   { value: 'marketing', label: 'Marketing' },
                 ]}
               />
-              <Select
+              <Dropdown
                 label="With error"
                 placeholder="Choose a department…"
                 options={[

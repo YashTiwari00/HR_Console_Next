@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Select, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Textarea } from "@/src/components/ui";
 import {
   CheckInItem,
   checkInStatusVariant,
@@ -30,6 +30,7 @@ export default function EmployeeCheckInsPage() {
     goalId: "",
     scheduledAt: "",
     employeeNotes: "",
+    isFinalCheckIn: false,
   });
 
   const approvedGoals = goals.filter((goal) => goal.status === "approved");
@@ -74,10 +75,11 @@ export default function EmployeeCheckInsPage() {
         scheduledAt: form.scheduledAt,
         employeeNotes: form.employeeNotes,
         status: "planned",
+        isFinalCheckIn: form.isFinalCheckIn,
         attachmentIds: uploaded.map((item) => item.fileId),
       });
 
-      setForm((prev) => ({ ...prev, employeeNotes: "" }));
+      setForm((prev) => ({ ...prev, employeeNotes: "", isFinalCheckIn: false }));
       setSelectedFiles([]);
       setFileInputKey((prev) => prev + 1);
       setSuccess("Check-in created.");
@@ -107,10 +109,10 @@ export default function EmployeeCheckInsPage() {
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Plan Check-in" description="Book the next touchpoint on one of your goals.">
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <Select
+            <Dropdown
               label="Goal"
               value={form.goalId}
-              onChange={(event) => setForm((prev) => ({ ...prev, goalId: event.target.value }))}
+              onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
               options={approvedGoals.map((goal) => ({ value: goal.$id, label: goal.title }))}
               placeholder={approvedGoals.length ? undefined : "No approved goals available"}
               disabled={approvedGoals.length === 0}
@@ -131,6 +133,15 @@ export default function EmployeeCheckInsPage() {
               label="Notes"
               value={form.employeeNotes}
               onChange={(event) => setForm((prev) => ({ ...prev, employeeNotes: event.target.value }))}
+            />
+
+            <Checkbox
+              label="Mark this as my final check-in for this goal"
+              description="Manager will be asked to provide a final rating when completing this check-in."
+              checked={form.isFinalCheckIn}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, isFinalCheckIn: event.target.checked }))
+              }
             />
 
             <div className="flex flex-col gap-2">
@@ -202,9 +213,12 @@ export default function EmployeeCheckInsPage() {
                     )}
 
                     {checkIn.isFinalCheckIn && (
-                      <Badge className="mt-2" variant="success">
-                        Final check-in
-                      </Badge>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="success">Final check-in</Badge>
+                        {typeof checkIn.managerRating === "number" && (
+                          <span className="caption">Manager rating: {checkIn.managerRating}/5</span>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

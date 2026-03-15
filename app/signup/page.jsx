@@ -1,16 +1,23 @@
 "use client";
 
 import { getUserRole, signup } from "@/services/authService";
-import { Alert, Button, Card, Input } from "@/src/components/ui";
+import { Alert, Button, Card, Dropdown, Input } from "@/src/components/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+
+const ROLE_OPTIONS = [
+  { value: "employee", label: "Employee" },
+  { value: "manager", label: "Manager" },
+  { value: "hr", label: "HR" },
+];
 
 export default function SignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("employee");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -50,14 +57,14 @@ export default function SignupPage() {
     setError("");
     setSuccess("");
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !role) {
       setError("All fields are required.");
       return;
     }
 
     setLoading(true);
     try {
-      const user = await signup(name, email, password);
+      const user = await signup(name, email, password, role);
 
       if (!user) {
         setError("Signup failed. Please check details and try again.");
@@ -75,6 +82,7 @@ export default function SignupPage() {
     setName("");
     setEmail("");
     setPassword("");
+    setRole("employee");
   };
 
   return (
@@ -118,6 +126,14 @@ export default function SignupPage() {
               placeholder="Enter a strong password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+            />
+
+            <Dropdown
+              label="Role"
+              value={role}
+              onChange={setRole}
+              options={ROLE_OPTIONS}
+              helperText="This decides which dashboard the new account lands on."
             />
 
             <Button type="submit" loading={loading}>

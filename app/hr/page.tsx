@@ -1,0 +1,235 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Grid, Stack } from "@/src/components/layout";
+import { DataTable, PageHeader } from "@/src/components/patterns";
+import type { DataTableColumn } from "@/src/components/patterns";
+import { Alert, Badge, Button, Card } from "@/src/components/ui";
+import { fetchHrManagers, HrManagerSummary } from "@/app/employee/_lib/pmsClient";
+
+interface HrManagerRow extends Record<string, unknown> {
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  teamSize: number;
+  teamGoals: number;
+  teamAverageProgress: number;
+  pendingManagerGoalApprovals: number;
+  pendingCheckInApprovals: number;
+}
+
+export default function HrDashboardPage() {
+  const [rows, setRows] = useState<HrManagerSummary[]>([]);
+  const [selectedManagerId, setSelectedManagerId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const nextRows = await fetchHrManagers();
+      setRows(nextRows);
+
+      if (nextRows.length > 0) {
+        setSelectedManagerId((prev) => {
+          if (prev && nextRows.some((item) => item.managerId === prev)) {
+            return prev;
+          }
+
+          return nextRows[0].managerId;
+        });
+      } else {
+        setSelectedManagerId("");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load HR dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  const managerRows = useMemo<HrManagerRow[]>(
+    () =>
+      rows.map((item) => ({
+        managerId: item.managerId,
+        managerName: item.managerName,
+        managerEmail: item.managerEmail,
+        teamSize: item.teamSize,
+        teamGoals: item.teamGoals,
+        teamAverageProgress: item.teamAverageProgress,
+        pendingManagerGoalApprovals: item.pendingManagerGoalApprovals,
+        pendingCheckInApprovals: item.pendingCheckInApprovals,
+      })),
+    [rows]
+  );
+
+  const selectedManager = useMemo(
+    () => rows.find((item) => item.managerId === selectedManagerId) || null,
+    [rows, selectedManagerId]
+  );
+
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, item) => {
+          acc.managers += 1;
+          acc.pendingGoalApprovals += item.pendingManagerGoalApprovals;
+          acc.pendingCheckInApprovals += item.pendingCheckInApprovals;
+          acc.teamGoals += item.teamGoals;
+          return acc;
+        },
+        { managers: 0, pendingGoalApprovals: 0, pendingCheckInApprovals: 0, teamGoals: 0 }
+      ),
+    [rows]
+  );
+
+  const columns = useMemo<DataTableColumn<HrManagerRow>[]>(
+    () => [
+      {
+        key: "managerName",
+        header: "Manager",
+        render: (_value: unknown, row: HrManagerRow) => (
+          <div>
+            <p className="body-sm font-medium text-[var(--color-text)]">{row.managerName}</p>
+            <p className="caption">{row.managerEmail}</p>
+          </div>
+        ),
+      },
+      {
+        key: "teamSize",
+        header: "Team",
+        align: "center",
+      },
+      {
+        key: "teamAverageProgress",
+        header: "Team Progress",
+        align: "center",
+        render: (_value: unknown, row: HrManagerRow) => <span>{row.teamAverageProgress}%</span>,
+      },
+      {
+        key: "pendingManagerGoalApprovals",
+        header: "Goals Pending",
+        align: "center",
+        render: (_value: unknown, row: HrManagerRow) => (
+          <Badge variant={row.pendingManagerGoalApprovals > 0 ? "warning" : "success"}>
+            {row.pendingManagerGoalApprovals}
+          </Badge>
+        ),
+      },
+      {
+        key: "pendingCheckInApprovals",
+        header: "Check-ins Pending",
+        align: "center",
+        render: (_value: unknown, row: HrManagerRow) => (
+          <Badge variant={row.pendingCheckInApprovals > 0 ? "warning" : "success"}>
+            {row.pendingCheckInApprovals}
+          </Badge>
+        ),
+      },
+      {
+        key: "managerId",
+        header: "Action",
+        align: "right",
+        render: (_value: unknown, row: HrManagerRow) => (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={row.managerId === selectedManagerId ? "primary" : "secondary"}
+              onClick={() => setSelectedManagerId(row.managerId)}
+            >
+              {row.managerId === selectedManagerId ? "Expanded" : "Expand"}
+            </Button>
+            <Link href={`/hr/managers/${encodeURIComponent(row.managerId)}`}>
+              <Button type="button" size="sm" variant="secondary">
+                Open
+              </Button>
+            </Link>
+          </div>
+        ),
+      },
+    ],
+    [selectedManagerId]
+  );
+
+  return (
+    <Stack gap="4">
+      <PageHeader
+        title="HR Dashboard"
+        subtitle="Monitor manager-level team progress, approvals, and check-in cadence across the organization."
+        actions={
+          <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
+            Refresh
+          </Button>
+        }
+      />
+
+      {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
+
+      <Grid cols={1} colsMd={4} gap="3">
+        <Card title="Managers Tracked">
+          <p className="heading-xl">{loading ? "..." : totals.managers}</p>
+        </Card>
+        <Card title="Team Goals">
+          <p className="heading-xl">{loading ? "..." : totals.teamGoals}</p>
+        </Card>
+        <Card title="Pending Manager Goals">
+          <p className="heading-xl">{loading ? "..." : totals.pendingGoalApprovals}</p>
+        </Card>
+        <Card title="Pending Manager Check-ins">
+          <p className="heading-xl">{loading ? "..." : totals.pendingCheckInApprovals}</p>
+        </Card>
+      </Grid>
+
+      <Card title="Managers Overview" description="Expand a manager for quick team preview or open full drill-down.">
+        <DataTable
+          columns={columns}
+          rows={managerRows}
+          loading={loading}
+          rowKey={(row) => row.managerId}
+          emptyMessage="No managers available yet."
+        />
+      </Card>
+
+      <Card title="Expanded Manager Snapshot" description="Quick preview of team members and pending governance actions.">
+        <Stack gap="2">
+          {!loading && !selectedManager && <p className="caption">Select a manager row to preview their team.</p>}
+
+          {selectedManager && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="info">Manager: {selectedManager.managerName}</Badge>
+                <Badge variant="default">Team: {selectedManager.teamSize}</Badge>
+                <Badge variant="warning">Pending Goals: {selectedManager.pendingManagerGoalApprovals}</Badge>
+                <Badge variant="warning">Pending Check-ins: {selectedManager.pendingCheckInApprovals}</Badge>
+              </div>
+
+              {selectedManager.teamMembers.length === 0 ? (
+                <p className="caption">No team members mapped yet.</p>
+              ) : (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {selectedManager.teamMembers.map((member) => (
+                    <div
+                      key={member.$id}
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2"
+                    >
+                      <p className="body-sm text-[var(--color-text)]">{member.name || member.email || member.$id}</p>
+                      <p className="caption">{member.email || "No email"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </Stack>
+      </Card>
+    </Stack>
+  );
+}

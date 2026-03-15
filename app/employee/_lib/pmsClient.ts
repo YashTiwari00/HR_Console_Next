@@ -24,6 +24,7 @@ export interface GoalItem {
 
 export interface CheckInItem {
   $id: string;
+  checkInCode?: string;
   goalId: string;
   employeeId?: string;
   managerId?: string;
@@ -33,6 +34,8 @@ export interface CheckInItem {
   managerNotes?: string;
   transcriptText?: string;
   isFinalCheckIn?: boolean;
+  managerRating?: number;
+  ratedAt?: string;
   attachmentIds?: string[];
 }
 
@@ -52,6 +55,73 @@ export interface UploadedAttachment {
   name: string;
   mimeType: string;
   sizeOriginal: number;
+}
+
+export type ManagerScope = "self" | "team" | "all";
+
+export interface TeamMemberItem {
+  $id: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  managerId?: string;
+  managerAssignedAt?: string | null;
+  managerAssignedBy?: string;
+  assignmentVersion?: number;
+}
+
+export interface HrManagerSummary {
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  teamSize: number;
+  teamGoals: number;
+  teamAverageProgress: number;
+  plannedCheckIns: number;
+  completedCheckIns: number;
+  pendingManagerGoalApprovals: number;
+  pendingCheckInApprovals: number;
+  teamMembers: TeamMemberItem[];
+}
+
+export interface HrEmployeeDrilldown {
+  employee: TeamMemberItem;
+  goals: GoalItem[];
+  progressUpdates: ProgressUpdateItem[];
+  checkIns: CheckInItem[];
+}
+
+export interface HrManagerDetail {
+  manager: TeamMemberItem;
+  summary: HrManagerSummary;
+  employees: HrEmployeeDrilldown[];
+}
+
+export type CheckInApprovalDecision = "approved" | "rejected" | "needs_changes";
+
+export interface HrCheckInApprovalItem {
+  checkInId: string;
+  goalId: string;
+  goalTitle: string;
+  managerId: string;
+  managerName: string;
+  employeeId: string;
+  employeeName: string;
+  scheduledAt: string;
+  completedAt?: string;
+  status: "planned" | "completed";
+  managerNotes?: string;
+  transcriptText?: string;
+  isFinalCheckIn?: boolean;
+  managerRating?: number;
+  reviewStatus: "pending" | CheckInApprovalDecision;
+  latestReview?: {
+    decision: CheckInApprovalDecision;
+    comments?: string;
+    decidedAt: string;
+    hrId: string;
+  };
 }
 
 async function getJwtHeader() {
@@ -154,8 +224,33 @@ export async function uploadAttachments(files: File[]) {
   return uploaded;
 }
 
-export async function fetchGoals() {
-  const payload = await requestJson("/api/goals");
+function withListQuery(input?: {
+  goalId?: string;
+  scope?: ManagerScope;
+  employeeId?: string;
+}) {
+  if (!input?.goalId && !input?.scope && !input?.employeeId) return "";
+
+  const params = new URLSearchParams();
+
+  if (input?.goalId) {
+    params.set("goalId", input.goalId);
+  }
+
+  if (input?.scope) {
+    params.set("scope", input.scope);
+  }
+
+  if (input?.employeeId) {
+    params.set("employeeId", input.employeeId);
+  }
+
+  return `?${params.toString()}`;
+}
+
+export async function fetchGoals(scope?: ManagerScope, employeeId?: string) {
+  const query = withListQuery({ scope, employeeId });
+  const payload = await requestJson(`/api/goals${query}`);
   return ((payload.data || []) as Array<GoalItem & { processPercent?: number }>).map(
     (goal) => ({
       ...goal,
@@ -164,25 +259,103 @@ export async function fetchGoals() {
   );
 }
 
-export async function fetchCheckIns() {
-  const payload = await requestJson("/api/check-ins");
+export async function fetchCheckIns(scope?: ManagerScope, employeeId?: string) {
+  const query = withListQuery({ scope, employeeId });
+  const payload = await requestJson(`/api/check-ins${query}`);
   return (payload.data || []) as CheckInItem[];
 }
 
-export async function fetchProgressUpdates(goalId?: string) {
-  const query = goalId ? `?goalId=${encodeURIComponent(goalId)}` : "";
+export async function fetchProgressUpdates(
+  goalId?: string,
+  scope?: ManagerScope,
+  employeeId?: string
+) {
+  const query = withListQuery({ goalId, scope, employeeId });
   const payload = await requestJson(`/api/progress-updates${query}`);
   return (payload.data || []) as ProgressUpdateItem[];
 }
 
-export async function fetchGoalFeedback(goalId?: string) {
-  const query = goalId ? `?goalId=${encodeURIComponent(goalId)}` : "";
+export async function fetchGoalFeedback(
+  goalId?: string,
+  scope?: ManagerScope,
+  employeeId?: string
+) {
+  const query = withListQuery({ goalId, scope, employeeId });
   const payload = await requestJson(`/api/goals/feedback${query}`);
   return (payload.data || []) as GoalFeedbackItem[];
 }
 
+export async function fetchTeamMembers(managerId?: string) {
+  const query = managerId ? `?managerId=${encodeURIComponent(managerId)}` : "";
+  const payload = await requestJson(`/api/team-members${query}`);
+  return (payload.data || []) as TeamMemberItem[];
+}
+
+export async function fetchTeamAssignments(managerId?: string) {
+  const query = managerId ? `?managerId=${encodeURIComponent(managerId)}` : "";
+  const payload = await requestJson(`/api/team-assignments${query}`);
+  return (payload.data || []) as TeamMemberItem[];
+}
+
+export async function assignEmployeeToManager(input: {
+  employeeId: string;
+  managerId: string;
+}) {
+  const payload = await requestJson("/api/team-assignments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as TeamMemberItem;
+}
+
+export async function updateEmployeeManagerAssignment(employeeId: string, managerId: string) {
+  const payload = await requestJson(`/api/team-assignments/${encodeURIComponent(employeeId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ managerId }),
+  });
+
+  return payload?.data as TeamMemberItem;
+}
+
+export async function removeEmployeeManagerAssignment(employeeId: string) {
+  const payload = await requestJson(`/api/team-assignments/${encodeURIComponent(employeeId)}`, {
+    method: "DELETE",
+  });
+
+  return payload?.data as TeamMemberItem;
+}
+
 export async function fetchMe() {
   const payload = await requestJson("/api/me");
+  return payload?.data;
+}
+
+export async function fetchHrManagers() {
+  const payload = await requestJson("/api/hr/managers");
+  return (payload?.data || []) as HrManagerSummary[];
+}
+
+export async function fetchHrManagerDetail(managerId: string) {
+  const payload = await requestJson(`/api/hr/managers/${encodeURIComponent(managerId)}`);
+  return payload?.data as HrManagerDetail;
+}
+
+export async function fetchHrCheckInApprovals(status: "pending" | "approved" | "rejected" | "needs_changes" | "all" = "pending") {
+  const payload = await requestJson(`/api/hr/checkin-approvals?status=${encodeURIComponent(status)}`);
+  return (payload?.data || []) as HrCheckInApprovalItem[];
+}
+
+export async function submitHrCheckInApproval(input: {
+  checkInId: string;
+  decision: CheckInApprovalDecision;
+  comments?: string;
+}) {
+  const payload = await requestJson("/api/hr/checkin-approvals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
   return payload?.data;
 }
 
@@ -243,6 +416,7 @@ export async function createCheckIn(input: {
   scheduledAt: string;
   employeeNotes?: string;
   status?: "planned" | "completed";
+  isFinalCheckIn?: boolean;
   attachmentIds?: string[];
 }) {
   return requestJson("/api/check-ins", {
@@ -291,9 +465,25 @@ export function checkInStatusVariant(status: "planned" | "completed") {
 export function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return value;
-  return date.toLocaleString();
+  return `${new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  }).format(date)} UTC`;
 }
 
 export function getAttachmentDownloadPath(fileId: string) {
   return `/api/attachments/${encodeURIComponent(fileId)}/download`;
+}
+
+export function getCycleIdFromDate(input?: string | Date) {
+  const date = input ? new Date(input) : new Date();
+  const safeDate = Number.isNaN(date.valueOf()) ? new Date() : date;
+  const year = safeDate.getUTCFullYear();
+  const quarter = Math.floor(safeDate.getUTCMonth() / 3) + 1;
+  return `Q${quarter}-${year}`;
 }

@@ -14,7 +14,12 @@ This document captures the employee-first implementation plan using Appwrite bac
 	- Route protection and role checks on active APIs.
 	- Loading, empty, and error states on core employee/manager pages.
 	- Lint clean and production build successful.
+- Completed: Check-in completion enhancement.
+	- Employee can mark a planned check-in as final for a goal.
+	- Manager must provide a 1-5 rating when completing a final check-in.
+	- Server-side validation added for final-check-in rating requirements.
 - Remaining: manual workflow QA pass with real seeded data and cross-role access validation in live-like environment.
+- Remaining: add Appwrite check_ins attributes managerRating (integer) and ratedAt (datetime) in environments where schema is not yet updated.
 
 ### Scope for this MVP
 - Include: employee goals, manager approval, check-ins, progress tracking, basic AI assistance.
@@ -84,7 +89,7 @@ This document captures the employee-first implementation plan using Appwrite bac
 - users: managerId, domain, businessUnit, designation
 - goals: employeeId, managerId, cycleId, frameworkType, title, description, weightage, status, progressPercent, dueDate, lineageRef, aiSuggested, timestamps
 - goal_approvals: goalId, managerId, decision, comments, decidedAt
-- check_ins: goalId, employeeId, managerId, scheduledAt, status, notes, transcriptText, isFinalCheckIn
+- check_ins: goalId, employeeId, managerId, scheduledAt, status, notes, transcriptText, isFinalCheckIn, managerRating, ratedAt
 - progress_updates: goalId, employeeId, percentComplete, ragStatus, updateText, attachmentIds, createdAt
 - goal_cycles: name, periodType, startDate, endDate, state
 - ai_events: userId, featureType, cycleId, requestCount, lastUsedAt, metadata
