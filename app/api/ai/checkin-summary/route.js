@@ -1,13 +1,6 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-
-function sentenceListFromText(value) {
-  return value
-    .split(/\n|\.|\!/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .slice(0, 6);
-}
+import { callOpenRouter } from "@/lib/openrouter";
 
 export async function POST(request) {
   try {
@@ -33,31 +26,35 @@ export async function POST(request) {
       featureType: "checkin_summary",
     });
 
-    const extracted = sentenceListFromText(notes);
-    const highlights = extracted.slice(0, 2);
-    const blockers = extracted
-      .filter((line) => /block|risk|delay|depend|issue/i.test(line))
-      .slice(0, 2);
-    const nextActions = extracted
-      .filter((line) => /next|will|plan|action|follow/i.test(line))
-      .slice(0, 3);
+    const raw = await callOpenRouter({
+      messages: [
+        {
+          role: "system",
+          content: "You are a performance management assistant. Respond with valid JSON only.",
+        },
+        {
+          role: "user",
+          content: `Summarise this check-in for goal "${goalTitle || "this goal"}":
+"${notes}"
 
-    const summary =
-      `Check-in summary for ${goalTitle || "selected goal"}: ` +
-      (highlights[0] || "Progress discussed with focus on current outcomes.");
+Return ONLY this JSON shape:
+{"summary":"one sentence summary","highlights":["...","..."],"blockers":["..."],"nextActions":["...","..."]}`,
+        },
+      ],
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(raw);
 
     return Response.json({
       data: {
-        summary,
-        highlights: highlights.length ? highlights : ["Progress milestones reviewed."],
-        blockers: blockers.length ? blockers : ["No major blockers explicitly identified."],
-        nextActions: nextActions.length
-          ? nextActions
-          : ["Confirm next milestone and owner before the next check-in."],
-        explainability: {
-          source: "extractive_summary",
-          confidence: "medium",
-        },
+        summary: parsed.summary ?? "Check-in progress reviewed.",
+        highlights: parsed.highlights?.length ? parsed.highlights : ["Progress milestones reviewed."],
+        blockers: parsed.blockers?.length ? parsed.blockers : ["No major blockers identified."],
+        nextActions: parsed.nextActions?.length
+          ? parsed.nextActions
+          : ["Confirm next milestone before the next check-in."],
+        explainability: { source: "openrouter_llm", confidence: "high" },
         usage,
       },
     });

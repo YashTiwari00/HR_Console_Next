@@ -8,6 +8,7 @@ import {
   Avatar,
   Button,
   Card,
+  ChatBot,
   Divider,
 } from '@/src/components/ui';
 import { SidebarLayout, Stack } from '@/src/components/layout';
@@ -200,12 +201,15 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
   );
 
   return (
-    <SidebarLayout sidebar={sidebar} sidebarWidth="min(300px, 82vw)">
-      <div className="min-h-full bg-[linear-gradient(180deg,var(--color-bg)_0%,var(--color-surface)_100%)]">
-        <div className="mx-auto w-full max-w-7xl px-[var(--space-3)] py-[var(--space-4)] md:px-[var(--space-5)] md:py-[var(--space-5)]">
-          {children}
+    <>
+      <SidebarLayout sidebar={sidebar} sidebarWidth="min(300px, 82vw)">
+        <div className="min-h-full bg-[linear-gradient(180deg,var(--color-bg)_0%,var(--color-surface)_100%)]">
+          <div className="mx-auto w-full max-w-7xl px-[var(--space-3)] py-[var(--space-4)] md:px-[var(--space-5)] md:py-[var(--space-5)]">
+            {children}
+          </div>
         </div>
-      </div>
-    </SidebarLayout>
+      </SidebarLayout>
+      <ChatBot role="employee" userName={userName} />
+    </>
   );
 }

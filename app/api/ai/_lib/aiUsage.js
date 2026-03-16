@@ -36,7 +36,7 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
       appwriteConfig.aiEventsCollectionId,
       existing.$id,
       {
-        requestCount: used,
+        requestCount: String(used),
         lastUsedAt: new Date().toISOString(),
       }
     );
@@ -58,7 +58,7 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
       userId,
       featureType,
       cycleId,
-      requestCount: 1,
+      requestCount: "1",
       lastUsedAt: new Date().toISOString(),
       metadata: "{}",
     }
