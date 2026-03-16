@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -36,6 +36,28 @@ export default function ManagerPage() {
 
   const [decision, setDecision] = useState<Record<string, ApprovalDecision>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [employeeApprovalQuery, setEmployeeApprovalQuery] = useState("");
+
+  const normalizedEmployeeApprovalQuery = employeeApprovalQuery.trim().toLowerCase();
+
+  const filteredRows = useMemo(() => {
+    if (!normalizedEmployeeApprovalQuery) return rows;
+
+    return rows.filter((goal) => {
+      const searchableText = [
+        goal.title,
+        goal.description,
+        goal.employeeId,
+        goal.managerId,
+        goal.cycleId,
+        goal.status,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedEmployeeApprovalQuery);
+    });
+  }, [rows, normalizedEmployeeApprovalQuery]);
 
   async function requestJson(url: string, init?: RequestInit) {
     let jwtHeader: Record<string, string> = {};
@@ -139,103 +161,118 @@ export default function ManagerPage() {
 
       <Card title="Pending Submitted Goals" description="Only submitted goals are shown here.">
         <Stack gap="3">
+          <Input
+            label="Search employee approvals"
+            value={employeeApprovalQuery}
+            onChange={(event) => setEmployeeApprovalQuery(event.target.value)}
+            placeholder="Search by goal, employee, cycle, or status"
+          />
+
           {loading && <p className="caption">Loading approval queue...</p>}
 
-          {!loading && rows.length === 0 && (
-            <p className="caption">No submitted goals waiting for approval.</p>
+          {!loading && filteredRows.length === 0 && (
+            <p className="caption">
+              {normalizedEmployeeApprovalQuery
+                ? "No employee approvals match your search."
+                : "No submitted goals waiting for approval."}
+            </p>
           )}
 
-          {rows.map((goal) => {
-            const selected = decision[goal.$id] || "approved";
+          <div className="max-h-[420px] overflow-y-auto pr-1">
+            <Stack gap="3">
+              {filteredRows.map((goal) => {
+                const selected = decision[goal.$id] || "approved";
 
-            return (
-              <form
-                key={goal.$id}
-                onSubmit={(event) => handleDecision(event, goal.$id)}
-                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
-                    <p className="caption mt-1">{goal.description}</p>
-                  </div>
-                  <Badge variant="info">{goal.status}</Badge>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
-                  <span className="caption">Employee: {goal.employeeId}</span>
-                  <span className="caption">Cycle: {goal.cycleId}</span>
-                  <span className="caption">Weightage: {goal.weightage}%</span>
-                  <span className="caption">
-                    Progress: {goal.progressPercent ?? goal.processPercent ?? 0}%
-                  </span>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={selected === "approved" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "approved",
-                      }))
-                    }
+                return (
+                  <form
+                    key={goal.$id}
+                    onSubmit={(event) => handleDecision(event, goal.$id)}
+                    className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
                   >
-                    Approve
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "needs_changes" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "needs_changes",
-                      }))
-                    }
-                  >
-                    Needs Changes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "rejected" ? "danger" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "rejected",
-                      }))
-                    }
-                  >
-                    Reject
-                  </Button>
-                  <Badge variant={decisionBadge(selected)}>{selected}</Badge>
-                </div>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
+                        <p className="caption mt-1">{goal.description}</p>
+                      </div>
+                      <Badge variant="info">{goal.status}</Badge>
+                    </div>
 
-                <div className="mt-3">
-                  <Textarea
-                    label="Manager Comments"
-                    value={comments[goal.$id] || ""}
-                    onChange={(event) =>
-                      setComments((prev) => ({
-                        ...prev,
-                        [goal.$id]: event.target.value,
-                      }))
-                    }
-                    placeholder="Add guidance for the employee"
-                  />
-                </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
+                      <span className="caption">Employee: {goal.employeeId}</span>
+                      <span className="caption">Cycle: {goal.cycleId}</span>
+                      <span className="caption">Weightage: {goal.weightage}%</span>
+                      <span className="caption">
+                        Progress: {goal.progressPercent ?? goal.processPercent ?? 0}%
+                      </span>
+                    </div>
 
-                <div className="mt-3">
-                  <Button type="submit" loading={working}>
-                    Save Decision
-                  </Button>
-                </div>
-              </form>
-            );
-          })}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={selected === "approved" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "approved",
+                          }))
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "needs_changes" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "needs_changes",
+                          }))
+                        }
+                      >
+                        Needs Changes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "rejected" ? "danger" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "rejected",
+                          }))
+                        }
+                      >
+                        Reject
+                      </Button>
+                      <Badge variant={decisionBadge(selected)}>{selected}</Badge>
+                    </div>
+
+                    <div className="mt-3">
+                      <Textarea
+                        label="Manager Comments"
+                        value={comments[goal.$id] || ""}
+                        onChange={(event) =>
+                          setComments((prev) => ({
+                            ...prev,
+                            [goal.$id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Add guidance for the employee"
+                      />
+                    </div>
+
+                    <div className="mt-3">
+                      <Button type="submit" loading={working}>
+                        Save Decision
+                      </Button>
+                    </div>
+                  </form>
+                );
+              })}
+            </Stack>
+          </div>
         </Stack>
       </Card>
     </Stack>

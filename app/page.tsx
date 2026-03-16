@@ -540,25 +540,25 @@ export default function Home() {
   const dotRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const [checkingSession, setCheckingSession] = useState(false);
   const [sessionState, setSessionState] = useState<"guest" | "profile-missing">("guest");
 
   /* session check */
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const role = (await getUserRole()) as AppRole | null;
-        if (!cancelled && role) { router.replace(routeForRole(role)); return; }
-        const user = await getCurrentUser();
-        if (!cancelled) setSessionState(user ? "profile-missing" : "guest");
-      } finally {
-        if (!cancelled) setCheckingSession(false);
-      }
-    }
-    check();
-    return () => { cancelled = true; };
-  }, [router]);
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   async function check() {
+  //     try {
+  //       const role = (await getUserRole()) as AppRole | null;
+  //       if (!cancelled && role) { router.replace(routeForRole(role)); return; }
+  //       const user = await getCurrentUser();
+  //       if (!cancelled) setSessionState(user ? "profile-missing" : "guest");
+  //     } finally {
+  //       if (!cancelled) setCheckingSession(false);
+  //     }
+  //   }
+  //   check();
+  //   return () => { cancelled = true; };
+  // }, [router]);
 
   /* inject styles */
   useEffect(() => {
@@ -717,9 +717,9 @@ export default function Home() {
     };
   }, [checkingSession]);
 
-  if (checkingSession) {
-    return <div className="lp-loading">Resolving workspace...</div>;
-  }
+  // if (checkingSession) {
+  //   return <div className="lp-loading">Resolving workspace...</div>;
+  // }
 
   return (
     <div className="lp-root">
