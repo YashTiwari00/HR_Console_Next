@@ -1,20 +1,21 @@
-"use client";
+/**
+ * LumoContact — self-contained LUMO studios Contact page
+ *
+ * Dependencies (add to your project):
+ *   npm install three
+ *
+ * Usage:
+ *   import LumoContact from './LumoContact';
+ *   <LumoContact />
+ *
+ * The component injects its own <style> tag and Google Fonts link on mount
+ * so it works without any separate CSS file.
+ */
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { PCDLoader } from "three/addons/loaders/PCDLoader.js";
-import { getCurrentUser, getUserRole } from "@/services/authService";
-
-type AppRole = "employee" | "manager" | "hr";
-
-function routeForRole(role: AppRole) {
-  if (role === "employee") return "/employee";
-  if (role === "manager") return "/manager";
-  return "/hr";
-}
+import { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 
 /* ─── styles ─────────────────────────────────────────────────────────────── */
 
@@ -139,47 +140,90 @@ const CSS = `
   left: 50%;
   transform: translate(-50%, -50%);
   width: 100%;
-  max-width: 820px;
+  max-width: 800px;
   pointer-events: auto;
   opacity: 0;
   animation: lumoFadeIn 2s var(--ease-fluid) forwards 0.3s;
-  text-align: center;
 }
 
-.lumo-eyebrow {
+.lumo-contact-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.lumo-title {
+  font-family: var(--font-serif);
+  font-size: 4rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+  color: var(--c-text-main);
+  margin-bottom: 1rem;
+}
+
+.lumo-subtitle {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--c-accent);
+}
+
+.lumo-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem 4rem;
+}
+
+.lumo-form-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.lumo-form-group.full-width {
+  grid-column: span 2;
+}
+
+.lumo-label {
   font-family: var(--font-mono);
   font-size: 0.65rem;
   text-transform: uppercase;
-  letter-spacing: 0.25em;
-  color: var(--c-accent);
-  margin-bottom: 1.2rem;
+  letter-spacing: 0.1em;
+  color: var(--c-text-muted);
+  margin-bottom: 0.75rem;
+  transition: color 0.3s ease;
 }
 
-.lumo-hero-title {
-  font-family: var(--font-serif);
-  font-size: 5rem;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: -0.04em;
-  line-height: 1;
-  color: var(--c-text-main);
-  margin-bottom: 0.5rem;
-}
-
-.lumo-hero-subtitle {
+.lumo-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(74,44,42,0.2);
+  padding: 0.75rem 0;
   font-family: var(--font-serif);
   font-size: 1.2rem;
-  font-weight: 400;
-  font-style: italic;
-  color: var(--c-text-muted);
-  margin-bottom: 3rem;
+  color: var(--c-text-main);
+  outline: none;
+  transition: border-color 0.3s ease;
 }
 
-.lumo-cta-row {
+.lumo-input-highlight {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--c-accent);
+  transition: width 0.6s var(--ease-fluid);
+}
+.lumo-input:focus ~ .lumo-input-highlight {
+  width: 100%;
+}
+
+.lumo-submit-container {
+  grid-column: span 2;
   display: flex;
-  gap: 1.5rem;
   justify-content: center;
-  margin-bottom: 4rem;
+  margin-top: 2rem;
 }
 
 .lumo-btn {
@@ -195,76 +239,11 @@ const CSS = `
   font-weight: 700;
   cursor: none;
   display: inline-block;
-  text-decoration: none;
 }
 .lumo-btn:hover {
   background: var(--c-secondary-accent);
   box-shadow: 0 0 30px rgba(230,126,34,0.4);
   transform: translateY(-2px);
-}
-
-.lumo-btn-ghost {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 1.2rem 3.5rem;
-  border: 1px solid rgba(74,44,42,0.3);
-  transition: all 0.4s var(--ease-fluid);
-  background: transparent;
-  color: var(--c-text-main);
-  font-weight: 700;
-  cursor: none;
-  display: inline-block;
-  text-decoration: none;
-}
-.lumo-btn-ghost:hover {
-  border-color: var(--c-accent);
-  color: var(--c-accent);
-  box-shadow: 0 0 20px rgba(230,126,34,0.15);
-  transform: translateY(-2px);
-}
-
-.lumo-role-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
-}
-
-.lumo-role-card {
-  border: 1px solid rgba(142,109,107,0.2);
-  padding: 1.5rem;
-  text-align: left;
-  background: rgba(253,242,233,0.6);
-}
-
-.lumo-role-label {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--c-accent);
-  margin-bottom: 0.5rem;
-}
-
-.lumo-role-desc {
-  font-family: var(--font-serif);
-  font-size: 0.85rem;
-  color: var(--c-text-muted);
-  line-height: 1.5;
-}
-
-.lumo-loading {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--c-text-muted);
-  pointer-events: none;
 }
 
 .lumo-coords {
@@ -336,62 +315,40 @@ const CSS = `
 
 @media (max-width: 768px) {
   .lumo-content { width: 90%; top: 50%; }
-  .lumo-hero-title { font-size: 3rem; }
+  .lumo-form { grid-template-columns: 1fr; gap: 2rem; }
+  .lumo-form-group.full-width { grid-column: span 1; }
+  .lumo-title { font-size: 2.5rem; }
   .lumo-ui { padding: 2rem; }
   .lumo-coords { display: none; }
-  .lumo-role-grid { grid-template-columns: 1fr; }
-  .lumo-cta-row { flex-direction: column; align-items: center; }
 }
 `;
 
 /* ─── component ──────────────────────────────────────────────────────────── */
 
-export default function Home() {
-  const router = useRouter();
-  const threeRef = useRef<HTMLDivElement>(null);
-  const blurRef = useRef<HTMLDivElement>(null);
-  const dotRef = useRef<HTMLDivElement>(null);
-  const outlineRef = useRef<HTMLDivElement>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [sessionState, setSessionState] = useState<"guest" | "profile-missing">("guest");
-
-  /* session check */
-  useEffect(() => {
-    let cancelled = false;
-    async function redirectByRole() {
-      try {
-        const role = (await getUserRole()) as AppRole | null;
-        if (!cancelled && role) {
-          router.replace(routeForRole(role));
-          return;
-        }
-        const user = await getCurrentUser();
-        if (!cancelled) setSessionState(user ? "profile-missing" : "guest");
-      } finally {
-        if (!cancelled) setCheckingSession(false);
-      }
-    }
-    redirectByRole();
-    return () => { cancelled = true; };
-  }, [router]);
+export default function LumoContact() {
+  const threeRef = useRef(null);
+  const blurRef = useRef(null);
+  const dotRef = useRef(null);
+  const outlineRef = useRef(null);
 
   /* inject styles once */
   useEffect(() => {
-    const id = "lumo-landing-styles";
+    const id = 'lumo-contact-styles';
     if (!document.getElementById(id)) {
-      const style = document.createElement("style");
+      const style = document.createElement('style');
       style.id = id;
       style.textContent = CSS;
       document.head.appendChild(style);
     }
-    return () => { document.getElementById(id)?.remove(); };
+    return () => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    };
   }, []);
 
   /* three.js */
   useEffect(() => {
-    if (checkingSession) return;
     const container = threeRef.current;
-    if (!container) return;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -412,7 +369,7 @@ export default function Home() {
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.4;
 
-    let fallbackPoints: THREE.Points | null = null;
+    let fallbackPoints = null;
 
     function createFallback() {
       const n = 12000;
@@ -429,20 +386,20 @@ export default function Home() {
         colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
       }
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       const mat = new THREE.PointsMaterial({ size: 0.002, vertexColors: true, transparent: true, opacity: 0.6 });
       fallbackPoints = new THREE.Points(geo, mat);
       scene.add(fallbackPoints);
     }
 
     new PCDLoader().load(
-      "https://threejs.org/examples/models/pcd/binary/Zaghetto.pcd",
-      (points: THREE.Points) => {
+      'https://threejs.org/examples/models/pcd/binary/Zaghetto.pcd',
+      (points) => {
         points.geometry.center();
         points.geometry.rotateX(Math.PI);
-        (points.material as THREE.PointsMaterial).size = 0.0025;
-        (points.material as THREE.PointsMaterial).color.setHex(0xe67e22);
+        points.material.size = 0.0025;
+        points.material.color.setHex(0xe67e22);
         scene.add(points);
       },
       undefined,
@@ -454,7 +411,7 @@ export default function Home() {
     dir.position.set(5, 5, 5);
     scene.add(dir);
 
-    let animId: number;
+    let animId;
     const tick = () => {
       animId = requestAnimationFrame(tick);
       controls.update();
@@ -468,27 +425,25 @@ export default function Home() {
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
-    window.addEventListener("resize", onResize);
+    window.addEventListener('resize', onResize);
 
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener('resize', onResize);
       controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [checkingSession]);
+  }, []);
 
   /* blur layer + cursor */
   useEffect(() => {
-    if (checkingSession) return;
-
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
     let cx = mouseX, cy = mouseY;
-    let animId: number;
+    let animId;
 
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e) => {
       mouseX = e.clientX;
       mouseY = e.clientY;
       if (dotRef.current) {
@@ -496,8 +451,8 @@ export default function Home() {
         dotRef.current.style.top = `${mouseY}px`;
       }
       if (blurRef.current) {
-        blurRef.current.style.setProperty("--x", `${(mouseX / window.innerWidth) * 100}%`);
-        blurRef.current.style.setProperty("--y", `${(mouseY / window.innerHeight) * 100}%`);
+        blurRef.current.style.setProperty('--x', `${(mouseX / window.innerWidth) * 100}%`);
+        blurRef.current.style.setProperty('--y', `${(mouseY / window.innerHeight) * 100}%`);
       }
     };
 
@@ -512,38 +467,29 @@ export default function Home() {
     };
     animCursor();
 
-    document.addEventListener("mousemove", onMove);
+    document.addEventListener('mousemove', onMove);
 
     const grow = () => {
       if (!outlineRef.current) return;
-      outlineRef.current.style.width = "60px";
-      outlineRef.current.style.height = "60px";
-      outlineRef.current.style.borderColor = "#e67e22";
+      outlineRef.current.style.width = '60px';
+      outlineRef.current.style.height = '60px';
+      outlineRef.current.style.borderColor = '#e67e22';
     };
     const shrink = () => {
       if (!outlineRef.current) return;
-      outlineRef.current.style.width = "40px";
-      outlineRef.current.style.height = "40px";
-      outlineRef.current.style.borderColor = "rgba(230,126,34,0.4)";
+      outlineRef.current.style.width = '40px';
+      outlineRef.current.style.height = '40px';
+      outlineRef.current.style.borderColor = 'rgba(230,126,34,0.4)';
     };
-    const targets = document.querySelectorAll(".lumo-btn, .lumo-btn-ghost, .lumo-nav-text");
-    targets.forEach(el => { el.addEventListener("mouseenter", grow); el.addEventListener("mouseleave", shrink); });
+    const targets = document.querySelectorAll('.lumo-btn, .lumo-nav-text, .lumo-input');
+    targets.forEach(el => { el.addEventListener('mouseenter', grow); el.addEventListener('mouseleave', shrink); });
 
     return () => {
       cancelAnimationFrame(animId);
-      document.removeEventListener("mousemove", onMove);
-      targets.forEach(el => { el.removeEventListener("mouseenter", grow); el.removeEventListener("mouseleave", shrink); });
+      document.removeEventListener('mousemove', onMove);
+      targets.forEach(el => { el.removeEventListener('mouseenter', grow); el.removeEventListener('mouseleave', shrink); });
     };
-  }, [checkingSession]);
-
-  /* loading state */
-  if (checkingSession) {
-    return (
-      <div className="lumo-root">
-        <div className="lumo-loading">Resolving workspace...</div>
-      </div>
-    );
-  }
+  }, []);
 
   return (
     <div className="lumo-root">
@@ -554,49 +500,44 @@ export default function Home() {
 
       <div className="lumo-ui">
         <header className="lumo-header">
-          <span className="lumo-nav-text lumo-brand">HR Console</span>
-          <div style={{ display: "flex", gap: "3rem" }}>
-            <Link href="/login" className="lumo-nav-text">Login</Link>
-            <Link href="/signup" className="lumo-nav-text" style={{ color: "var(--c-accent)" }}>Get Access</Link>
+          <a href="/" className="lumo-nav-text lumo-brand">LUMO studios</a>
+          <div style={{ display: 'flex', gap: '3rem' }}>
+            <a href="#" className="lumo-nav-text">Projects</a>
+            <a href="#" className="lumo-nav-text">Capabilities</a>
+            <a href="#" className="lumo-nav-text" style={{ color: 'var(--c-accent)' }}>Contact</a>
           </div>
         </header>
 
         <div className="lumo-content">
-          <p className="lumo-eyebrow">Performance &amp; People Operations</p>
-          <h1 className="lumo-hero-title">HR Console</h1>
-          <p className="lumo-hero-subtitle">
-            {sessionState === "profile-missing"
-              ? "Your role profile is incomplete — contact HR, then re-login."
-              : "Goals, growth, and governance — unified."}
-          </p>
-
-          <div className="lumo-cta-row">
-            <Link href="/login" className="lumo-btn">
-              {sessionState === "profile-missing" ? "Re-login" : "Sign In"}
-            </Link>
-            {sessionState === "guest" && (
-              <Link href="/signup" className="lumo-btn-ghost">Create Account</Link>
-            )}
+          <div className="lumo-contact-header">
+            <h1 className="lumo-title">Initiate Inquiry</h1>
+            <p className="lumo-subtitle">Let's craft the future of your vision</p>
           </div>
 
-          <div className="lumo-role-grid">
-            <div className="lumo-role-card">
-              <p className="lumo-role-label">Employee</p>
-              <p className="lumo-role-desc">Goals, progress updates, and performance cycle timeline.</p>
+          <form className="lumo-form">
+            <div className="lumo-form-group">
+              <label className="lumo-label">Identity</label>
+              <input type="text" className="lumo-input" placeholder="Your Name" />
+              <div className="lumo-input-highlight" />
             </div>
-            <div className="lumo-role-card">
-              <p className="lumo-role-label">Manager</p>
-              <p className="lumo-role-desc">Team coaching, check-ins, and approval workflows.</p>
+            <div className="lumo-form-group">
+              <label className="lumo-label">Electronic Mail</label>
+              <input type="email" className="lumo-input" placeholder="email@address.com" />
+              <div className="lumo-input-highlight" />
             </div>
-            <div className="lumo-role-card">
-              <p className="lumo-role-label">HR</p>
-              <p className="lumo-role-desc">Governance queue, team assignments, and org-wide oversight.</p>
+            <div className="lumo-form-group full-width">
+              <label className="lumo-label">Project Scope</label>
+              <input type="text" className="lumo-input" placeholder="Describe the objective" />
+              <div className="lumo-input-highlight" />
             </div>
-          </div>
+            <div className="lumo-submit-container">
+              <button type="submit" className="lumo-btn">Transmit Data</button>
+            </div>
+          </form>
         </div>
 
         <div className="lumo-coords">
-          HR_CONSOLE / PERFORMANCE_MGMT_v2
+          52.3676° N, 4.9041° E / INQUIRY_PORTAL_v1
         </div>
       </div>
 
