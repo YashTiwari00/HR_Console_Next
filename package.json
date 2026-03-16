@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "schema:audit": "node scripts/appwrite-schema-sync.mjs",
-    "schema:apply": "node scripts/appwrite-schema-sync.mjs --apply"
+    "schema:apply": "node scripts/appwrite-schema-sync.mjs --apply",
+    "seed:users": "node scripts/seed-appwrite-dummy-data.mjs --print-users",
+    "seed:medium": "node scripts/seed-appwrite-dummy-data.mjs",
+    "seed:medium:autoauth": "node scripts/seed-appwrite-dummy-data.mjs --create-auth-users",
+    "seed:verify": "node scripts/verify-seed-data.mjs",
+    "smoke:api": "node scripts/smoke-api-routes.mjs",
+    "smoke:ui": "node scripts/smoke-ui-pages.mjs"
   },
   "dependencies": {
     "@types/three": "^0.183.1",
