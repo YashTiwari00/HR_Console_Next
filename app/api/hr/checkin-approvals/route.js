@@ -1,5 +1,6 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { listUsersByIds } from "@/lib/teamAccess";
 
@@ -59,6 +60,20 @@ async function listApprovalsSafe(databases) {
   }
 }
 
+async function listManagerCycleRatingsSafe(databases) {
+  try {
+    const response = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.managerCycleRatingsCollectionId,
+      [Query.orderDesc("ratedAt"), Query.limit(400)]
+    );
+
+    return response.documents;
+  } catch {
+    return [];
+  }
+}
+
 function reviewStatusOf(latestReview) {
   if (!latestReview) return "pending";
   if (latestReview.decision === "approved") return "approved";
@@ -74,7 +89,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const statusFilter = (searchParams.get("status") || "pending").trim();
 
-    const [checkInsResult, goalsResult, approvalsResult] = await Promise.all([
+    const [checkInsResult, goalsResult, approvalsResult, managerCycleRatings] = await Promise.all([
       databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
         Query.equal("status", "completed"),
         Query.orderDesc("scheduledAt"),
@@ -84,10 +99,20 @@ export async function GET(request) {
         Query.limit(200),
       ]),
       listApprovalsSafe(databases),
+      listManagerCycleRatingsSafe(databases),
     ]);
 
     const latestReviewMap = latestReviewByCheckIn(approvalsResult.rows);
     const goalById = new Map(goalsResult.documents.map((goal) => [goal.$id, goal]));
+    const managerRatingByCycle = new Map();
+
+    for (const row of managerCycleRatings) {
+      const key = `${String(row.managerId || "").trim()}|${String(row.cycleId || "").trim()}`;
+      if (!key.trim()) continue;
+      if (!managerRatingByCycle.has(key)) {
+        managerRatingByCycle.set(key, row);
+      }
+    }
 
     const userIds = new Set();
     for (const checkIn of checkInsResult.documents) {
@@ -105,6 +130,9 @@ export async function GET(request) {
         const manager = userById.get(String(checkIn.managerId || "").trim());
         const employee = userById.get(String(checkIn.employeeId || "").trim());
         const goal = goalById.get(String(checkIn.goalId || "").trim());
+        const managerCycleRating = managerRatingByCycle.get(
+          `${String(checkIn.managerId || "").trim()}|${String(goal?.cycleId || "").trim()}`
+        );
 
         return {
           checkInId: checkIn.$id,
@@ -121,6 +149,16 @@ export async function GET(request) {
           transcriptText: checkIn.transcriptText || "",
           isFinalCheckIn: Boolean(checkIn.isFinalCheckIn),
           managerRating: checkIn.managerRating,
+          managerCycleId: goal?.cycleId || "",
+          hrManagerRating: managerCycleRating
+            ? {
+                rating: Number(managerCycleRating.rating || 0),
+                ratingLabel: managerCycleRating.ratingLabel || "",
+                comments: managerCycleRating.comments || "",
+                ratedAt: managerCycleRating.ratedAt,
+                hrId: managerCycleRating.hrId,
+              }
+            : null,
           reviewStatus,
           latestReview: latestReview
             ? {
@@ -157,6 +195,9 @@ export async function POST(request) {
     const checkInId = String(body.checkInId || "").trim();
     const decision = String(body.decision || "").trim();
     const comments = String(body.comments || "").trim();
+    const parsedManagerRating = parseRatingInput(
+      body.managerRatingLabel || body.managerRating || body.hrManagerRating
+    );
 
     if (!checkInId || !decision) {
       return Response.json({ error: "checkInId and decision are required." }, { status: 400 });
@@ -171,6 +212,17 @@ export async function POST(request) {
       checkIn = await databases.getDocument(databaseId, appwriteConfig.checkInsCollectionId, checkInId);
     } catch {
       return Response.json({ error: "Check-in not found." }, { status: 404 });
+    }
+
+    let goal = null;
+    try {
+      goal = await databases.getDocument(
+        databaseId,
+        appwriteConfig.goalsCollectionId,
+        String(checkIn.goalId || "").trim()
+      );
+    } catch {
+      goal = null;
     }
 
     if (checkIn.status !== "completed") {
@@ -197,6 +249,53 @@ export async function POST(request) {
     }
 
     try {
+      if (goal && Number.isInteger(parsedManagerRating.value)) {
+        try {
+          const existingManagerRating = await databases.listDocuments(
+            databaseId,
+            appwriteConfig.managerCycleRatingsCollectionId,
+            [
+              Query.equal("managerId", String(checkIn.managerId || "").trim()),
+              Query.equal("cycleId", String(goal.cycleId || "").trim()),
+              Query.limit(1),
+            ]
+          );
+
+          const existingRow = existingManagerRating.documents[0];
+          if (existingRow) {
+            await databases.updateDocument(
+              databaseId,
+              appwriteConfig.managerCycleRatingsCollectionId,
+              existingRow.$id,
+              {
+                hrId: profile.$id,
+                rating: parsedManagerRating.value,
+                ratingLabel: parsedManagerRating.label,
+                comments,
+                ratedAt: new Date().toISOString(),
+              }
+            );
+          } else {
+            await databases.createDocument(
+              databaseId,
+              appwriteConfig.managerCycleRatingsCollectionId,
+              ID.unique(),
+              {
+                managerId: String(checkIn.managerId || "").trim(),
+                hrId: profile.$id,
+                cycleId: String(goal.cycleId || "").trim(),
+                rating: parsedManagerRating.value,
+                ratingLabel: parsedManagerRating.label,
+                comments,
+                ratedAt: new Date().toISOString(),
+              }
+            );
+          }
+        } catch {
+          // manager_cycle_ratings collection can be introduced after deployment.
+        }
+      }
+
       const approval = await databases.createDocument(
         databaseId,
         appwriteConfig.checkInApprovalsCollectionId,

@@ -6,6 +6,7 @@ import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
 import {
   CheckInApprovalDecision,
+  closeHrCycle,
   fetchHrCheckInApprovals,
   formatDate,
   HrCheckInApprovalItem,
@@ -48,7 +49,9 @@ export default function HrApprovalsPage() {
 
   const [checkInDecision, setCheckInDecision] = useState<Record<string, CheckInApprovalDecision>>({});
   const [checkInComments, setCheckInComments] = useState<Record<string, string>>({});
+  const [managerGradeLabels, setManagerGradeLabels] = useState<Record<string, "EE" | "DE" | "ME" | "SME" | "NI">>({});
   const [employeeApprovalQuery, setEmployeeApprovalQuery] = useState("");
+  const [cycleToClose, setCycleToClose] = useState("");
 
   const normalizedManagerApprovalQuery = managerApprovalQuery.trim().toLowerCase();
   const normalizedEmployeeApprovalQuery = employeeApprovalQuery.trim().toLowerCase();
@@ -120,10 +123,22 @@ export default function HrApprovalsPage() {
       setGoalDecision(nextGoalDecision);
 
       const nextCheckInDecision: Record<string, CheckInApprovalDecision> = {};
+      const nextManagerGradeLabels: Record<string, "EE" | "DE" | "ME" | "SME" | "NI"> = {};
       nextCheckIns.forEach((checkIn) => {
         nextCheckInDecision[checkIn.checkInId] = "approved";
+        if (checkIn.hrManagerRating?.ratingLabel) {
+          nextManagerGradeLabels[checkIn.checkInId] = checkIn.hrManagerRating.ratingLabel as
+            | "EE"
+            | "DE"
+            | "ME"
+            | "SME"
+            | "NI";
+        } else {
+          nextManagerGradeLabels[checkIn.checkInId] = "ME";
+        }
       });
       setCheckInDecision(nextCheckInDecision);
+      setManagerGradeLabels(nextManagerGradeLabels);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load approval queues.");
     } finally {
@@ -177,12 +192,35 @@ export default function HrApprovalsPage() {
         checkInId,
         decision: selected,
         comments: note,
+        managerRatingLabel: managerGradeLabels[checkInId] || "ME",
       });
 
       setSuccess(`Check-in decision saved: ${selected}.`);
       await loadQueues();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save check-in decision.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleCloseCycle(event: FormEvent) {
+    event.preventDefault();
+    setWorking(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const cycleId = cycleToClose.trim().toUpperCase();
+      if (!cycleId) {
+        throw new Error("Enter a cycle ID in Q#-YYYY format.");
+      }
+
+      const result = await closeHrCycle(cycleId);
+      setSuccess(`Cycle closed: ${result.cycleId}. Employee ratings are now visible.`);
+      await loadQueues();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to close cycle.");
     } finally {
       setWorking(false);
     }
@@ -206,10 +244,25 @@ export default function HrApprovalsPage() {
       )}
 
       <Card title="Queue Snapshot" description="Pending items that require HR action.">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="info">Manager Goals: {loading ? "..." : queueCounts.goal}</Badge>
-          <Badge variant="warning">Manager Check-ins: {loading ? "..." : queueCounts.checkIn}</Badge>
-        </div>
+        <Stack gap="3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info">Manager Goals: {loading ? "..." : queueCounts.goal}</Badge>
+            <Badge variant="warning">Manager Check-ins: {loading ? "..." : queueCounts.checkIn}</Badge>
+          </div>
+
+          <form onSubmit={handleCloseCycle} className="flex flex-wrap items-end gap-2">
+            <Input
+              label="Close Cycle"
+              value={cycleToClose}
+              onChange={(event) => setCycleToClose(event.target.value)}
+              placeholder="Q1-2026"
+              helperText="Employees can view final ratings only after closure."
+            />
+            <Button type="submit" variant="primary" loading={working}>
+              Close Cycle
+            </Button>
+          </form>
+        </Stack>
       </Card>
 
       <Card title="Manager Goal Approvals" description="Only manager-submitted goals are shown here.">
@@ -382,6 +435,37 @@ export default function HrApprovalsPage() {
                         <Badge variant="info">Final check-in</Badge>
                         {typeof row.managerRating === "number" && (
                           <span className="caption">Manager rating: {row.managerRating}/5</span>
+                        )}
+                        {row.managerCycleId && <span className="caption">Cycle: {row.managerCycleId}</span>}
+                      </div>
+                    )}
+
+                    {row.isFinalCheckIn && (
+                      <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                        <p className="caption">HR grade for manager</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {(["EE", "DE", "ME", "SME", "NI"] as const).map((grade) => (
+                            <Button
+                              key={grade}
+                              type="button"
+                              size="sm"
+                              variant={managerGradeLabels[row.checkInId] === grade ? "primary" : "secondary"}
+                              onClick={() =>
+                                setManagerGradeLabels((prev) => ({
+                                  ...prev,
+                                  [row.checkInId]: grade,
+                                }))
+                              }
+                            >
+                              {grade}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {row.hrManagerRating && (
+                          <p className="caption mt-2">
+                            Previous HR grade: {row.hrManagerRating.ratingLabel} ({row.hrManagerRating.rating}/5)
+                          </p>
                         )}
                       </div>
                     )}

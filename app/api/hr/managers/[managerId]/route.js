@@ -96,6 +96,29 @@ export async function GET(request, context) {
       listCheckInApprovals(databases),
     ]);
 
+    let managerCycleRatings = [];
+    let employeeCycleScores = [];
+    try {
+      const [managerCycleRatingsResult, employeeCycleScoresResult] = await Promise.all([
+        databases.listDocuments(databaseId, appwriteConfig.managerCycleRatingsCollectionId, [
+          Query.equal("managerId", managerId),
+          Query.orderDesc("ratedAt"),
+          Query.limit(50),
+        ]),
+        databases.listDocuments(databaseId, appwriteConfig.employeeCycleScoresCollectionId, [
+          Query.equal("managerId", managerId),
+          Query.orderDesc("computedAt"),
+          Query.limit(200),
+        ]),
+      ]);
+
+      managerCycleRatings = managerCycleRatingsResult.documents;
+      employeeCycleScores = employeeCycleScoresResult.documents;
+    } catch {
+      managerCycleRatings = [];
+      employeeCycleScores = [];
+    }
+
     if (manager.role !== "manager") {
       return Response.json({ error: "Requested profile is not a manager." }, { status: 400 });
     }
@@ -163,6 +186,13 @@ export async function GET(request, context) {
       ).length,
       pendingCheckInApprovals,
       teamMembers,
+      managerQuarterHistory: managerCycleRatings.map((item) => ({
+        cycleId: item.cycleId,
+        rating: Number(item.rating || 0),
+        ratingLabel: item.ratingLabel || "",
+        comments: item.comments || "",
+        ratedAt: item.ratedAt,
+      })),
     };
 
     const employeeRows = teamMembers.map((employee) => ({
@@ -170,6 +200,15 @@ export async function GET(request, context) {
       goals: teamGoals.filter((goal) => String(goal.employeeId || "").trim() === employee.$id),
       progressUpdates: updates.filter((item) => String(item.employeeId || "").trim() === employee.$id),
       checkIns: managerCheckIns.filter((item) => String(item.employeeId || "").trim() === employee.$id),
+      quarterHistory: employeeCycleScores
+        .filter((item) => String(item.employeeId || "").trim() === employee.$id)
+        .map((item) => ({
+          cycleId: item.cycleId,
+          scoreX100: Number(item.scoreX100 || 0),
+          scoreLabel: item.scoreLabel || "",
+          visibility: item.visibility || "hidden",
+          computedAt: item.computedAt,
+        })),
     }));
 
     return Response.json({

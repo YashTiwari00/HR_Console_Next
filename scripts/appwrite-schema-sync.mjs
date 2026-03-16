@@ -15,6 +15,10 @@ const collections = {
   checkins: process.env.NEXT_PUBLIC_CHECK_INS_COLLECTION_ID || "check_ins",
   progress: process.env.NEXT_PUBLIC_PROGRESS_UPDATES_COLLECTION_ID || "progress_updates",
   goal_cycles: process.env.NEXT_PUBLIC_GOAL_CYCLES_COLLECTION_ID || "goal_cycles",
+  employee_cycle_scores:
+    process.env.NEXT_PUBLIC_EMPLOYEE_CYCLE_SCORES_COLLECTION_ID || "employee_cycle_scores",
+  manager_cycle_ratings:
+    process.env.NEXT_PUBLIC_MANAGER_CYCLE_RATINGS_COLLECTION_ID || "manager_cycle_ratings",
   ai_events: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
   checkin_approvals:
     process.env.NEXT_PUBLIC_CHECK_IN_APPROVALS_COLLECTION_ID || "checkin_approvals",
@@ -48,6 +52,11 @@ const required = {
     { key: "dueDate", type: "datetime", required: false },
     { key: "lineageRef", type: "string", size: 512, required: false },
     { key: "aiSuggested", type: "boolean", required: false, default: false },
+    { key: "managerFinalRating", type: "integer", required: false, min: 1, max: 5 },
+    { key: "managerFinalRatingLabel", type: "enum", required: false, elements: ["EE", "DE", "ME", "SME", "NI"] },
+    { key: "managerFinalRatedAt", type: "datetime", required: false },
+    { key: "managerFinalRatedBy", type: "string", size: 64, required: false },
+    { key: "ratingVisibleToEmployee", type: "boolean", required: false, default: false },
   ],
   [collections.goal_approvals]: [
     { key: "goalId", type: "string", size: 64, required: true },
@@ -85,6 +94,26 @@ const required = {
     { key: "startDate", type: "datetime", required: true },
     { key: "endDate", type: "datetime", required: true },
     { key: "state", type: "enum", required: true, elements: ["active", "closed"] },
+    { key: "closedAt", type: "datetime", required: false },
+    { key: "closedBy", type: "string", size: 64, required: false },
+  ],
+  [collections.employee_cycle_scores]: [
+    { key: "employeeId", type: "string", size: 64, required: true },
+    { key: "managerId", type: "string", size: 64, required: true },
+    { key: "cycleId", type: "string", size: 32, required: true },
+    { key: "scoreX100", type: "integer", required: true, min: 0, max: 500 },
+    { key: "scoreLabel", type: "enum", required: true, elements: ["EE", "DE", "ME", "SME", "NI"] },
+    { key: "computedAt", type: "datetime", required: true },
+    { key: "visibility", type: "enum", required: true, elements: ["hidden", "visible"] },
+  ],
+  [collections.manager_cycle_ratings]: [
+    { key: "managerId", type: "string", size: 64, required: true },
+    { key: "hrId", type: "string", size: 64, required: true },
+    { key: "cycleId", type: "string", size: 32, required: true },
+    { key: "rating", type: "integer", required: true, min: 1, max: 5 },
+    { key: "ratingLabel", type: "enum", required: true, elements: ["EE", "DE", "ME", "SME", "NI"] },
+    { key: "comments", type: "string", size: 8192, required: false },
+    { key: "ratedAt", type: "datetime", required: true },
   ],
   [collections.ai_events]: [
     { key: "userId", type: "string", size: 64, required: true },

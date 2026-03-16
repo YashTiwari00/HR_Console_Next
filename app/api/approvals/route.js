@@ -36,13 +36,25 @@ export async function GET(request) {
       );
 
       const employeeProfiles = await listUsersByIds(databases, employeeIds);
-      const managerIds = new Set(
-        employeeProfiles.filter((item) => item.role === "manager").map((item) => item.$id)
-      );
+      const employeeProfileById = new Map(employeeProfiles.map((item) => [String(item.$id || "").trim(), item]));
 
-      return Response.json({
-        data: result.documents.filter((goal) => managerIds.has(String(goal.employeeId || ""))),
+      const managerGoalRows = result.documents.filter((goal) => {
+        const employeeId = String(goal.employeeId || "").trim();
+        const owner = employeeProfileById.get(employeeId);
+
+        // Keep entries if profile lookup fails to avoid dropping valid pending approvals.
+        if (!owner) return true;
+
+        const ownerRole = String(owner.role || "").trim().toLowerCase();
+        if (ownerRole !== "manager") return false;
+
+        const assignedHrId = String(owner.hrId || "").trim();
+        if (assignedHrId && assignedHrId !== profile.$id) return false;
+
+        return true;
       });
+
+      return Response.json({ data: managerGoalRows });
     }
 
     return Response.json({ data: result.documents });

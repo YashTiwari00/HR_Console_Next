@@ -1,6 +1,8 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { CHECKIN_STATUSES, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { databaseId } from "@/lib/appwriteServer";
+import { computeAndPersistEmployeeCycleScore, getCycleState } from "@/lib/finalRatings";
+import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 
 export async function PATCH(request, context) {
@@ -17,15 +19,20 @@ export async function PATCH(request, context) {
       checkInId
     );
 
-    if (profile.role === "manager" && checkIn.managerId !== profile.$id) {
-      return Response.json({ error: "Forbidden for this check-in." }, { status: 403 });
-    }
-
     const goal = await databases.getDocument(
       databaseId,
       appwriteConfig.goalsCollectionId,
       checkIn.goalId
     );
+
+    const goalOwnerId = String(goal.employeeId || "").trim();
+    const checkInManagerId = String(checkIn.managerId || "").trim();
+    const isManagerSelfGoal =
+      profile.role === "manager" && goalOwnerId === String(profile.$id || "").trim();
+
+    if (profile.role === "manager" && checkInManagerId !== profile.$id && !isManagerSelfGoal) {
+      return Response.json({ error: "Forbidden for this check-in." }, { status: 403 });
+    }
 
     if (goal.status !== GOAL_STATUSES.APPROVED && goal.status !== GOAL_STATUSES.CLOSED) {
       return Response.json(
@@ -39,11 +46,8 @@ export async function PATCH(request, context) {
     const managerNotes = (body.managerNotes || "").trim();
     const transcriptText = (body.transcriptText || "").trim();
     const isFinalCheckIn = Boolean(body.isFinalCheckIn);
-    const rawRating = body.managerRating;
-    const parsedRating =
-      rawRating === null || rawRating === undefined || rawRating === ""
-        ? null
-        : Number(rawRating);
+    const ratingInput = body.managerGoalRatingLabel || body.managerGoalRating || body.managerRating;
+    const parsedRating = parseRatingInput(ratingInput);
 
     if (nextStatus !== CHECKIN_STATUSES.COMPLETED) {
       return Response.json(
@@ -57,7 +61,14 @@ export async function PATCH(request, context) {
     }
 
     if (isFinalCheckIn) {
-      if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      if (profile.role !== "manager") {
+        return Response.json(
+          { error: "Only managers can submit final employee rating." },
+          { status: 403 }
+        );
+      }
+
+      if (!Number.isInteger(parsedRating.value) || parsedRating.value < 1 || parsedRating.value > 5) {
         return Response.json(
           { error: "Final check-in requires managerRating between 1 and 5." },
           { status: 400 }
@@ -70,8 +81,10 @@ export async function PATCH(request, context) {
       managerNotes,
       transcriptText,
       isFinalCheckIn,
-      managerRating: isFinalCheckIn ? parsedRating : null,
+      managerRating: isFinalCheckIn ? parsedRating.value : null,
       ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
+      // Normalize legacy rows where manager self-goal check-ins were stamped with HR approver id.
+      managerId: profile.role === "manager" ? profile.$id : checkIn.managerId,
     };
 
     let updated;
@@ -98,6 +111,47 @@ export async function PATCH(request, context) {
       }
 
       throw error;
+    }
+
+    if (isFinalCheckIn && profile.role === "manager") {
+      try {
+        const cycleState = await getCycleState(databases, goal.cycleId);
+        const ratingVisibleToEmployee = cycleState.state === "closed";
+        const effectiveManagerId =
+          goalOwnerId === String(profile.$id || "").trim()
+            ? String(profile.$id || "").trim()
+            : String(goal.managerId || "").trim();
+
+        await databases.updateDocument(databaseId, appwriteConfig.goalsCollectionId, goal.$id, {
+          managerFinalRating: parsedRating.value,
+          managerFinalRatingLabel: parsedRating.label,
+          managerFinalRatedAt: new Date().toISOString(),
+          managerFinalRatedBy: profile.$id,
+          ratingVisibleToEmployee,
+        });
+
+        await computeAndPersistEmployeeCycleScore(databases, {
+          employeeId: goal.employeeId,
+          managerId: effectiveManagerId,
+          cycleId: goal.cycleId,
+          visibility: ratingVisibleToEmployee ? "visible" : "hidden",
+        });
+      } catch (error) {
+        if (
+          error?.message &&
+          String(error.message).toLowerCase().includes("unknown attribute")
+        ) {
+          return Response.json(
+            {
+              error:
+                "goals schema is missing final rating attributes. Run schema sync and retry.",
+            },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
     }
 
     return Response.json({ data: updated });
