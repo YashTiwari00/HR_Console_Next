@@ -167,3 +167,32 @@ Phase 1 is complete when:
 - Bucket is configured.
 - Seed cycle and manager-employee mapping are available.
 - .env.local is set and app can read all IDs.
+
+### 10. Local Medium Seed (Append-Only)
+
+Use this to populate realistic dummy data for feature verification.
+
+1. Ensure schema is ready:
+  - `npm run schema:audit`
+  - `npm run schema:apply` (if audit reports missing schema)
+2. Print required Auth users and create them in Appwrite Authentication (manual):
+  - `npm run seed:users`
+3. Run medium seed dataset (append-only):
+  - `npm run seed:medium`
+4. Run seed coverage report:
+  - `npm run seed:verify`
+
+What it seeds:
+- 1 HR profile, 4 manager profiles, 20 employee profiles (mapped to existing Auth user IDs)
+- 2 goal cycles (one closed, one active)
+- Goals across statuses: draft, submitted, approved, needs_changes, closed
+- Goal approvals for decided goals
+- Planned and completed check-ins (including final check-ins with manager ratings)
+- HR check-in approvals
+- Progress updates across ragStatus values (on_track, behind, completed)
+- AI usage events for goal suggestion and check-in summary caps
+
+Safety model:
+- Script is append-only and idempotent by query checks.
+- Existing records are not deleted.
+- If required Auth users are missing, script fails with a list of missing emails.

@@ -6,6 +6,66 @@ const FEATURE_CAPS = {
   checkin_summary: 3,
 };
 
+function isRequestCountTypeError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("requestcount") && message.includes("invalid type");
+}
+
+async function updateUsageCount(databases, documentId, used) {
+  const payload = {
+    requestCount: used,
+    lastUsedAt: new Date().toISOString(),
+  };
+
+  try {
+    await databases.updateDocument(
+      databaseId,
+      appwriteConfig.aiEventsCollectionId,
+      documentId,
+      payload
+    );
+  } catch (error) {
+    if (!isRequestCountTypeError(error)) {
+      throw error;
+    }
+
+    await databases.updateDocument(
+      databaseId,
+      appwriteConfig.aiEventsCollectionId,
+      documentId,
+      {
+        ...payload,
+        requestCount: String(used),
+      }
+    );
+  }
+}
+
+async function createUsageRow(databases, payload) {
+  try {
+    await databases.createDocument(
+      databaseId,
+      appwriteConfig.aiEventsCollectionId,
+      ID.unique(),
+      payload
+    );
+  } catch (error) {
+    if (!isRequestCountTypeError(error)) {
+      throw error;
+    }
+
+    await databases.createDocument(
+      databaseId,
+      appwriteConfig.aiEventsCollectionId,
+      ID.unique(),
+      {
+        ...payload,
+        requestCount: String(payload.requestCount),
+      }
+    );
+  }
+}
+
 export async function assertAndTrackAiUsage({ databases, userId, cycleId, featureType }) {
   const cap = FEATURE_CAPS[featureType] || 3;
 
@@ -30,16 +90,7 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
 
   if (existing) {
     const used = Number(existing.requestCount || 0) + 1;
-
-    await databases.updateDocument(
-      databaseId,
-      appwriteConfig.aiEventsCollectionId,
-      existing.$id,
-      {
-        requestCount: used,
-        lastUsedAt: new Date().toISOString(),
-      }
-    );
+    await updateUsageCount(databases, existing.$id, used);
 
     return {
       cap,
@@ -50,19 +101,14 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
     };
   }
 
-  await databases.createDocument(
-    databaseId,
-    appwriteConfig.aiEventsCollectionId,
-    ID.unique(),
-    {
-      userId,
-      featureType,
-      cycleId,
-      requestCount: 1,
-      lastUsedAt: new Date().toISOString(),
-      metadata: "{}",
-    }
-  );
+  await createUsageRow(databases, {
+    userId,
+    featureType,
+    cycleId,
+    requestCount: 1,
+    lastUsedAt: new Date().toISOString(),
+    metadata: "{}",
+  });
 
   return {
     cap,
