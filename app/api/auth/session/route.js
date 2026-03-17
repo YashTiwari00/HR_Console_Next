@@ -1,4 +1,4 @@
-import { createPublicAccount } from "@/lib/appwriteServer";
+import { createAdminAccount } from "@/lib/appwriteServer";
 import {
   buildSessionCookieOptions,
   getProjectSessionCookieName,
@@ -33,9 +33,20 @@ export async function POST(request) {
       );
     }
 
-    const account = createPublicAccount();
+    const account = createAdminAccount();
     const session = await account.createSession({ userId, secret });
-    const sessionToken = String(session?.secret || secret);
+
+    if (!session?.secret) {
+      return NextResponse.json(
+        {
+          error:
+            "Session secret missing from Appwrite response. Ensure APPWRITE_API_KEY has sessions.write scope.",
+        },
+        { status: 500 }
+      );
+    }
+
+    const sessionToken = String(session.secret);
 
     let maxAgeSeconds;
     if (session?.expire) {

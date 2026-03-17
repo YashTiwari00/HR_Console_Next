@@ -76,21 +76,24 @@ export async function logout() {
 
 export async function getCurrentUser() {
   try {
+    const response = await fetch("/api/me", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    if (response.ok) {
+      const payload = await response.json();
+      return payload?.data?.user || null;
+    }
+
     const user = await account.get();
 
     return user;
   } catch {
     try {
-      const response = await fetch("/api/me", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      });
-
-      if (!response.ok) return null;
-
-      const payload = await response.json();
-      return payload?.data?.user || null;
+      const user = await account.get();
+      return user;
     } catch {
       return null;
     }

@@ -7,6 +7,7 @@ import {
   loginWithGoogle,
   waitForCurrentUser,
 } from "@/services/authService";
+import Dropdown from "@/src/components/ui/Dropdown";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -106,82 +107,277 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        background: "#fdf2e9",
-        color: "#4a2c2a",
-        padding: "24px",
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          width: "100%",
-          maxWidth: 460,
-          border: "1px solid rgba(74,44,42,0.2)",
-          background: "rgba(253,242,233,0.88)",
-          padding: "28px",
-          display: "grid",
-          gap: "14px",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>Finish onboarding</h1>
-        <p style={{ margin: 0, opacity: 0.8 }}>
-          Choose your role to enter the correct dashboard.
-        </p>
+    <main className="onboarding-shell">
+      <div className="color-wash" aria-hidden="true" />
 
-        {error && <p style={{ margin: 0, color: "#b03124" }}>{error}</p>}
+      <form className="onboarding-panel" onSubmit={handleSubmit}>
+        <section className="panel-head reveal">
+          <p className="eyebrow">Workspace Setup</p>
+          <h1>Finish onboarding</h1>
+          <p className="subtitle">Choose your role to enter the correct dashboard.</p>
+        </section>
 
-        {checkingSession && <p style={{ margin: 0 }}>Checking session...</p>}
+        <section className="panel-body reveal">
+          {error && <p className="notice error">{error}</p>}
 
-        {!checkingSession && !currentUser && (
-          <button type="button" onClick={handleGoogleSignIn} disabled={loading}>
-            {loading ? "Redirecting to Google..." : "Continue with Google"}
-          </button>
-        )}
+          {checkingSession && <p className="notice">Checking session...</p>}
 
-        {!checkingSession && currentUser && (
-          <>
-            <p style={{ margin: 0 }}>
-              Signed in as {currentUser.name || currentUser.email}
-            </p>
-            <label htmlFor="role">Role</label>
-            <select
-              id="role"
-              value={role}
-              onChange={(e) => {
-                setRole(e.target.value);
-                setConfirmed(false);
-              }}
+          {!checkingSession && !currentUser && (
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={handleGoogleSignIn}
               disabled={loading}
             >
-              {ROLES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <p style={{ margin: 0, opacity: 0.85 }}>
-              {ROLE_DESCRIPTIONS[role]}
-            </p>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-                disabled={loading}
-              />
-              I confirm this role and understand changes require HR support.
-            </label>
-            <button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Complete setup"}
+              {loading ? "Redirecting to Google..." : "Continue with Google"}
             </button>
-          </>
-        )}
+          )}
+
+          {!checkingSession && currentUser && (
+            <>
+              <p className="account-line">
+                Signed in as <strong>{currentUser.name || currentUser.email}</strong>
+              </p>
+
+              <div className="field-group">
+                <Dropdown
+                  id="role"
+                  label="Role"
+                  value={role}
+                  onChange={(nextRole) => {
+                    setRole(nextRole);
+                    setConfirmed(false);
+                  }}
+                  options={ROLES.map((item) => ({
+                    value: item.value,
+                    label: item.label,
+                    description: ROLE_DESCRIPTIONS[item.value],
+                  }))}
+                  disabled={loading}
+                />
+                <p className="role-description">{ROLE_DESCRIPTIONS[role]}</p>
+              </div>
+
+              <label className="confirm-row">
+                <input
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>
+                  I confirm this role and understand changes require HR support.
+                </span>
+              </label>
+
+              <button className="button button-accent" type="submit" disabled={loading}>
+                {loading ? "Saving..." : "Complete setup"}
+              </button>
+            </>
+          )}
+        </section>
       </form>
+
+      <style jsx>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Space+Mono:wght@400;700&display=swap');
+
+        .onboarding-shell {
+          --c-bg: #fdf2e9;
+          --c-text: #4a2c2a;
+          --c-muted: #8e6d6b;
+          --c-accent: #e67e22;
+          --c-accent2: #ff7f50;
+          --c-border: rgba(142, 109, 107, 0.2);
+          min-height: 100vh;
+          position: relative;
+          overflow: hidden;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          background: var(--c-bg);
+          color: var(--c-text);
+          font-family: "Playfair Display", Georgia, serif;
+        }
+
+        .color-wash {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(circle at 100% 0%, rgba(230, 126, 34, 0.22), transparent 34%),
+            radial-gradient(circle at 88% 10%, rgba(255, 127, 80, 0.18), transparent 28%);
+        }
+
+        .onboarding-panel {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 500px;
+          background: rgba(253, 242, 233, 0.92);
+          border: 1px solid var(--c-border);
+          border-radius: 18px;
+          box-shadow: 0 20px 44px rgba(74, 44, 42, 0.12);
+          backdrop-filter: blur(2px);
+        }
+
+        .panel-head,
+        .panel-body {
+          padding: 24px;
+        }
+
+        .panel-head {
+          border-bottom: 1px solid var(--c-border);
+          background: linear-gradient(110deg, rgba(230, 126, 34, 0.1), rgba(230, 126, 34, 0));
+        }
+
+        .eyebrow {
+          margin: 0 0 6px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          font-size: 0.66rem;
+          color: var(--c-accent);
+          font-weight: 600;
+          font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+
+        h1 {
+          margin: 0;
+          font-size: clamp(1.7rem, 2.8vw, 2.2rem);
+          line-height: 1.15;
+          letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+          margin: 10px 0 0;
+          color: var(--c-muted);
+          font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 0.78rem;
+          line-height: 1.6;
+        }
+
+        .panel-body {
+          display: grid;
+          gap: 14px;
+        }
+
+        .notice {
+          margin: 0;
+          padding: 11px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--c-border);
+          background: rgba(255, 255, 255, 0.55);
+          font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 0.78rem;
+        }
+
+        .notice.error {
+          color: #b33f2f;
+          border-color: rgba(179, 63, 47, 0.24);
+          background: rgba(255, 215, 204, 0.5);
+        }
+
+        .account-line {
+          margin: 0;
+          color: rgba(31, 40, 51, 0.87);
+        }
+
+        .field-group {
+          display: grid;
+          gap: 8px;
+        }
+
+        .role-description {
+          margin: 0;
+          color: var(--c-muted);
+          font-size: 0.82rem;
+          font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+          line-height: 1.55;
+        }
+
+        .confirm-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          font-weight: 500;
+          line-height: 1.4;
+          font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 0.78rem;
+          color: var(--c-muted);
+        }
+
+        .confirm-row input {
+          margin-top: 3px;
+          width: 16px;
+          height: 16px;
+          accent-color: var(--c-accent);
+        }
+
+        .button {
+          border: 0;
+          border-radius: 12px;
+          padding: 12px 16px;
+          font-weight: 700;
+          font-size: 0.98rem;
+          cursor: pointer;
+          transition: transform 0.18s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        .button:disabled {
+          cursor: not-allowed;
+          filter: saturate(0.5);
+          opacity: 0.7;
+        }
+
+        .button:not(:disabled):hover {
+          transform: translateY(-1px);
+        }
+
+        .button:not(:disabled):active {
+          transform: translateY(0);
+        }
+
+        .button-primary {
+          color: #fff;
+          background: linear-gradient(120deg, #e67e22, #ff7f50);
+          box-shadow: 0 10px 18px rgba(230, 126, 34, 0.3);
+        }
+
+        .button-accent {
+          color: #fff;
+          background: linear-gradient(120deg, #d96b18, #e67e22);
+          box-shadow: 0 10px 18px rgba(217, 107, 24, 0.28);
+        }
+
+        .reveal {
+          animation: riseFade 0.5s ease both;
+        }
+
+        .panel-body.reveal {
+          animation-delay: 0.12s;
+        }
+
+        @keyframes riseFade {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @media (max-width: 640px) {
+          .onboarding-shell {
+            padding: 16px;
+          }
+
+          .panel-head,
+          .panel-body {
+            padding: 18px;
+          }
+        }
+      `}</style>
     </main>
   );
 }
