@@ -1,56 +1,41 @@
 import { FRAMEWORK_TYPES } from "@/lib/appwriteSchema";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouter } from "@/lib/openrouter";
 
 const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 
-function buildSuggestions({ frameworkType, profile, prompt }) {
+async function buildSuggestions({ frameworkType, profile, prompt }) {
   const context = prompt?.trim() || "Improve execution quality and delivery confidence";
+  const designation = profile.designation || profile.role || "professional";
 
-  return [
-    {
-      title: `Improve ${frameworkType} execution quality`,
-      description:
-        `Deliver measurable outcomes for ${profile.designation || "your role"} by defining milestones, ` +
-        "tracking weekly progress, and reducing blockers through proactive escalation.",
-      weightage: 30,
-      rationale: `Aligned to role context and user intent: ${context}`,
-      explainability: {
-        source: "rule_based_generator",
-        confidence: "medium",
+  const raw = await callOpenRouter({
+    messages: [
+      {
+        role: "system",
+        content: "You are a performance management expert. Respond with valid JSON only.",
       },
-    },
-    {
-      title: "Increase cross-team delivery predictability",
-      description:
-        "Establish clear dependencies with partner teams, publish monthly status updates, " +
-        "and improve on-time completion for committed deliverables.",
-      weightage: 25,
-      rationale: "Improves collaboration and reduces timeline slippage.",
-      explainability: {
-        source: "rule_based_generator",
-        confidence: "medium",
+      {
+        role: "user",
+        content: `Generate 3 goal suggestions for an employee with designation "${designation}" using the ${frameworkType} framework. Their intent: "${context}".
+Return ONLY this JSON shape (weightages must sum to 100):
+{"suggestions":[{"title":"...","description":"...","weightage":30,"rationale":"..."}]}`,
       },
-    },
-    {
-      title: "Raise impact visibility with outcome reporting",
-      description:
-        "Create a recurring outcome summary with KPI deltas, completed initiatives, and next-step risks " +
-        "to support manager reviews and check-ins.",
-      weightage: 20,
-      rationale: "Makes review conversations evidence-based and easier to approve.",
-      explainability: {
-        source: "rule_based_generator",
-        confidence: "high",
-      },
-    },
-  ];
+    ],
+    jsonMode: true,
+  });
+
+  const parsed = JSON.parse(raw);
+  return (parsed.suggestions ?? []).map((s) => ({
+    ...s,
+    explainability: { source: "openrouter_llm", confidence: "high" },
+  }));
 }
 
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee"]);
+    requireRole(profile, ["employee", "manager"]);
 
     const body = await request.json();
     const cycleId = (body.cycleId || "").trim();
@@ -75,15 +60,12 @@ export async function POST(request) {
       featureType: "goal_suggestion",
     });
 
-    const suggestions = buildSuggestions({ frameworkType, profile, prompt });
+    const suggestions = await buildSuggestions({ frameworkType, profile, prompt });
 
     return Response.json({
       data: {
         suggestions,
-        explainability: {
-          source: "rule_based_generator",
-          confidence: "medium",
-        },
+        explainability: { source: "openrouter_llm", confidence: "high" },
         usage,
       },
     });

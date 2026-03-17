@@ -43,3 +43,6 @@ export type { TextareaProps } from './Textarea';
 
 export { default as Tooltip } from './Tooltip';
 export type { TooltipProps, TooltipPosition } from './Tooltip';
+
+export { default as ChatBot } from './ChatBot';
+export type { ChatBotProps } from './ChatBot';

@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PCDLoader } from "three/addons/loaders/PCDLoader.js";
 import { getCurrentUser, getUserRole } from "@/services/authService";
+import ChatBot from "@/src/components/ui/ChatBot";
 
 type AppRole = "employee" | "manager" | "hr";
 
@@ -722,6 +723,7 @@ export default function Home() {
   // }
 
   return (
+    <>
     <div className="lp-root">
 
       {/* ── fixed header ── */}
@@ -885,5 +887,7 @@ export default function Home() {
       <div ref={dotRef} className="lp-cursor-dot" />
       <div ref={ringRef} className="lp-cursor-ring" />
     </div>
+    <ChatBot role="guest" theme="lp" />
+    </>
   );
 }

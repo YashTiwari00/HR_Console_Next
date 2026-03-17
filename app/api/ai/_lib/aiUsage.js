@@ -90,7 +90,16 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
 
   if (existing) {
     const used = Number(existing.requestCount || 0) + 1;
-    await updateUsageCount(databases, existing.$id, used);
+
+    await databases.updateDocument(
+      databaseId,
+      appwriteConfig.aiEventsCollectionId,
+      existing.$id,
+      {
+        requestCount: String(used),
+        lastUsedAt: new Date().toISOString(),
+      }
+    );
 
     return {
       cap,
@@ -101,14 +110,19 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
     };
   }
 
-  await createUsageRow(databases, {
-    userId,
-    featureType,
-    cycleId,
-    requestCount: 1,
-    lastUsedAt: new Date().toISOString(),
-    metadata: "{}",
-  });
+  await databases.createDocument(
+    databaseId,
+    appwriteConfig.aiEventsCollectionId,
+    ID.unique(),
+    {
+      userId,
+      featureType,
+      cycleId,
+      requestCount: "1",
+      lastUsedAt: new Date().toISOString(),
+      metadata: "{}",
+    }
+  );
 
   return {
     cap,
