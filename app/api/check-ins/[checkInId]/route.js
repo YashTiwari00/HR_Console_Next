@@ -45,8 +45,12 @@ export async function PATCH(request, context) {
     const nextStatus = (body.status || CHECKIN_STATUSES.COMPLETED).trim();
     const managerNotes = (body.managerNotes || "").trim();
     const transcriptText = (body.transcriptText || "").trim();
-    const isFinalCheckIn = Boolean(body.isFinalCheckIn);
-    const ratingInput = body.managerGoalRatingLabel || body.managerGoalRating || body.managerRating;
+    const isFinalCheckIn = Boolean(body.isFinalCheckIn || checkIn.isFinalCheckIn);
+    const ratingInput =
+      body.managerGoalRatingLabel ||
+      body.managerGoalRating ||
+      body.managerRating ||
+      (isFinalCheckIn ? checkIn.managerRating : null);
     const parsedRating = parseRatingInput(ratingInput);
 
     if (nextStatus !== CHECKIN_STATUSES.COMPLETED) {
@@ -54,10 +58,6 @@ export async function PATCH(request, context) {
         { error: "Only transition to completed is supported in this endpoint." },
         { status: 400 }
       );
-    }
-
-    if (checkIn.status === CHECKIN_STATUSES.COMPLETED) {
-      return Response.json({ data: checkIn });
     }
 
     if (isFinalCheckIn) {
@@ -76,41 +76,43 @@ export async function PATCH(request, context) {
       }
     }
 
-    const updatePayload = {
-      status: CHECKIN_STATUSES.COMPLETED,
-      managerNotes,
-      transcriptText,
-      isFinalCheckIn,
-      managerRating: isFinalCheckIn ? parsedRating.value : null,
-      ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
-      // Normalize legacy rows where manager self-goal check-ins were stamped with HR approver id.
-      managerId: profile.role === "manager" ? profile.$id : checkIn.managerId,
-    };
+    let updated = checkIn;
 
-    let updated;
+    if (checkIn.status !== CHECKIN_STATUSES.COMPLETED) {
+      const updatePayload = {
+        status: CHECKIN_STATUSES.COMPLETED,
+        managerNotes,
+        transcriptText,
+        isFinalCheckIn,
+        managerRating: isFinalCheckIn ? parsedRating.value : null,
+        ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
+        // Normalize legacy rows where manager self-goal check-ins were stamped with HR approver id.
+        managerId: profile.role === "manager" ? profile.$id : checkIn.managerId,
+      };
 
-    try {
-      updated = await databases.updateDocument(
-        databaseId,
-        appwriteConfig.checkInsCollectionId,
-        checkInId,
-        updatePayload
-      );
-    } catch (error) {
-      if (
-        error?.message &&
-        String(error.message).toLowerCase().includes("unknown attribute")
-      ) {
-        return Response.json(
-          {
-            error:
-              "check_ins schema is missing managerRating and/or ratedAt. Add both attributes in Appwrite and retry.",
-          },
-          { status: 500 }
+      try {
+        updated = await databases.updateDocument(
+          databaseId,
+          appwriteConfig.checkInsCollectionId,
+          checkInId,
+          updatePayload
         );
-      }
+      } catch (error) {
+        if (
+          error?.message &&
+          String(error.message).toLowerCase().includes("unknown attribute")
+        ) {
+          return Response.json(
+            {
+              error:
+                "check_ins schema is missing managerRating and/or ratedAt. Add both attributes in Appwrite and retry.",
+            },
+            { status: 500 }
+          );
+        }
 
-      throw error;
+        throw error;
+      }
     }
 
     if (isFinalCheckIn && profile.role === "manager") {

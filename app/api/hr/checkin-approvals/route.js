@@ -2,7 +2,7 @@ import { appwriteConfig } from "@/lib/appwrite";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { listUsersByIds } from "@/lib/teamAccess";
+import { listManagersByHrId, listUsersByIds } from "@/lib/teamAccess";
 
 const VALID_DECISIONS = ["approved", "rejected", "needs_changes"];
 
@@ -89,7 +89,8 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const statusFilter = (searchParams.get("status") || "pending").trim();
 
-    const [checkInsResult, goalsResult, approvalsResult, managerCycleRatings] = await Promise.all([
+    const [assignedManagers, checkInsResult, goalsResult, approvalsResult, managerCycleRatings] = await Promise.all([
+      listManagersByHrId(databases, profile.$id),
       databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
         Query.equal("status", "completed"),
         Query.orderDesc("scheduledAt"),
@@ -101,6 +102,10 @@ export async function GET(request) {
       listApprovalsSafe(databases),
       listManagerCycleRatingsSafe(databases),
     ]);
+
+    const assignedManagerIds = new Set(
+      assignedManagers.map((manager) => String(manager.$id || "").trim()).filter(Boolean)
+    );
 
     const latestReviewMap = latestReviewByCheckIn(approvalsResult.rows);
     const goalById = new Map(goalsResult.documents.map((goal) => [goal.$id, goal]));
@@ -115,7 +120,11 @@ export async function GET(request) {
     }
 
     const userIds = new Set();
-    for (const checkIn of checkInsResult.documents) {
+    const scopedCheckIns = checkInsResult.documents.filter((checkIn) =>
+      assignedManagerIds.has(String(checkIn.managerId || "").trim())
+    );
+
+    for (const checkIn of scopedCheckIns) {
       userIds.add(String(checkIn.managerId || "").trim());
       userIds.add(String(checkIn.employeeId || "").trim());
     }
@@ -123,7 +132,7 @@ export async function GET(request) {
     const users = await listUsersByIds(databases, Array.from(userIds).filter(Boolean));
     const userById = new Map(users.map((item) => [item.$id, item]));
 
-    const rows = checkInsResult.documents
+    const rows = scopedCheckIns
       .map((checkIn) => {
         const latestReview = latestReviewMap.get(checkIn.$id);
         const reviewStatus = reviewStatusOf(latestReview);
@@ -241,9 +250,11 @@ export async function POST(request) {
     }
 
     const assignedHrId = String(managerProfile?.hrId || "").trim();
-    if (managerProfile?.role === "manager" && assignedHrId && assignedHrId !== profile.$id) {
+    const isAssignedToCurrentHr =
+      managerProfile?.role === "manager" && assignedHrId === String(profile.$id || "").trim();
+    if (!isAssignedToCurrentHr) {
       return Response.json(
-        { error: "Forbidden: this manager is assigned to a different HR owner." },
+        { error: "Forbidden: this manager is not assigned to the current HR owner." },
         { status: 403 }
       );
     }
