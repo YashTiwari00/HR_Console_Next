@@ -1,8 +1,8 @@
-import { errorResponse, requireAuth } from "@/lib/serverAuth";
+import { errorResponse, requireSessionAuth } from "@/lib/serverAuth";
 
 export async function GET(request) {
   try {
-    const { user, profile } = await requireAuth(request);
+    const { user, profile } = await requireSessionAuth(request);
 
     return Response.json({
       data: {

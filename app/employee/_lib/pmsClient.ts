@@ -164,6 +164,8 @@ export interface HrManagerDetail {
   employees: HrEmployeeDrilldown[];
 }
 
+export type AppRole = "employee" | "manager" | "hr";
+
 export type CheckInApprovalDecision = "approved" | "rejected" | "needs_changes";
 
 export interface HrCheckInApprovalItem {
@@ -515,6 +517,20 @@ export async function closeHrCycle(cycleId: string) {
     cycleId: string;
     closed: boolean;
     employeesUpdated: number;
+  };
+}
+
+export async function updateUserRoleAsHr(userId: string, role: AppRole) {
+  const payload = await requestJson(`/api/hr/roles/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+
+  return payload?.data as {
+    userId: string;
+    previousRole: AppRole | null;
+    role: AppRole;
+    changed: boolean;
   };
 }
 

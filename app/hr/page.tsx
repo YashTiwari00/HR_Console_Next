@@ -6,7 +6,12 @@ import { Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
-import { fetchHrManagers, HrManagerSummary } from "@/app/employee/_lib/pmsClient";
+import {
+  AppRole,
+  fetchHrManagers,
+  HrManagerSummary,
+  updateUserRoleAsHr,
+} from "@/app/employee/_lib/pmsClient";
 
 interface HrManagerRow extends Record<string, unknown> {
   managerId: string;
@@ -24,6 +29,11 @@ export default function HrDashboardPage() {
   const [selectedManagerId, setSelectedManagerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reassignUserId, setReassignUserId] = useState("");
+  const [reassignRole, setReassignRole] = useState<AppRole>("employee");
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignMessage, setReassignMessage] = useState("");
+  const [reassignError, setReassignError] = useState("");
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -160,6 +170,33 @@ export default function HrDashboardPage() {
     [selectedManagerId]
   );
 
+  const handleRoleReassign = useCallback(async () => {
+    const userId = reassignUserId.trim();
+
+    if (!userId) {
+      setReassignError("Enter a valid user ID.");
+      return;
+    }
+
+    setReassignLoading(true);
+    setReassignError("");
+    setReassignMessage("");
+
+    try {
+      const result = await updateUserRoleAsHr(userId, reassignRole);
+
+      if (result.changed) {
+        setReassignMessage(`Role updated to ${result.role} for ${result.userId}.`);
+      } else {
+        setReassignMessage(`No change needed. User is already ${result.role}.`);
+      }
+    } catch (err) {
+      setReassignError(err instanceof Error ? err.message : "Role reassignment failed.");
+    } finally {
+      setReassignLoading(false);
+    }
+  }, [reassignRole, reassignUserId]);
+
   return (
     <Stack gap="4">
       <PageHeader
@@ -197,6 +234,52 @@ export default function HrDashboardPage() {
           rowKey={(row) => row.managerId}
           emptyMessage="No managers available yet."
         />
+      </Card>
+
+      <Card title="Role Reassignment" description="HR-only action to reassign a user role by Appwrite user ID.">
+        <Stack gap="2">
+          {reassignError && (
+            <Alert
+              variant="error"
+              title="Reassignment failed"
+              description={reassignError}
+              onDismiss={() => setReassignError("")}
+            />
+          )}
+
+          {reassignMessage && (
+            <Alert
+              variant="success"
+              title="Role updated"
+              description={reassignMessage}
+              onDismiss={() => setReassignMessage("")}
+            />
+          )}
+
+          <div className="grid gap-3 md:grid-cols-[1.8fr_1fr_auto]">
+            <input
+              type="text"
+              value={reassignUserId}
+              onChange={(event) => setReassignUserId(event.target.value)}
+              placeholder="User ID"
+              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none"
+            />
+
+            <select
+              value={reassignRole}
+              onChange={(event) => setReassignRole(event.target.value as AppRole)}
+              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none"
+            >
+              <option value="employee">Employee</option>
+              <option value="manager">Manager</option>
+              <option value="hr">HR</option>
+            </select>
+
+            <Button type="button" onClick={handleRoleReassign} disabled={reassignLoading}>
+              {reassignLoading ? "Updating..." : "Update Role"}
+            </Button>
+          </div>
+        </Stack>
       </Card>
 
       <Card title="Expanded Manager Snapshot" description="Quick preview of team members and pending governance actions.">

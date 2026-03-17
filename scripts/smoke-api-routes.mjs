@@ -107,7 +107,7 @@ async function main() {
       method,
       headers: {
         "Content-Type": "application/json",
-        "x-appwrite-session": sessionToken,
+        cookie: `a_session_${projectId}=${encodeURIComponent(sessionToken)}`,
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });

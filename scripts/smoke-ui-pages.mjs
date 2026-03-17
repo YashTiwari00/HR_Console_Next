@@ -1,4 +1,4 @@
-import { Client, ID, Users } from "node-appwrite";
+import { Client, Users } from "node-appwrite";
 
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
@@ -107,7 +107,7 @@ async function main() {
 
   const badRoleResponse = await fetch(`${baseUrl}/api/hr/managers`, {
     headers: {
-      "x-appwrite-session": sessions.get("employee"),
+      cookie: `a_session_${projectId}=${encodeURIComponent(sessions.get("employee"))}`,
       "Content-Type": "application/json",
     },
   });

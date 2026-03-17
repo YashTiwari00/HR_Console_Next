@@ -750,7 +750,7 @@ export default function Home() {
               {sessionState === "profile-missing" ? "Re-login" : "Sign In"}
             </Link>
             {sessionState === "guest" && (
-              <Link href="/signup" className="lp-btn-ghost">Create Account</Link>
+              <Link href="/onboarding" className="lp-btn-ghost">Start Onboarding</Link>
             )}
           </div>
         </div>
@@ -868,7 +868,7 @@ export default function Home() {
               {sessionState === "profile-missing" ? "Re-login" : "Sign In"}
             </Link>
             {sessionState === "guest" && (
-              <Link href="/signup" className="lp-btn-ghost">Create Account</Link>
+              <Link href="/onboarding" className="lp-btn-ghost">Start Onboarding</Link>
             )}
           </div>
         </div>
