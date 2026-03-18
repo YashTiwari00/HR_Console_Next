@@ -22,6 +22,10 @@ export default function Card({
         'rounded-[var(--radius-md)]',
         'shadow-[var(--shadow-sm)]',
         'flex flex-col',
+        'transition-[box-shadow,transform,border-color] duration-300',
+        'hover:shadow-[0_8px_32px_color-mix(in_srgb,var(--color-primary)_14%,transparent)]',
+        'hover:border-[color-mix(in_srgb,var(--color-primary)_30%,var(--color-border))]',
+        'hover:-translate-y-px',
         className
       )}
       {...props}
