@@ -89,6 +89,28 @@ export async function GET(request) {
       listCheckInApprovals(databases),
     ]);
 
+    let managerCycleRatings = [];
+    let employeeCycleScores = [];
+
+    try {
+      const [managerCycleRatingsResult, employeeCycleScoresResult] = await Promise.all([
+        databases.listDocuments(databaseId, appwriteConfig.managerCycleRatingsCollectionId, [
+          Query.orderDesc("ratedAt"),
+          Query.limit(400),
+        ]),
+        databases.listDocuments(databaseId, appwriteConfig.employeeCycleScoresCollectionId, [
+          Query.orderDesc("computedAt"),
+          Query.limit(400),
+        ]),
+      ]);
+
+      managerCycleRatings = managerCycleRatingsResult.documents;
+      employeeCycleScores = employeeCycleScoresResult.documents;
+    } catch {
+      managerCycleRatings = [];
+      employeeCycleScores = [];
+    }
+
     const managers = managersResult.documents;
     const employees = employeesResult.documents;
     const goals = goalsResult.documents;
@@ -159,6 +181,27 @@ export async function GET(request) {
         pendingManagerGoalApprovals: managerSubmittedGoals.length,
         pendingCheckInApprovals,
         teamMembers,
+        managerQuarterHistory: managerCycleRatings
+          .filter((item) => String(item.managerId || "").trim() === manager.$id)
+          .slice(0, 4)
+          .map((item) => ({
+            cycleId: item.cycleId,
+            rating: Number(item.rating || 0),
+            ratingLabel: item.ratingLabel || "",
+            comments: item.comments || "",
+            ratedAt: item.ratedAt,
+          })),
+        teamQuarterHistory: employeeCycleScores
+          .filter((item) => String(item.managerId || "").trim() === manager.$id)
+          .slice(0, 12)
+          .map((item) => ({
+            cycleId: item.cycleId,
+            employeeId: item.employeeId,
+            scoreX100: Number(item.scoreX100 || 0),
+            scoreLabel: item.scoreLabel || "",
+            computedAt: item.computedAt,
+            visibility: item.visibility || "hidden",
+          })),
       });
     }
 

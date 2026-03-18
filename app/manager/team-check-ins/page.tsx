@@ -35,6 +35,9 @@ export default function ManagerCheckInsPage() {
   const [managerNotes, setManagerNotes] = useState<Record<string, string>>({});
   const [transcriptText, setTranscriptText] = useState<Record<string, string>>({});
   const [managerRatings, setManagerRatings] = useState<Record<string, string>>({});
+  const [managerRatingLabels, setManagerRatingLabels] = useState<
+    Record<string, "EE" | "DE" | "ME" | "SME" | "NI">
+  >({});
   const [aiMeta, setAiMeta] = useState<
     Record<string, { source: string; confidence: string; remaining?: number }>
   >({});
@@ -76,9 +79,10 @@ export default function ManagerCheckInsPage() {
     setError("");
 
     try {
-      const [checkInsPayload, goalsPayload] = await Promise.all([
-        requestJson("/api/check-ins"),
+      const [checkInsPayload, goalsPayload, teamMembersPayload] = await Promise.all([
+        requestJson("/api/check-ins?scope=team"),
         requestJson("/api/goals"),
+        requestJson("/api/team-members"),
       ]);
 
       const data = (checkInsPayload.data || []) as ManagerCheckIn[];
@@ -87,6 +91,9 @@ export default function ManagerCheckInsPage() {
         cycleId?: string;
         title?: string;
       }>;
+      const teamMembers = (teamMembersPayload.data || []) as Array<{ $id: string }>;
+      const teamMemberIds = new Set(teamMembers.map((item) => String(item.$id || "").trim()).filter(Boolean));
+      const filteredData = data.filter((item) => teamMemberIds.has(String(item.employeeId || "").trim()));
 
       const cycleMap = goals.reduce<Record<string, string>>((acc, goal) => {
         if (goal.cycleId) {
@@ -102,7 +109,7 @@ export default function ManagerCheckInsPage() {
         return acc;
       }, {});
 
-      setRows(data);
+      setRows(filteredData);
       setGoalCycleById(cycleMap);
       setGoalTitleById(titleMap);
     } catch (err) {
@@ -124,6 +131,7 @@ export default function ManagerCheckInsPage() {
 
     const rawRating = (managerRatings[row.$id] || "").trim();
     const parsedRating = rawRating === "" ? NaN : Number(rawRating);
+    const ratingLabel = managerRatingLabels[row.$id] || "ME";
 
     if (row.isFinalCheckIn) {
       if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
@@ -142,6 +150,7 @@ export default function ManagerCheckInsPage() {
           transcriptText: transcriptText[row.$id] || "",
           isFinalCheckIn: Boolean(row.isFinalCheckIn),
           managerRating: row.isFinalCheckIn ? parsedRating : null,
+          managerGoalRatingLabel: row.isFinalCheckIn ? ratingLabel : null,
         }),
       });
 
@@ -279,6 +288,28 @@ export default function ManagerCheckInsPage() {
                           }
                           helperText="Required when this is a final check-in."
                         />
+
+                        <div className="mt-2">
+                          <p className="caption mb-1">Goal rating label</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(["EE", "DE", "ME", "SME", "NI"] as const).map((label) => (
+                              <Button
+                                key={label}
+                                type="button"
+                                size="sm"
+                                variant={managerRatingLabels[row.$id] === label ? "primary" : "secondary"}
+                                onClick={() =>
+                                  setManagerRatingLabels((prev) => ({
+                                    ...prev,
+                                    [row.$id]: label,
+                                  }))
+                                }
+                              >
+                                {label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

@@ -19,6 +19,9 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   emptyMessage?: string;
   className?: string;
   rowKey?: (row: T) => string;
+  maxHeight?: number | string;
+  disableMaxHeight?: boolean;
+  stickyHeader?: boolean;
 }
 
 function TableSkeleton({ cols }: { cols: number }) {
@@ -45,8 +48,16 @@ export default function DataTable<T extends Record<string, unknown>>({
   emptyMessage = 'No data to display.',
   className,
   rowKey,
+  maxHeight = 420,
+  disableMaxHeight = false,
+  stickyHeader = true,
 }: DataTableProps<T>) {
   const normalizedRows = rows ?? data ?? [];
+  const resolvedMaxHeight = disableMaxHeight
+    ? undefined
+    : typeof maxHeight === 'number'
+      ? `${maxHeight}px`
+      : maxHeight;
 
   const alignMap = {
     left: 'text-left',
@@ -56,8 +67,9 @@ export default function DataTable<T extends Record<string, unknown>>({
 
   return (
     <div
+      style={resolvedMaxHeight ? { maxHeight: resolvedMaxHeight } : undefined}
       className={cn(
-        'w-full overflow-x-auto',
+        'w-full overflow-auto',
         'border border-[var(--color-border)] rounded-[var(--radius-md)]',
         'bg-[var(--color-surface)]',
         className
@@ -75,6 +87,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                   'caption font-medium',
                   'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
                   'whitespace-nowrap',
+                  stickyHeader && 'sticky top-0 z-10',
                   alignMap[col.align ?? 'left']
                 )}
               >

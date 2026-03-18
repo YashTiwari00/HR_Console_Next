@@ -1,9 +1,12 @@
 "use client";
 
-import { getUserRole, login } from "@/services/authService";
+import {
+  getRoleRedirectFromServer,
+  loginWithGoogle,
+} from "@/services/authService";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* ─── styles ─────────────────────────────────────────────────────────────── */
 
@@ -110,7 +113,7 @@ const CSS = `
 .lumo-auth-form {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1rem;
 }
 
 .lumo-auth-field {
@@ -163,7 +166,7 @@ const CSS = `
 }
 
 .lumo-auth-submit {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -183,6 +186,14 @@ const CSS = `
 }
 .lumo-auth-submit:disabled {
   opacity: 0.6;
+}
+
+.lumo-auth-helper {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--c-text-muted);
+  line-height: 1.6;
 }
 
 .lumo-auth-error {
@@ -253,11 +264,8 @@ export default function LoginPage() {
   const router = useRouter();
   const dotRef = useRef(null);
   const outlineRef = useRef(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [session, setSession] = useState(null);
 
   /* inject styles */
   useEffect(() => {
@@ -318,29 +326,34 @@ export default function LoginPage() {
     };
   }, []);
 
-  const redirectUserByRole = useCallback(async () => {
-    const role = await getUserRole();
-    if (role === "employee") router.push("/employee");
-    if (role === "manager") router.push("/manager");
-    if (role === "hr") router.push("/hr");
+  useEffect(() => {
+    let active = true;
+
+    const checkSessionAndRedirect = async () => {
+      const redirectTo = await getRoleRedirectFromServer();
+      if (!active || !redirectTo) return;
+      router.push(redirectTo);
+    };
+
+    checkSessionAndRedirect();
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
-  useEffect(() => { if (session) redirectUserByRole(); }, [session, redirectUserByRole]);
-  useEffect(() => { redirectUserByRole(); }, [redirectUserByRole]);
-
-  const handleLogin = async (e) => {
+  const handleGoogleSignIn = async (e) => {
     e.preventDefault();
     setError("");
-    if (!email || !password) { setError("Email and password are required."); return; }
     setLoading(true);
     try {
-      const loginSession = await login(email, password);
-      if (!loginSession) { setError("Login failed. Please check your credentials."); return; }
-      setSession(loginSession);
+      await loginWithGoogle();
     } catch {
-      setError("Login failed. Please check your credentials.");
-    } finally {
+      setError("Google sign-in failed. Please try again.");
       setLoading(false);
+      return;
+    } finally {
+      // OAuth redirects away from this page on success.
     }
   };
 
@@ -353,43 +366,23 @@ export default function LoginPage() {
 
         <p className="lumo-auth-eyebrow">HR Console</p>
         <h1 className="lumo-auth-title">Sign In</h1>
-        <p className="lumo-auth-sub">Access your workspace.</p>
+        <p className="lumo-auth-sub">Access your workspace with Google.</p>
 
-        <form className="lumo-auth-form" onSubmit={handleLogin}>
+        <form className="lumo-auth-form" onSubmit={handleGoogleSignIn}>
           {error && <p className="lumo-auth-error">{error}</p>}
 
-          <div className="lumo-auth-field">
-            <label className="lumo-auth-label">Electronic Mail</label>
-            <input
-              className="lumo-auth-input"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <div className="lumo-auth-highlight" />
-          </div>
-
-          <div className="lumo-auth-field">
-            <label className="lumo-auth-label">Password</label>
-            <input
-              className="lumo-auth-input"
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <div className="lumo-auth-highlight" />
-          </div>
-
           <button type="submit" className="lumo-auth-submit" disabled={loading}>
-            {loading ? "Authenticating..." : "Transmit Credentials"}
+            {loading ? "Redirecting to Google..." : "Continue with Google"}
           </button>
+
+          <p className="lumo-auth-helper">
+            Your organization role is detected after sign-in. First-time users complete a short role setup.
+          </p>
         </form>
 
         <p className="lumo-auth-footer">
           New here?{" "}
-          <Link href="/signup" className="lumo-auth-link">Create an account</Link>
+          <Link href="/onboarding" className="lumo-auth-link">Start onboarding</Link>
         </p>
       </div>
 

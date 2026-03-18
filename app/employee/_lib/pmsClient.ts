@@ -20,6 +20,10 @@ export interface GoalItem {
   status: GoalStatus;
   progressPercent: number;
   processPercent?: number;
+  managerFinalRating?: number | null;
+  managerFinalRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+  managerFinalRatedAt?: string | null;
+  ratingVisibleToEmployee?: boolean;
 }
 
 export interface CheckInItem {
@@ -35,8 +39,20 @@ export interface CheckInItem {
   transcriptText?: string;
   isFinalCheckIn?: boolean;
   managerRating?: number;
+  managerFinalRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
   ratedAt?: string;
   attachmentIds?: string[];
+  hrReviewStatus?: "approved" | "rejected" | "needs_changes" | null;
+  hrReviewComments?: string;
+  hrReviewedAt?: string | null;
+  hrReviewedBy?: string | null;
+  hrManagerRating?: number | null;
+  hrManagerRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+  hrManagerRatingComments?: string;
+  hrManagerRatedAt?: string | null;
+  managerReviewStatus?: "pending" | "reviewed";
+  managerReviewedAt?: string | null;
+  managerReviewComments?: string;
 }
 
 export interface ProgressUpdateItem {
@@ -111,6 +127,21 @@ export interface HrManagerSummary {
   pendingManagerGoalApprovals: number;
   pendingCheckInApprovals: number;
   teamMembers: TeamMemberItem[];
+  managerQuarterHistory?: Array<{
+    cycleId: string;
+    rating: number;
+    ratingLabel: string;
+    comments?: string;
+    ratedAt: string;
+  }>;
+  teamQuarterHistory?: Array<{
+    cycleId: string;
+    employeeId: string;
+    scoreX100: number;
+    scoreLabel: string;
+    computedAt: string;
+    visibility: "hidden" | "visible";
+  }>;
 }
 
 export interface HrEmployeeDrilldown {
@@ -118,6 +149,13 @@ export interface HrEmployeeDrilldown {
   goals: GoalItem[];
   progressUpdates: ProgressUpdateItem[];
   checkIns: CheckInItem[];
+  quarterHistory?: Array<{
+    cycleId: string;
+    scoreX100: number;
+    scoreLabel: string;
+    visibility: "hidden" | "visible";
+    computedAt: string;
+  }>;
 }
 
 export interface HrManagerDetail {
@@ -125,6 +163,8 @@ export interface HrManagerDetail {
   summary: HrManagerSummary;
   employees: HrEmployeeDrilldown[];
 }
+
+export type AppRole = "employee" | "manager" | "hr";
 
 export type CheckInApprovalDecision = "approved" | "rejected" | "needs_changes";
 
@@ -143,6 +183,14 @@ export interface HrCheckInApprovalItem {
   transcriptText?: string;
   isFinalCheckIn?: boolean;
   managerRating?: number;
+  managerCycleId?: string;
+  hrManagerRating?: {
+    rating: number;
+    ratingLabel: string;
+    comments?: string;
+    ratedAt: string;
+    hrId: string;
+  } | null;
   reviewStatus: "pending" | CheckInApprovalDecision;
   latestReview?: {
     decision: CheckInApprovalDecision;
@@ -450,6 +498,7 @@ export async function submitHrCheckInApproval(input: {
   checkInId: string;
   decision: CheckInApprovalDecision;
   comments?: string;
+  managerRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI";
 }) {
   const payload = await requestJson("/api/hr/checkin-approvals", {
     method: "POST",
@@ -457,6 +506,32 @@ export async function submitHrCheckInApproval(input: {
   });
 
   return payload?.data;
+}
+
+export async function closeHrCycle(cycleId: string) {
+  const payload = await requestJson(`/api/hr/cycles/${encodeURIComponent(cycleId)}/close`, {
+    method: "POST",
+  });
+
+  return payload?.data as {
+    cycleId: string;
+    closed: boolean;
+    employeesUpdated: number;
+  };
+}
+
+export async function updateUserRoleAsHr(userId: string, role: AppRole) {
+  const payload = await requestJson(`/api/hr/roles/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+
+  return payload?.data as {
+    userId: string;
+    previousRole: AppRole | null;
+    role: AppRole;
+    changed: boolean;
+  };
 }
 
 export async function createGoal(input: {

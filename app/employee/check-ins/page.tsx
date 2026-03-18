@@ -82,7 +82,7 @@ export default function EmployeeCheckInsPage() {
       setForm((prev) => ({ ...prev, employeeNotes: "", isFinalCheckIn: false }));
       setSelectedFiles([]);
       setFileInputKey((prev) => prev + 1);
-      setSuccess("Check-in created.");
+      setSuccess("Check-in created and sent to manager for review.");
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create check-in.");
@@ -166,7 +166,7 @@ export default function EmployeeCheckInsPage() {
             </div>
 
             <Button type="submit" loading={submitting} disabled={!form.goalId || approvedGoals.length === 0}>
-              Create Check-in
+              Create And Send To Manager
             </Button>
           </form>
         </Card>
@@ -181,6 +181,18 @@ export default function EmployeeCheckInsPage() {
                   <p className="body-sm text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
                   <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>
                 </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={checkIn.managerReviewStatus === "reviewed" ? "success" : "info"}
+                  >
+                    Manager review: {checkIn.managerReviewStatus || (checkIn.status === "completed" ? "reviewed" : "pending")}
+                  </Badge>
+                  {checkIn.managerReviewedAt && (
+                    <span className="caption">Reviewed: {formatDate(checkIn.managerReviewedAt)}</span>
+                  )}
+                </div>
+
                 <p className="caption mt-2">Goal: {checkIn.goalId}</p>
                 {checkIn.employeeNotes && <p className="caption mt-2">{checkIn.employeeNotes}</p>}
                 {checkIn.attachmentIds && checkIn.attachmentIds.length > 0 && (
@@ -208,6 +220,10 @@ export default function EmployeeCheckInsPage() {
                       <p className="caption">Manager notes: Not provided.</p>
                     )}
 
+                    {checkIn.managerReviewComments && !checkIn.managerNotes && (
+                      <p className="caption mt-1">Manager review: {checkIn.managerReviewComments}</p>
+                    )}
+
                     {checkIn.transcriptText && (
                       <p className="caption mt-1">Transcript summary: {checkIn.transcriptText}</p>
                     )}
@@ -217,6 +233,9 @@ export default function EmployeeCheckInsPage() {
                         <Badge variant="success">Final check-in</Badge>
                         {typeof checkIn.managerRating === "number" && (
                           <span className="caption">Manager rating: {checkIn.managerRating}/5</span>
+                        )}
+                        {typeof checkIn.managerRating !== "number" && (
+                          <span className="caption">Final rating unlocks after HR closes the cycle.</span>
                         )}
                       </div>
                     )}

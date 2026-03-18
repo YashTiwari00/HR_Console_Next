@@ -3,9 +3,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
 import {
   CheckInApprovalDecision,
+  closeHrCycle,
   fetchHrCheckInApprovals,
   formatDate,
   HrCheckInApprovalItem,
@@ -44,9 +45,54 @@ export default function HrApprovalsPage() {
 
   const [goalDecision, setGoalDecision] = useState<Record<string, ApprovalDecision>>({});
   const [goalComments, setGoalComments] = useState<Record<string, string>>({});
+  const [managerApprovalQuery, setManagerApprovalQuery] = useState("");
 
   const [checkInDecision, setCheckInDecision] = useState<Record<string, CheckInApprovalDecision>>({});
   const [checkInComments, setCheckInComments] = useState<Record<string, string>>({});
+  const [managerGradeLabels, setManagerGradeLabels] = useState<Record<string, "EE" | "DE" | "ME" | "SME" | "NI">>({});
+  const [employeeApprovalQuery, setEmployeeApprovalQuery] = useState("");
+  const [cycleToClose, setCycleToClose] = useState("");
+
+  const normalizedManagerApprovalQuery = managerApprovalQuery.trim().toLowerCase();
+  const normalizedEmployeeApprovalQuery = employeeApprovalQuery.trim().toLowerCase();
+
+  const filteredGoalRows = useMemo(() => {
+    if (!normalizedManagerApprovalQuery) return goalRows;
+
+    return goalRows.filter((goal) => {
+      const searchableText = [
+        goal.title,
+        goal.description,
+        goal.employeeId,
+        goal.managerId,
+        goal.cycleId,
+        goal.status,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedManagerApprovalQuery);
+    });
+  }, [goalRows, normalizedManagerApprovalQuery]);
+
+  const filteredCheckInRows = useMemo(() => {
+    if (!normalizedEmployeeApprovalQuery) return checkInRows;
+
+    return checkInRows.filter((row) => {
+      const searchableText = [
+        row.goalTitle,
+        row.managerName,
+        row.employeeName,
+        row.managerNotes,
+        row.transcriptText,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedEmployeeApprovalQuery);
+    });
+  }, [checkInRows, normalizedEmployeeApprovalQuery]);
 
   const queueCounts = useMemo(
     () => ({
@@ -77,10 +123,22 @@ export default function HrApprovalsPage() {
       setGoalDecision(nextGoalDecision);
 
       const nextCheckInDecision: Record<string, CheckInApprovalDecision> = {};
+      const nextManagerGradeLabels: Record<string, "EE" | "DE" | "ME" | "SME" | "NI"> = {};
       nextCheckIns.forEach((checkIn) => {
         nextCheckInDecision[checkIn.checkInId] = "approved";
+        if (checkIn.hrManagerRating?.ratingLabel) {
+          nextManagerGradeLabels[checkIn.checkInId] = checkIn.hrManagerRating.ratingLabel as
+            | "EE"
+            | "DE"
+            | "ME"
+            | "SME"
+            | "NI";
+        } else {
+          nextManagerGradeLabels[checkIn.checkInId] = "ME";
+        }
       });
       setCheckInDecision(nextCheckInDecision);
+      setManagerGradeLabels(nextManagerGradeLabels);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load approval queues.");
     } finally {
@@ -134,12 +192,35 @@ export default function HrApprovalsPage() {
         checkInId,
         decision: selected,
         comments: note,
+        managerRatingLabel: managerGradeLabels[checkInId] || "ME",
       });
 
       setSuccess(`Check-in decision saved: ${selected}.`);
       await loadQueues();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save check-in decision.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleCloseCycle(event: FormEvent) {
+    event.preventDefault();
+    setWorking(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const cycleId = cycleToClose.trim().toUpperCase();
+      if (!cycleId) {
+        throw new Error("Enter a cycle ID in Q#-YYYY format.");
+      }
+
+      const result = await closeHrCycle(cycleId);
+      setSuccess(`Cycle closed: ${result.cycleId}. Employee ratings are now visible.`);
+      await loadQueues();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to close cycle.");
     } finally {
       setWorking(false);
     }
@@ -163,111 +244,141 @@ export default function HrApprovalsPage() {
       )}
 
       <Card title="Queue Snapshot" description="Pending items that require HR action.">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="info">Manager Goals: {loading ? "..." : queueCounts.goal}</Badge>
-          <Badge variant="warning">Manager Check-ins: {loading ? "..." : queueCounts.checkIn}</Badge>
-        </div>
+        <Stack gap="3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info">Manager Goals: {loading ? "..." : queueCounts.goal}</Badge>
+            <Badge variant="warning">Manager Check-ins: {loading ? "..." : queueCounts.checkIn}</Badge>
+          </div>
+
+          <form onSubmit={handleCloseCycle} className="flex flex-wrap items-end gap-2">
+            <Input
+              label="Close Cycle"
+              value={cycleToClose}
+              onChange={(event) => setCycleToClose(event.target.value)}
+              placeholder="Q1-2026"
+              helperText="Employees can view final ratings only after closure."
+            />
+            <Button type="submit" variant="primary" loading={working}>
+              Close Cycle
+            </Button>
+          </form>
+        </Stack>
       </Card>
 
       <Card title="Manager Goal Approvals" description="Only manager-submitted goals are shown here.">
         <Stack gap="3">
+          <Input
+            label="Search manager approvals"
+            value={managerApprovalQuery}
+            onChange={(event) => setManagerApprovalQuery(event.target.value)}
+            placeholder="Search by goal, manager, cycle, or status"
+          />
+
           {loading && <p className="caption">Loading manager goals...</p>}
 
-          {!loading && goalRows.length === 0 && (
-            <p className="caption">No manager-submitted goals waiting for approval.</p>
+          {!loading && filteredGoalRows.length === 0 && (
+            <p className="caption">
+              {normalizedManagerApprovalQuery
+                ? "No manager approvals match your search."
+                : "No manager-submitted goals waiting for approval."}
+            </p>
           )}
 
-          {goalRows.map((goal) => {
-            const selected = goalDecision[goal.$id] || "approved";
+          <div className="max-h-[420px] overflow-y-auto pr-1">
+            <Stack gap="3">
+              {filteredGoalRows.map((goal) => {
+                const selected = goalDecision[goal.$id] || "approved";
 
-            return (
-              <form
-                key={goal.$id}
-                onSubmit={(event) => handleGoalDecision(event, goal.$id)}
-                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
-                    <p className="caption mt-1">{goal.description}</p>
-                  </div>
-                  <Badge variant="info">{goal.status}</Badge>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
-                  <span className="caption">Manager: {goal.employeeId}</span>
-                  <span className="caption">Cycle: {goal.cycleId}</span>
-                  <span className="caption">Weightage: {goal.weightage}%</span>
-                  <span className="caption">
-                    Progress: {goal.progressPercent ?? goal.processPercent ?? 0}%
-                  </span>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={selected === "approved" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setGoalDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "approved",
-                      }))
-                    }
+                return (
+                  <form
+                    key={goal.$id}
+                    onSubmit={(event) => handleGoalDecision(event, goal.$id)}
+                    className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
                   >
-                    Approve
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "needs_changes" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setGoalDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "needs_changes",
-                      }))
-                    }
-                  >
-                    Needs Changes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "rejected" ? "danger" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setGoalDecision((prev) => ({
-                        ...prev,
-                        [goal.$id]: "rejected",
-                      }))
-                    }
-                  >
-                    Reject
-                  </Button>
-                  <Badge variant={decisionBadge(selected)}>{selected}</Badge>
-                </div>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
+                        <p className="caption mt-1">{goal.description}</p>
+                      </div>
+                      <Badge variant="info">{goal.status}</Badge>
+                    </div>
 
-                <div className="mt-3">
-                  <Textarea
-                    label="HR Comments"
-                    value={goalComments[goal.$id] || ""}
-                    onChange={(event) =>
-                      setGoalComments((prev) => ({
-                        ...prev,
-                        [goal.$id]: event.target.value,
-                      }))
-                    }
-                    placeholder="Add guidance for the manager"
-                  />
-                </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
+                      <span className="caption">Manager: {goal.employeeId}</span>
+                      <span className="caption">Cycle: {goal.cycleId}</span>
+                      <span className="caption">Weightage: {goal.weightage}%</span>
+                      <span className="caption">
+                        Progress: {goal.progressPercent ?? goal.processPercent ?? 0}%
+                      </span>
+                    </div>
 
-                <div className="mt-3">
-                  <Button type="submit" loading={working}>
-                    Save Decision
-                  </Button>
-                </div>
-              </form>
-            );
-          })}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={selected === "approved" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setGoalDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "approved",
+                          }))
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "needs_changes" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setGoalDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "needs_changes",
+                          }))
+                        }
+                      >
+                        Needs Changes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "rejected" ? "danger" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setGoalDecision((prev) => ({
+                            ...prev,
+                            [goal.$id]: "rejected",
+                          }))
+                        }
+                      >
+                        Reject
+                      </Button>
+                      <Badge variant={decisionBadge(selected)}>{selected}</Badge>
+                    </div>
+
+                    <div className="mt-3">
+                      <Textarea
+                        label="HR Comments"
+                        value={goalComments[goal.$id] || ""}
+                        onChange={(event) =>
+                          setGoalComments((prev) => ({
+                            ...prev,
+                            [goal.$id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Add guidance for the manager"
+                      />
+                    </div>
+
+                    <div className="mt-3">
+                      <Button type="submit" loading={working}>
+                        Save Decision
+                      </Button>
+                    </div>
+                  </form>
+                );
+              })}
+            </Stack>
+          </div>
         </Stack>
       </Card>
 
@@ -276,110 +387,156 @@ export default function HrApprovalsPage() {
         description="Review completed check-ins submitted by managers before final governance sign-off."
       >
         <Stack gap="3">
+          <Input
+            label="Search employee approvals"
+            value={employeeApprovalQuery}
+            onChange={(event) => setEmployeeApprovalQuery(event.target.value)}
+            placeholder="Search by employee, manager, goal, or notes"
+          />
+
           {loading && <p className="caption">Loading manager check-ins...</p>}
 
-          {!loading && checkInRows.length === 0 && (
-            <p className="caption">No manager-completed check-ins waiting for approval.</p>
+          {!loading && filteredCheckInRows.length === 0 && (
+            <p className="caption">
+              {normalizedEmployeeApprovalQuery
+                ? "No employee approvals match your search."
+                : "No manager-completed check-ins waiting for approval."}
+            </p>
           )}
 
-          {checkInRows.map((row) => {
-            const selected = checkInDecision[row.checkInId] || "approved";
+          <div className="max-h-[420px] overflow-y-auto pr-1">
+            <Stack gap="3">
+              {filteredCheckInRows.map((row) => {
+                const selected = checkInDecision[row.checkInId] || "approved";
 
-            return (
-              <form
-                key={row.checkInId}
-                onSubmit={(event) => handleCheckInDecision(event, row.checkInId)}
-                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="body-sm text-[var(--color-text)]">{row.goalTitle}</p>
-                  <Badge variant="warning">pending</Badge>
-                </div>
+                return (
+                  <form
+                    key={row.checkInId}
+                    onSubmit={(event) => handleCheckInDecision(event, row.checkInId)}
+                    className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="body-sm text-[var(--color-text)]">{row.goalTitle}</p>
+                      <Badge variant="warning">pending</Badge>
+                    </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
-                  <span className="caption">Manager: {row.managerName}</span>
-                  <span className="caption">Employee: {row.employeeName}</span>
-                  <span className="caption">Scheduled: {formatDate(row.scheduledAt)}</span>
-                  {row.completedAt && <span className="caption">Completed: {formatDate(row.completedAt)}</span>}
-                </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
+                      <span className="caption">Manager: {row.managerName}</span>
+                      <span className="caption">Employee: {row.employeeName}</span>
+                      <span className="caption">Scheduled: {formatDate(row.scheduledAt)}</span>
+                      {row.completedAt && <span className="caption">Completed: {formatDate(row.completedAt)}</span>}
+                    </div>
 
-                {row.managerNotes && <p className="caption mt-2">Manager notes: {row.managerNotes}</p>}
-                {row.transcriptText && <p className="caption mt-1">Summary: {row.transcriptText}</p>}
+                    {row.managerNotes && <p className="caption mt-2">Manager notes: {row.managerNotes}</p>}
+                    {row.transcriptText && <p className="caption mt-1">Summary: {row.transcriptText}</p>}
 
-                {row.isFinalCheckIn && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge variant="info">Final check-in</Badge>
-                    {typeof row.managerRating === "number" && (
-                      <span className="caption">Manager rating: {row.managerRating}/5</span>
+                    {row.isFinalCheckIn && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="info">Final check-in</Badge>
+                        {typeof row.managerRating === "number" && (
+                          <span className="caption">Manager rating: {row.managerRating}/5</span>
+                        )}
+                        {row.managerCycleId && <span className="caption">Cycle: {row.managerCycleId}</span>}
+                      </div>
                     )}
-                  </div>
-                )}
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={selected === "approved" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setCheckInDecision((prev) => ({
-                        ...prev,
-                        [row.checkInId]: "approved",
-                      }))
-                    }
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "needs_changes" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setCheckInDecision((prev) => ({
-                        ...prev,
-                        [row.checkInId]: "needs_changes",
-                      }))
-                    }
-                  >
-                    Needs Changes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={selected === "rejected" ? "danger" : "secondary"}
-                    size="sm"
-                    onClick={() =>
-                      setCheckInDecision((prev) => ({
-                        ...prev,
-                        [row.checkInId]: "rejected",
-                      }))
-                    }
-                  >
-                    Reject
-                  </Button>
-                  <Badge variant={decisionBadge(selected)}>{selected}</Badge>
-                </div>
+                    {row.isFinalCheckIn && (
+                      <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                        <p className="caption">HR grade for manager</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {(["EE", "DE", "ME", "SME", "NI"] as const).map((grade) => (
+                            <Button
+                              key={grade}
+                              type="button"
+                              size="sm"
+                              variant={managerGradeLabels[row.checkInId] === grade ? "primary" : "secondary"}
+                              onClick={() =>
+                                setManagerGradeLabels((prev) => ({
+                                  ...prev,
+                                  [row.checkInId]: grade,
+                                }))
+                              }
+                            >
+                              {grade}
+                            </Button>
+                          ))}
+                        </div>
 
-                <div className="mt-3">
-                  <Textarea
-                    label="HR Comments"
-                    value={checkInComments[row.checkInId] || ""}
-                    onChange={(event) =>
-                      setCheckInComments((prev) => ({
-                        ...prev,
-                        [row.checkInId]: event.target.value,
-                      }))
-                    }
-                    placeholder="Add governance notes for this check-in closure"
-                  />
-                </div>
+                        {row.hrManagerRating && (
+                          <p className="caption mt-2">
+                            Previous HR grade: {row.hrManagerRating.ratingLabel} ({row.hrManagerRating.rating}/5)
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                <div className="mt-3">
-                  <Button type="submit" loading={working}>
-                    Save Decision
-                  </Button>
-                </div>
-              </form>
-            );
-          })}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={selected === "approved" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setCheckInDecision((prev) => ({
+                            ...prev,
+                            [row.checkInId]: "approved",
+                          }))
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "needs_changes" ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setCheckInDecision((prev) => ({
+                            ...prev,
+                            [row.checkInId]: "needs_changes",
+                          }))
+                        }
+                      >
+                        Needs Changes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={selected === "rejected" ? "danger" : "secondary"}
+                        size="sm"
+                        onClick={() =>
+                          setCheckInDecision((prev) => ({
+                            ...prev,
+                            [row.checkInId]: "rejected",
+                          }))
+                        }
+                      >
+                        Reject
+                      </Button>
+                      <Badge variant={decisionBadge(selected)}>{selected}</Badge>
+                    </div>
+
+                    <div className="mt-3">
+                      <Textarea
+                        label="HR Comments"
+                        value={checkInComments[row.checkInId] || ""}
+                        onChange={(event) =>
+                          setCheckInComments((prev) => ({
+                            ...prev,
+                            [row.checkInId]: event.target.value,
+                          }))
+                        }
+                        placeholder="Add governance notes for this check-in closure"
+                      />
+                    </div>
+
+                    <div className="mt-3">
+                      <Button type="submit" loading={working}>
+                        Save Decision
+                      </Button>
+                    </div>
+                  </form>
+                );
+              })}
+            </Stack>
+          </div>
         </Stack>
       </Card>
     </Stack>

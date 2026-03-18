@@ -110,10 +110,11 @@ export default function HrCheckInsPage() {
         header: "Action",
         align: "right",
         render: (_value: unknown, row: ManagerCadenceRow) => (
-          <Link href={`/hr/managers/${encodeURIComponent(row.managerId)}`}>
-            <Button size="sm" variant="secondary">
-              Open
-            </Button>
+          <Link
+            href={`/hr/managers/${encodeURIComponent(row.managerId)}`}
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 body-sm font-medium text-[var(--color-text)] transition-colors duration-150 hover:bg-[var(--color-surface-muted)]"
+          >
+            Open
           </Link>
         ),
       },

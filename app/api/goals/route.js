@@ -26,6 +26,21 @@ function dedupeById(documents) {
   return merged;
 }
 
+function isUnknownAttributeError(error) {
+  return (
+    error?.message &&
+    String(error.message).toLowerCase().includes("unknown attribute")
+  );
+}
+
+function isMissingRequiredAttributeError(error, attribute) {
+  const message = String(error?.message || "").toLowerCase();
+  const normalizedAttribute = String(attribute || "").trim().toLowerCase();
+
+  if (!normalizedAttribute) return false;
+  return message.includes("missing required attribute") && message.includes(normalizedAttribute);
+}
+
 async function listManagerGoalsByScope(databases, profile, scope) {
   if (scope === "self") {
     const result = await databases.listDocuments(
@@ -146,7 +161,25 @@ export async function GET(request) {
       documents = documents.filter((item) => item.employeeId === employeeId);
     }
 
-    return Response.json({ data: documents });
+    const shaped = documents.map((goal) => {
+      const ratingVisibleToEmployee = Boolean(goal.ratingVisibleToEmployee);
+      const isManagerSelfGoal =
+        profile.role === "manager" && String(goal.employeeId || "").trim() === String(profile.$id || "").trim();
+
+      if ((profile.role === "employee" && !ratingVisibleToEmployee) || isManagerSelfGoal) {
+        return {
+          ...goal,
+          managerFinalRating: null,
+          managerFinalRatingLabel: null,
+          managerFinalRatedAt: null,
+          managerFinalRatedBy: null,
+        };
+      }
+
+      return goal;
+    });
+
+    return Response.json({ data: shaped });
   } catch (error) {
     return errorResponse(error);
   }
@@ -227,25 +260,71 @@ export async function POST(request) {
       );
     }
 
-    const goal = await databases.createDocument(
-      databaseId,
-      appwriteConfig.goalsCollectionId,
-      ID.unique(),
-      {
-        employeeId: profile.$id,
-        managerId,
-        cycleId,
-        frameworkType,
-        title,
-        description,
-        weightage,
-        status: GOAL_STATUSES.DRAFT,
-        progressPercent: 0,
-        dueDate,
-        lineageRef,
-        aiSuggested,
+    const baseGoalPayload = {
+      employeeId: profile.$id,
+      managerId,
+      cycleId,
+      frameworkType,
+      title,
+      description,
+      weightage,
+      status: GOAL_STATUSES.DRAFT,
+      dueDate,
+      lineageRef,
+      aiSuggested,
+    };
+
+    let goal;
+
+    try {
+      // Prefer dual-write first for mixed environments where a legacy
+      // `processPercent` attribute may still be required.
+      goal = await databases.createDocument(
+        databaseId,
+        appwriteConfig.goalsCollectionId,
+        ID.unique(),
+        {
+          ...baseGoalPayload,
+          progressPercent: 0,
+          processPercent: 0,
+        }
+      );
+    } catch (error) {
+      if (isUnknownAttributeError(error)) {
+        try {
+          // Modern schema path.
+          goal = await databases.createDocument(
+            databaseId,
+            appwriteConfig.goalsCollectionId,
+            ID.unique(),
+            {
+              ...baseGoalPayload,
+              progressPercent: 0,
+            }
+          );
+        } catch (secondError) {
+          if (
+            isUnknownAttributeError(secondError) ||
+            isMissingRequiredAttributeError(secondError, "processPercent")
+          ) {
+            // Legacy schema path.
+            goal = await databases.createDocument(
+              databaseId,
+              appwriteConfig.goalsCollectionId,
+              ID.unique(),
+              {
+                ...baseGoalPayload,
+                processPercent: 0,
+              }
+            );
+          } else {
+            throw secondError;
+          }
+        }
+      } else {
+        throw error;
       }
-    );
+    }
 
     const warning =
       profile.role === "manager" &&

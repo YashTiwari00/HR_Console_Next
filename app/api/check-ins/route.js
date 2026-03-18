@@ -7,6 +7,78 @@ import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 const VALID_STATUSES = Object.values(CHECKIN_STATUSES);
 
+function latestReviewByCheckIn(approvals) {
+  const map = new Map();
+
+  for (const item of approvals) {
+    const id = String(item.checkInId || "").trim();
+    if (!id) continue;
+
+    const existing = map.get(id);
+    if (!existing) {
+      map.set(id, item);
+      continue;
+    }
+
+    const existingTime = new Date(existing.decidedAt || "").valueOf();
+    const nextTime = new Date(item.decidedAt || "").valueOf();
+
+    if (Number.isNaN(existingTime) || (!Number.isNaN(nextTime) && nextTime > existingTime)) {
+      map.set(id, item);
+    }
+  }
+
+  return map;
+}
+
+function isMissingCollectionError(error, collectionId) {
+  const message = String(error?.message || "").toLowerCase();
+  const normalizedCollection = String(collectionId || "").toLowerCase();
+
+  return (
+    message.includes("collection") &&
+    message.includes("requested id") &&
+    message.includes("could not be found") &&
+    (!normalizedCollection || message.includes(normalizedCollection))
+  );
+}
+
+async function listCheckInApprovalsSafe(databases) {
+  try {
+    const response = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.checkInApprovalsCollectionId,
+      [Query.orderDesc("decidedAt"), Query.limit(400)]
+    );
+
+    return response.documents;
+  } catch (error) {
+    if (isMissingCollectionError(error, appwriteConfig.checkInApprovalsCollectionId)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function listManagerCycleRatingsSafe(databases) {
+  try {
+    const response = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.managerCycleRatingsCollectionId,
+      [Query.orderDesc("ratedAt"), Query.limit(400)]
+    );
+
+    return response.documents;
+  } catch (error) {
+    if (isMissingCollectionError(error, appwriteConfig.managerCycleRatingsCollectionId)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -103,7 +175,87 @@ export async function GET(request) {
       documents = documents.filter((item) => item.employeeId === employeeId);
     }
 
-    return Response.json({ data: documents.map((item) => ({ ...item, checkInCode: buildCheckInCode(item) })) });
+    const goalIds = Array.from(new Set(documents.map((item) => String(item.goalId || "").trim()).filter(Boolean)));
+    const goalById = new Map();
+
+    const [approvalRows, managerCycleRatings] = await Promise.all([
+      listCheckInApprovalsSafe(databases),
+      listManagerCycleRatingsSafe(databases),
+    ]);
+
+    const latestReviewMap = latestReviewByCheckIn(approvalRows);
+    const managerRatingByCycle = new Map();
+
+    for (const row of managerCycleRatings) {
+      const key = `${String(row.managerId || "").trim()}|${String(row.cycleId || "").trim()}`;
+      if (!key.trim()) continue;
+      if (!managerRatingByCycle.has(key)) {
+        managerRatingByCycle.set(key, row);
+      }
+    }
+
+    if (goalIds.length > 0) {
+      const goalRows = await databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+        Query.equal("$id", goalIds),
+        Query.limit(200),
+      ]);
+
+      goalRows.documents.forEach((goal) => {
+        goalById.set(goal.$id, goal);
+      });
+    }
+
+    const shaped = documents.map((item) => {
+      const goal = goalById.get(String(item.goalId || "").trim());
+      const latestReview = latestReviewMap.get(String(item.$id || "").trim());
+      const managerCycleRating = managerRatingByCycle.get(
+        `${String(item.managerId || "").trim()}|${String(goal?.cycleId || "").trim()}`
+      );
+      const managerReviewStatus = String(item.status || "") === CHECKIN_STATUSES.COMPLETED ? "reviewed" : "pending";
+      const ratingVisibleToEmployee = Boolean(goal?.ratingVisibleToEmployee);
+      const isManagerSelfRecord =
+        profile.role === "manager" && String(item.employeeId || "").trim() === String(profile.$id || "").trim();
+
+      if ((profile.role === "employee" && !ratingVisibleToEmployee) || isManagerSelfRecord) {
+        return {
+          ...item,
+          managerRating: null,
+          ratedAt: null,
+          managerFinalRatingLabel: null,
+          hrReviewStatus: latestReview?.decision || null,
+          hrReviewComments: latestReview?.comments || "",
+          hrReviewedAt: latestReview?.decidedAt || null,
+          hrReviewedBy: latestReview?.hrId || null,
+          hrManagerRating: managerCycleRating ? Number(managerCycleRating.rating || 0) : null,
+          hrManagerRatingLabel: managerCycleRating?.ratingLabel || null,
+          hrManagerRatingComments: managerCycleRating?.comments || "",
+          hrManagerRatedAt: managerCycleRating?.ratedAt || null,
+          managerReviewStatus,
+          managerReviewedAt: managerReviewStatus === "reviewed" ? item.$updatedAt || null : null,
+          managerReviewComments: item.managerNotes || "",
+          checkInCode: buildCheckInCode(item),
+        };
+      }
+
+      return {
+        ...item,
+        managerFinalRatingLabel: goal?.managerFinalRatingLabel || null,
+        hrReviewStatus: latestReview?.decision || null,
+        hrReviewComments: latestReview?.comments || "",
+        hrReviewedAt: latestReview?.decidedAt || null,
+        hrReviewedBy: latestReview?.hrId || null,
+        hrManagerRating: managerCycleRating ? Number(managerCycleRating.rating || 0) : null,
+        hrManagerRatingLabel: managerCycleRating?.ratingLabel || null,
+        hrManagerRatingComments: managerCycleRating?.comments || "",
+        hrManagerRatedAt: managerCycleRating?.ratedAt || null,
+        managerReviewStatus,
+        managerReviewedAt: managerReviewStatus === "reviewed" ? item.$updatedAt || null : null,
+        managerReviewComments: item.managerNotes || "",
+        checkInCode: buildCheckInCode(item),
+      };
+    });
+
+    return Response.json({ data: shaped });
   } catch (error) {
     return errorResponse(error);
   }
@@ -143,7 +295,12 @@ export async function POST(request) {
       goalId
     );
 
-    const managerId = managerIdInput || String(goal.managerId || "").trim();
+    const goalOwnerId = String(goal.employeeId || "").trim();
+    const goalManagerId = String(goal.managerId || "").trim();
+    const isManagerSelfGoal =
+      profile.role === "manager" && goalOwnerId === String(profile.$id || "").trim();
+
+    const managerId = managerIdInput || (isManagerSelfGoal ? String(profile.$id || "").trim() : goalManagerId);
 
     if (!managerId) {
       return Response.json(
@@ -152,12 +309,22 @@ export async function POST(request) {
       );
     }
 
-    if (profile.role === "employee" && goal.employeeId !== profile.$id) {
+    const isGoalOwner = goalOwnerId === String(profile.$id || "").trim();
+    const isGoalManager = goalManagerId === String(profile.$id || "").trim();
+
+    if (profile.role === "employee" && !isGoalOwner) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }
 
-    if (profile.role === "manager" && goal.managerId !== profile.$id) {
+    if (profile.role === "manager" && !isGoalManager && !isGoalOwner) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
+    }
+
+    if (employeeId !== goalOwnerId) {
+      return Response.json(
+        { error: "employeeId must match the goal owner." },
+        { status: 400 }
+      );
     }
 
     if (goal.status !== GOAL_STATUSES.APPROVED) {

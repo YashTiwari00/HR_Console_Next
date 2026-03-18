@@ -77,7 +77,8 @@ export default function ManagerCheckInsPage() {
         goalId: form.goalId,
         scheduledAt: form.scheduledAt,
         employeeNotes: form.employeeNotes,
-        status: "planned",
+        // Manager self check-ins go straight to HR review queue.
+        status: "completed",
         isFinalCheckIn: form.isFinalCheckIn,
         attachmentIds: uploaded.map((item) => item.fileId),
       });
@@ -85,7 +86,7 @@ export default function ManagerCheckInsPage() {
       setForm((prev) => ({ ...prev, employeeNotes: "", isFinalCheckIn: false }));
       setSelectedFiles([]);
       setFileInputKey((prev) => prev + 1);
-      setSuccess("Check-in created.");
+      setSuccess("Check-in submitted to HR review.");
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create check-in.");
@@ -145,7 +146,7 @@ export default function ManagerCheckInsPage() {
 
             <Checkbox
               label="Mark this as my final check-in for this goal"
-              description="Manager will be asked to provide a final rating when completing this check-in."
+              description="HR will grade this final check-in in the approval queue."
               checked={form.isFinalCheckIn}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, isFinalCheckIn: event.target.checked }))
@@ -174,7 +175,7 @@ export default function ManagerCheckInsPage() {
             </div>
 
             <Button type="submit" loading={submitting} disabled={!form.goalId || approvedGoals.length === 0}>
-              Create Check-in
+              Create And Send To HR
             </Button>
           </form>
         </Card>
@@ -184,7 +185,10 @@ export default function ManagerCheckInsPage() {
             {loading && <p className="caption">Loading check-ins...</p>}
             {!loading && checkIns.length === 0 && <p className="caption">No check-ins yet.</p>}
             {checkIns.map((checkIn) => (
-              <div key={checkIn.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+              <div
+                key={checkIn.$id}
+                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <p className="body-sm text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
                   <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>
@@ -220,13 +224,47 @@ export default function ManagerCheckInsPage() {
                       <p className="caption mt-1">Transcript summary: {checkIn.transcriptText}</p>
                     )}
 
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant={
+                          checkIn.hrReviewStatus === "approved"
+                            ? "success"
+                            : checkIn.hrReviewStatus === "rejected"
+                              ? "danger"
+                              : checkIn.hrReviewStatus === "needs_changes"
+                                ? "warning"
+                                : "info"
+                        }
+                      >
+                        HR review: {checkIn.hrReviewStatus || "pending"}
+                      </Badge>
+                      {checkIn.hrReviewedAt && (
+                        <span className="caption">Reviewed: {formatDate(checkIn.hrReviewedAt)}</span>
+                      )}
+                    </div>
+
+                    {checkIn.hrReviewComments && (
+                      <p className="caption mt-1">HR comments: {checkIn.hrReviewComments}</p>
+                    )}
+
                     {checkIn.isFinalCheckIn && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Badge variant="success">Final check-in</Badge>
-                        {typeof checkIn.managerRating === "number" && (
-                          <span className="caption">Reviewer rating: {checkIn.managerRating}/5</span>
+                        {checkIn.hrManagerRatingLabel ? (
+                          <span className="caption">
+                            HR grade: {checkIn.hrManagerRatingLabel}
+                            {typeof checkIn.hrManagerRating === "number"
+                              ? ` (${checkIn.hrManagerRating}/5)`
+                              : ""}
+                          </span>
+                        ) : (
+                          <span className="caption">Awaiting HR grading.</span>
                         )}
                       </div>
+                    )}
+
+                    {checkIn.isFinalCheckIn && checkIn.hrManagerRatingComments && (
+                      <p className="caption mt-1">HR grade comments: {checkIn.hrManagerRatingComments}</p>
                     )}
                   </div>
                 )}
