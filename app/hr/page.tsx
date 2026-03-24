@@ -435,7 +435,7 @@ export default function HrDashboardPage() {
           )}
 
           {filteredHeatMapRows.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="heatmap-scroll max-h-[26rem] overflow-auto pr-1">
               <div className="min-w-[680px] space-y-2">
                 {filteredHeatMapRows.map((row) => (
                   <div
