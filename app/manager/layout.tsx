@@ -20,10 +20,10 @@ const PERSONA_KEY = "managerConsolePersona";
 
 const managerNavItems = [
   { label: "Dashboard", href: "/manager", route: "/manager" },
+  { label: "Team Goal Assignment", href: "/manager/team-goals", route: "/manager/team-goals" },
   { label: "Team Progress Overview", href: "/manager/team-progress", route: "/manager/team-progress" },
   { label: "Team Ranking & Graph", href: "/manager/team-analytics", route: "/manager/team-analytics" },
-  { label: "Team Check-ins", href: "/manager/team-check-ins", route: "/manager/team-check-ins" },
-  { label: "Approval Queue", href: "/manager/approvals", route: "/manager/approvals" },
+  { label: "Team Approvals", href: "/manager/team-approvals", route: "/manager/team-approvals" },
 ];
 
 const employeeNavItems = [
@@ -36,10 +36,10 @@ const employeeNavItems = [
 
 const managerQuickActions = [
   { label: "Open Manager Dashboard", href: "/manager" },
+  { label: "Assign Team Goal", href: "/manager/team-goals" },
   { label: "Review Team Progress", href: "/manager/team-progress" },
   { label: "Open Team Ranking & Graph", href: "/manager/team-analytics" },
-  { label: "Review Team Check-ins", href: "/manager/team-check-ins" },
-  { label: "Review Pending Goals", href: "/manager/approvals" },
+  { label: "Review Team Approvals", href: "/manager/team-approvals" },
 ];
 
 const employeeQuickActions = [
