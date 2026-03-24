@@ -16,15 +16,13 @@ interface HrLayoutProps {
 
 const navItems = [
   { label: "Dashboard", href: "/hr", route: "/hr" },
-  { label: "Team Assignments", href: "/hr/team-assignments", route: "/hr/team-assignments" },
-  { label: "Approval Queue", href: "/hr/approvals", route: "/hr/approvals" },
+  { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics" },
   { label: "Check-in Monitoring", href: "/hr/check-ins", route: "/hr/check-ins" },
 ];
 
 const quickActions = [
-  { label: "Manage Team Mapping", href: "/hr/team-assignments" },
-  { label: "Review Manager Goals", href: "/hr/approvals" },
-  { label: "Review Manager Check-ins", href: "/hr/approvals" },
+  { label: "View Team Ranking", href: "/hr/team-analytics" },
+  { label: "Monitor Goal Progress", href: "/hr" },
   { label: "Monitor Manager Cadence", href: "/hr/check-ins" },
 ];
 
@@ -148,7 +146,7 @@ export default function HrLayout({ children }: HrLayoutProps) {
         <Card className="bg-[var(--color-bg)]">
           <p className="caption mb-[var(--space-2)]">HR reminder</p>
           <p className="body font-medium">Focus on manager cadence and coaching quality</p>
-          <p className="caption mt-[var(--space-1)]">Resolve pending approvals before cycle lock dates</p>
+          <p className="caption mt-[var(--space-1)]">Track organization progress and intervene early on risks</p>
         </Card>
 
         <Card className="mt-[var(--space-2)] bg-[var(--color-bg)]">

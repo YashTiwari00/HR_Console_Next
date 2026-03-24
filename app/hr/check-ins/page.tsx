@@ -97,7 +97,7 @@ export default function HrCheckInsPage() {
       },
       {
         key: "pendingCheckInApprovals",
-        header: "Pending HR",
+        header: "Pending Review",
         align: "center",
         render: (_value: unknown, row: ManagerCadenceRow) => (
           <Badge variant={row.pendingCheckInApprovals > 0 ? "warning" : "success"}>
@@ -126,7 +126,7 @@ export default function HrCheckInsPage() {
     <Stack gap="4">
       <PageHeader
         title="Manager Check-in Monitoring"
-        subtitle="Track check-in cadence across all managers and identify queues waiting for HR review."
+        subtitle="Track check-in cadence across all managers and identify queues needing supervision follow-up."
         actions={
           <Button variant="secondary" onClick={loadRows} disabled={loading}>
             Refresh
@@ -146,7 +146,7 @@ export default function HrCheckInsPage() {
         <Card title="Completed Check-ins">
           <p className="heading-xl">{loading ? "..." : totals.completed}</p>
         </Card>
-        <Card title="Pending HR Check-ins">
+        <Card title="Pending Review Check-ins">
           <p className="heading-xl">{loading ? "..." : totals.pending}</p>
         </Card>
       </Grid>

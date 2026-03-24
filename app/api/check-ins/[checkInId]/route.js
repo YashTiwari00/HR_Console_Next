@@ -8,7 +8,7 @@ import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 export async function PATCH(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager", "hr"]);
+    requireRole(profile, ["manager"]);
 
     const params = await context.params;
     const checkInId = params.checkInId;
@@ -86,8 +86,7 @@ export async function PATCH(request, context) {
         isFinalCheckIn,
         managerRating: isFinalCheckIn ? parsedRating.value : null,
         ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
-        // Normalize legacy rows where manager self-goal check-ins were stamped with HR approver id.
-        managerId: profile.role === "manager" ? profile.$id : checkIn.managerId,
+        managerId: profile.$id,
       };
 
       try {
@@ -115,7 +114,7 @@ export async function PATCH(request, context) {
       }
     }
 
-    if (isFinalCheckIn && profile.role === "manager") {
+    if (isFinalCheckIn) {
       try {
         const cycleState = await getCycleState(databases, goal.cycleId);
         const ratingVisibleToEmployee = cycleState.state === "closed";

@@ -66,7 +66,14 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager", "hr"]);
+    requireRole(profile, ["manager"]);
+
+    if (profile.role === "hr") {
+      return Response.json(
+        { error: "Forbidden: HR can supervise only and cannot approve goals." },
+        { status: 403 }
+      );
+    }
 
     const body = await request.json();
     const goalId = (body.goalId || "").trim();
@@ -89,27 +96,6 @@ export async function POST(request) {
       appwriteConfig.goalsCollectionId,
       goalId
     );
-
-    if (profile.role === "hr") {
-      let goalOwner = null;
-      try {
-        goalOwner = await databases.getDocument(
-          databaseId,
-          appwriteConfig.usersCollectionId,
-          String(goal.employeeId || "").trim()
-        );
-      } catch {
-        goalOwner = null;
-      }
-
-      const ownerAssignedHrId = String(goalOwner?.hrId || "").trim();
-      if (goalOwner?.role === "manager" && ownerAssignedHrId && ownerAssignedHrId !== profile.$id) {
-        return Response.json(
-          { error: "Forbidden: this manager is assigned to a different HR owner." },
-          { status: 403 }
-        );
-      }
-    }
 
     if (profile.role === "manager" && goal.managerId !== profile.$id) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
