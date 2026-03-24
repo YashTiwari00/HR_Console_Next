@@ -2,6 +2,7 @@ import { appwriteConfig } from "@/lib/appwrite";
 import { FRAMEWORK_TYPES, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
+import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 
@@ -50,8 +51,15 @@ export async function PUT(request, context) {
       goalId
     );
 
-    if (goal.employeeId !== profile.$id) {
+    const isEmployeeOwner = goal.employeeId === profile.$id;
+    const isManagerEditor = profile.role === "manager" && goal.managerId === profile.$id;
+
+    if (!isEmployeeOwner && !isManagerEditor) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
+    }
+
+    if (isManagerEditor) {
+      await assertManagerCanAccessEmployee(databases, profile.$id, goal.employeeId);
     }
 
     if (goal.status !== GOAL_STATUSES.DRAFT && goal.status !== GOAL_STATUSES.NEEDS_CHANGES) {
@@ -67,7 +75,9 @@ export async function PUT(request, context) {
     const description = (body.description || goal.description || "").trim();
     const cycleId = (body.cycleId || goal.cycleId || "").trim();
     const frameworkType = (body.frameworkType || goal.frameworkType || "").trim();
-    const managerId = (body.managerId || goal.managerId || profile.managerId || "").trim();
+    const managerId = isManagerEditor
+      ? String(goal.managerId || "").trim()
+      : (body.managerId || goal.managerId || profile.managerId || "").trim();
     const dueDate = body.dueDate ?? goal.dueDate ?? null;
     const lineageRef = body.lineageRef ?? goal.lineageRef ?? "";
     const aiSuggested =
@@ -93,7 +103,7 @@ export async function PUT(request, context) {
       databaseId,
       appwriteConfig.goalsCollectionId,
       [
-        Query.equal("employeeId", profile.$id),
+        Query.equal("employeeId", goal.employeeId),
         Query.equal("cycleId", cycleId),
         Query.limit(200),
       ]

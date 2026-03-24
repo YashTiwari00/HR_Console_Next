@@ -563,6 +563,22 @@ export async function createGoal(input: {
   });
 }
 
+export async function createTeamGoal(input: {
+  employeeId: string;
+  title: string;
+  description: string;
+  cycleId: string;
+  frameworkType: string;
+  weightage: number;
+  dueDate?: string | null;
+  aiSuggested?: boolean;
+}) {
+  return requestJson("/api/goals/for-employee", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function submitGoal(goalId: string) {
   return requestJson(`/api/goals/${goalId}/submit`, { method: "POST" });
 }
