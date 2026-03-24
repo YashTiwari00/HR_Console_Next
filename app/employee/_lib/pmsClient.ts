@@ -383,8 +383,21 @@ export async function fetchGoalFeedback(
   return (payload.data || []) as GoalFeedbackItem[];
 }
 
-export async function fetchTeamMembers(managerId?: string) {
-  const query = managerId ? `?managerId=${encodeURIComponent(managerId)}` : "";
+export async function fetchTeamMembers(
+  managerId?: string,
+  options?: { includeManagers?: boolean }
+) {
+  const params = new URLSearchParams();
+
+  if (managerId) {
+    params.set("managerId", managerId);
+  }
+
+  if (options?.includeManagers) {
+    params.set("includeManagers", "true");
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
   const payload = await requestJson(`/api/team-members${query}`);
   return (payload.data || []) as TeamMemberItem[];
 }

@@ -7,10 +7,14 @@ import { DataTable, PageHeader } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
-  AppRole,
+  fetchGoals,
   fetchHrManagers,
+  fetchProgressUpdates,
+  fetchTeamMembers,
+  GoalItem,
   HrManagerSummary,
-  updateUserRoleAsHr,
+  ProgressUpdateItem,
+  TeamMemberItem,
 } from "@/app/employee/_lib/pmsClient";
 
 interface HrManagerRow extends Record<string, unknown> {
@@ -24,24 +28,37 @@ interface HrManagerRow extends Record<string, unknown> {
   pendingCheckInApprovals: number;
 }
 
+type OrgGoalItem = GoalItem & { employeeId?: string };
+type HeatMapState = "on_track" | "behind" | "completed" | "no_update";
+type HeatMapFilter = "all" | HeatMapState;
+
 export default function HrDashboardPage() {
   const [rows, setRows] = useState<HrManagerSummary[]>([]);
   const [selectedManagerId, setSelectedManagerId] = useState("");
+  const [orgGoals, setOrgGoals] = useState<OrgGoalItem[]>([]);
+  const [orgUpdates, setOrgUpdates] = useState<ProgressUpdateItem[]>([]);
+  const [orgMembers, setOrgMembers] = useState<TeamMemberItem[]>([]);
+  const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [reassignUserId, setReassignUserId] = useState("");
-  const [reassignRole, setReassignRole] = useState<AppRole>("employee");
-  const [reassignLoading, setReassignLoading] = useState(false);
-  const [reassignMessage, setReassignMessage] = useState("");
-  const [reassignError, setReassignError] = useState("");
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const nextRows = await fetchHrManagers();
+      const [nextRows, nextGoals, nextUpdates, nextMembers] = await Promise.all([
+        fetchHrManagers(),
+        fetchGoals("all"),
+        fetchProgressUpdates(undefined, "all"),
+        fetchTeamMembers(undefined, { includeManagers: true }),
+      ]);
+
       setRows(nextRows);
+      setOrgGoals(nextGoals as OrgGoalItem[]);
+      setOrgUpdates(nextUpdates);
+      setOrgMembers(nextMembers);
 
       if (nextRows.length > 0) {
         setSelectedManagerId((prev) => {
@@ -170,38 +187,119 @@ export default function HrDashboardPage() {
     [selectedManagerId]
   );
 
-  const handleRoleReassign = useCallback(async () => {
-    const userId = reassignUserId.trim();
+  const latestUpdateByGoalId = useMemo(() => {
+    const map = new Map<string, ProgressUpdateItem>();
 
-    if (!userId) {
-      setReassignError("Enter a valid user ID.");
-      return;
-    }
-
-    setReassignLoading(true);
-    setReassignError("");
-    setReassignMessage("");
-
-    try {
-      const result = await updateUserRoleAsHr(userId, reassignRole);
-
-      if (result.changed) {
-        setReassignMessage(`Role updated to ${result.role} for ${result.userId}.`);
-      } else {
-        setReassignMessage(`No change needed. User is already ${result.role}.`);
+    orgUpdates.forEach((update) => {
+      const current = map.get(update.goalId);
+      if (!current || new Date(update.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+        map.set(update.goalId, update);
       }
-    } catch (err) {
-      setReassignError(err instanceof Error ? err.message : "Role reassignment failed.");
-    } finally {
-      setReassignLoading(false);
-    }
-  }, [reassignRole, reassignUserId]);
+    });
+
+    return map;
+  }, [orgUpdates]);
+
+  const memberInfoById = useMemo(() => {
+    const map = new Map<string, TeamMemberItem>();
+    orgMembers.forEach((member) => map.set(member.$id, member));
+    return map;
+  }, [orgMembers]);
+
+  const heatMapRows = useMemo(() => {
+    const activeGoals = orgGoals.filter((goal) => goal.status !== "closed");
+    const goalsForHeatMap = activeGoals.length > 0 ? activeGoals : orgGoals;
+
+    const grouped = new Map<string, OrgGoalItem[]>();
+    goalsForHeatMap.forEach((goal) => {
+      const employeeKey = goal.employeeId || "unassigned";
+      const list = grouped.get(employeeKey) || [];
+      list.push(goal);
+      grouped.set(employeeKey, list);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([employeeId, goals]) => {
+        const employee = employeeId === "unassigned" ? undefined : memberInfoById.get(employeeId);
+        return {
+          employeeId,
+          employeeName: employee?.name || (employeeId === "unassigned" ? "Unassigned" : employeeId),
+          department: employee?.department || "Unassigned",
+          role: employee?.role || "employee",
+          goals: goals
+            .slice()
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((goal) => {
+              const latest = latestUpdateByGoalId.get(goal.$id);
+              const ragState: HeatMapState = latest?.ragStatus || "no_update";
+              return {
+                goalId: goal.$id,
+                goalTitle: goal.title,
+                progressPercent: goal.progressPercent || 0,
+                ragState,
+              };
+            }),
+        };
+      })
+      .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  }, [latestUpdateByGoalId, memberInfoById, orgGoals]);
+
+  const departmentOptions = useMemo(() => {
+    const values = new Set<string>();
+    heatMapRows.forEach((row) => {
+      if (row.department && row.department !== "Unassigned") {
+        values.add(row.department);
+      }
+    });
+    return ["all", ...Array.from(values).sort((a, b) => a.localeCompare(b))];
+  }, [heatMapRows]);
+
+  const filteredHeatMapRows = useMemo(() => {
+    return heatMapRows
+      .filter((row) => (departmentFilter === "all" ? true : row.department === departmentFilter))
+      .map((row) => {
+        const goals = row.goals.filter((goal) => (ragFilter === "all" ? true : goal.ragState === ragFilter));
+        return { ...row, goals };
+      })
+      .filter((row) => row.goals.length > 0);
+  }, [departmentFilter, heatMapRows, ragFilter]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<HeatMapState, number> = {
+      on_track: 0,
+      behind: 0,
+      completed: 0,
+      no_update: 0,
+    };
+
+    heatMapRows
+      .filter((row) => (departmentFilter === "all" ? true : row.department === departmentFilter))
+      .forEach((row) => {
+        row.goals.forEach((goal) => {
+          counts[goal.ragState] += 1;
+        });
+      });
+
+    return counts;
+  }, [departmentFilter, heatMapRows]);
+
+  const heatMapCellClassByState: Record<HeatMapState, string> = {
+    on_track: "bg-[var(--color-badge-success-bg)] border-[var(--color-badge-success-border)]",
+    behind: "bg-[var(--color-badge-warning-bg)] border-[var(--color-badge-warning-border)]",
+    completed: "bg-[var(--color-badge-info-bg)] border-[var(--color-badge-info-border)]",
+    no_update: "bg-[var(--color-surface-muted)] border-[var(--color-border)]",
+  };
+
+  function formatRagLabel(state: HeatMapState) {
+    if (state === "no_update") return "No update";
+    return state.replace("_", " ");
+  }
 
   return (
     <Stack gap="4">
       <PageHeader
         title="HR Dashboard"
-        subtitle="Monitor manager-level team progress, approvals, and check-in cadence across the organization."
+        subtitle="Supervise organization-wide progress and manager cadence across all departments."
         actions={
           <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
             Refresh
@@ -218,10 +316,10 @@ export default function HrDashboardPage() {
         <Card title="Team Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.teamGoals}</p>
         </Card>
-        <Card title="Pending Manager Goals" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
+        <Card title="Goals Pending" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.pendingGoalApprovals}</p>
         </Card>
-        <Card title="Pending Manager Check-ins" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
+        <Card title="Check-ins Pending" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.pendingCheckInApprovals}</p>
         </Card>
       </Grid>
@@ -236,53 +334,141 @@ export default function HrDashboardPage() {
         />
       </Card>
 
-      <Card title="Role Reassignment" description="HR-only action to reassign a user role by Appwrite user ID.">
-        <Stack gap="2">
-          {reassignError && (
-            <Alert
-              variant="error"
-              title="Reassignment failed"
-              description={reassignError}
-              onDismiss={() => setReassignError("")}
-            />
-          )}
-
-          {reassignMessage && (
-            <Alert
-              variant="success"
-              title="Role updated"
-              description={reassignMessage}
-              onDismiss={() => setReassignMessage("")}
-            />
-          )}
-
-          <div className="grid gap-3 md:grid-cols-[1.8fr_1fr_auto]">
-            <input
-              type="text"
-              value={reassignUserId}
-              onChange={(event) => setReassignUserId(event.target.value)}
-              placeholder="User ID"
-              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none"
-            />
-
-            <select
-              value={reassignRole}
-              onChange={(event) => setReassignRole(event.target.value as AppRole)}
-              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[var(--color-text)] outline-none"
+      <Card title="Organization Progress Heat Map" description="Latest RAG state by employee and goal across all departments (including managers).">
+        <Stack gap="3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRagFilter("all")}
+              className={
+                ragFilter === "all"
+                  ? "rounded-[var(--radius-sm)] border border-transparent bg-[var(--color-primary)] px-2 py-1 caption text-[var(--color-button-text)]"
+                  : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+              }
             >
-              <option value="employee">Employee</option>
-              <option value="manager">Manager</option>
-              <option value="hr">HR</option>
+              All ({statusCounts.on_track + statusCounts.behind + statusCounts.completed + statusCounts.no_update})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRagFilter("behind")}
+              className={
+                ragFilter === "behind"
+                  ? "rounded-[var(--radius-sm)] border border-[var(--color-badge-warning-border)] bg-[var(--color-badge-warning-bg)] px-2 py-1 caption text-[var(--color-text)]"
+                  : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+              }
+            >
+              Behind ({statusCounts.behind})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRagFilter("on_track")}
+              className={
+                ragFilter === "on_track"
+                  ? "rounded-[var(--radius-sm)] border border-[var(--color-badge-success-border)] bg-[var(--color-badge-success-bg)] px-2 py-1 caption text-[var(--color-text)]"
+                  : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+              }
+            >
+              On Track ({statusCounts.on_track})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRagFilter("completed")}
+              className={
+                ragFilter === "completed"
+                  ? "rounded-[var(--radius-sm)] border border-[var(--color-badge-info-border)] bg-[var(--color-badge-info-bg)] px-2 py-1 caption text-[var(--color-text)]"
+                  : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+              }
+            >
+              Completed ({statusCounts.completed})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRagFilter("no_update")}
+              className={
+                ragFilter === "no_update"
+                  ? "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-1 caption text-[var(--color-text-muted)]"
+                  : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+              }
+            >
+              No Update ({statusCounts.no_update})
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="caption text-[var(--color-text-muted)]" htmlFor="hr-heatmap-rag-filter">
+              Status
+            </label>
+            <select
+              id="hr-heatmap-rag-filter"
+              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 body-sm text-[var(--color-text)]"
+              value={ragFilter}
+              onChange={(event) => setRagFilter(event.target.value as HeatMapFilter)}
+            >
+              <option value="all">All</option>
+              <option value="on_track">On Track</option>
+              <option value="behind">Behind</option>
+              <option value="completed">Completed</option>
+              <option value="no_update">No Update</option>
             </select>
 
-            <Button type="button" onClick={handleRoleReassign} disabled={reassignLoading}>
-              {reassignLoading ? "Updating..." : "Update Role"}
-            </Button>
+            <label className="caption text-[var(--color-text-muted)]" htmlFor="hr-heatmap-department-filter">
+              Department
+            </label>
+            <select
+              id="hr-heatmap-department-filter"
+              className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 body-sm text-[var(--color-text)]"
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+            >
+              {departmentOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option === "all" ? "All Departments" : option}
+                </option>
+              ))}
+            </select>
           </div>
+
+          {!loading && heatMapRows.length === 0 && <p className="caption">No goals available yet for heat map view.</p>}
+
+          {!loading && heatMapRows.length > 0 && filteredHeatMapRows.length === 0 && (
+            <p className="caption">No goals match the selected filters.</p>
+          )}
+
+          {filteredHeatMapRows.length > 0 && (
+            <div className="overflow-x-auto">
+              <div className="min-w-[680px] space-y-2">
+                {filteredHeatMapRows.map((row) => (
+                  <div
+                    key={row.employeeId}
+                    className="grid grid-cols-[240px_minmax(0,1fr)] items-start gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] p-2"
+                  >
+                    <div>
+                      <p className="body-sm font-medium text-[var(--color-text)]">{row.employeeName}</p>
+                      <p className="caption text-[var(--color-text-muted)]">{row.department} • {row.role}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {row.goals.map((goal) => (
+                        <div
+                          key={goal.goalId}
+                          title={`${goal.goalTitle} - ${formatRagLabel(goal.ragState)} - ${goal.progressPercent}%`}
+                          className={`min-w-[132px] rounded-[var(--radius-sm)] border px-2 py-2 ${heatMapCellClassByState[goal.ragState]}`}
+                        >
+                          <p className="caption line-clamp-2 text-[var(--color-text)]">{goal.goalTitle}</p>
+                          <p className="caption mt-1 capitalize text-[var(--color-text-muted)]">
+                            {formatRagLabel(goal.ragState)} • {goal.progressPercent}%
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Stack>
       </Card>
 
-      <Card title="Expanded Manager Snapshot" description="Quick preview of team members and pending governance actions.">
+      <Card title="Expanded Manager Snapshot" description="Quick preview of team members and supervision indicators.">
         <Stack gap="2">
           {!loading && !selectedManager && <p className="caption">Select a manager row to preview their team.</p>}
 

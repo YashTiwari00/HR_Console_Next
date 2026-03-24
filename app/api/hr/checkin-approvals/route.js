@@ -1,10 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
-import { ID, Query, databaseId } from "@/lib/appwriteServer";
-import { parseRatingInput } from "@/lib/ratings";
+import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { listManagersByHrId, listUsersByIds } from "@/lib/teamAccess";
-
-const VALID_DECISIONS = ["approved", "rejected", "needs_changes"];
 
 function latestReviewByCheckIn(approvals) {
   const map = new Map();
@@ -197,144 +194,12 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { profile, databases } = await requireAuth(request);
+    const { profile } = await requireAuth(request);
     requireRole(profile, ["hr"]);
-
-    const body = await request.json();
-    const checkInId = String(body.checkInId || "").trim();
-    const decision = String(body.decision || "").trim();
-    const comments = String(body.comments || "").trim();
-    const parsedManagerRating = parseRatingInput(
-      body.managerRatingLabel || body.managerRating || body.hrManagerRating
+    return Response.json(
+      { error: "Forbidden: HR can supervise only and cannot approve check-ins." },
+      { status: 403 }
     );
-
-    if (!checkInId || !decision) {
-      return Response.json({ error: "checkInId and decision are required." }, { status: 400 });
-    }
-
-    if (!VALID_DECISIONS.includes(decision)) {
-      return Response.json({ error: "Invalid decision." }, { status: 400 });
-    }
-
-    let checkIn;
-    try {
-      checkIn = await databases.getDocument(databaseId, appwriteConfig.checkInsCollectionId, checkInId);
-    } catch {
-      return Response.json({ error: "Check-in not found." }, { status: 404 });
-    }
-
-    let goal = null;
-    try {
-      goal = await databases.getDocument(
-        databaseId,
-        appwriteConfig.goalsCollectionId,
-        String(checkIn.goalId || "").trim()
-      );
-    } catch {
-      goal = null;
-    }
-
-    if (checkIn.status !== "completed") {
-      return Response.json({ error: "Only completed check-ins can be reviewed by HR." }, { status: 400 });
-    }
-
-    let managerProfile = null;
-    try {
-      managerProfile = await databases.getDocument(
-        databaseId,
-        appwriteConfig.usersCollectionId,
-        String(checkIn.managerId || "").trim()
-      );
-    } catch {
-      managerProfile = null;
-    }
-
-    const assignedHrId = String(managerProfile?.hrId || "").trim();
-    const isAssignedToCurrentHr =
-      managerProfile?.role === "manager" && assignedHrId === String(profile.$id || "").trim();
-    if (!isAssignedToCurrentHr) {
-      return Response.json(
-        { error: "Forbidden: this manager is not assigned to the current HR owner." },
-        { status: 403 }
-      );
-    }
-
-    try {
-      if (goal && Number.isInteger(parsedManagerRating.value)) {
-        try {
-          const existingManagerRating = await databases.listDocuments(
-            databaseId,
-            appwriteConfig.managerCycleRatingsCollectionId,
-            [
-              Query.equal("managerId", String(checkIn.managerId || "").trim()),
-              Query.equal("cycleId", String(goal.cycleId || "").trim()),
-              Query.limit(1),
-            ]
-          );
-
-          const existingRow = existingManagerRating.documents[0];
-          if (existingRow) {
-            await databases.updateDocument(
-              databaseId,
-              appwriteConfig.managerCycleRatingsCollectionId,
-              existingRow.$id,
-              {
-                hrId: profile.$id,
-                rating: parsedManagerRating.value,
-                ratingLabel: parsedManagerRating.label,
-                comments,
-                ratedAt: new Date().toISOString(),
-              }
-            );
-          } else {
-            await databases.createDocument(
-              databaseId,
-              appwriteConfig.managerCycleRatingsCollectionId,
-              ID.unique(),
-              {
-                managerId: String(checkIn.managerId || "").trim(),
-                hrId: profile.$id,
-                cycleId: String(goal.cycleId || "").trim(),
-                rating: parsedManagerRating.value,
-                ratingLabel: parsedManagerRating.label,
-                comments,
-                ratedAt: new Date().toISOString(),
-              }
-            );
-          }
-        } catch {
-          // manager_cycle_ratings collection can be introduced after deployment.
-        }
-      }
-
-      const approval = await databases.createDocument(
-        databaseId,
-        appwriteConfig.checkInApprovalsCollectionId,
-        ID.unique(),
-        {
-          checkInId,
-          managerId: String(checkIn.managerId || "").trim(),
-          hrId: profile.$id,
-          decision,
-          comments,
-          decidedAt: new Date().toISOString(),
-        }
-      );
-
-      return Response.json({ data: approval }, { status: 201 });
-    } catch (error) {
-      if (isMissingCollectionError(error)) {
-        return Response.json(
-          {
-            error:
-              "checkin_approvals collection is missing. Create collection id checkin_approvals with attributes: checkInId, managerId, hrId, decision, comments, decidedAt.",
-          },
-          { status: 501 }
-        );
-      }
-
-      throw error;
-    }
   } catch (error) {
     return errorResponse(error);
   }

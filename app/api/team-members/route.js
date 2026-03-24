@@ -10,6 +10,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const managerIdFromQuery = (searchParams.get("managerId") || "").trim();
+    const includeManagers = String(searchParams.get("includeManagers") || "").trim() === "true";
 
     if (profile.role === "manager") {
       const teamIds = await getManagerTeamEmployeeIds(databases, profile.$id, {
@@ -33,10 +34,11 @@ export async function GET(request) {
       return Response.json({ data: employees.map(mapUserSummary) });
     }
 
+    const roleFilter = includeManagers ? ["employee", "manager"] : ["employee"];
     const employees = await databases.listDocuments(
       databaseId,
       appwriteConfig.usersCollectionId,
-      [Query.equal("role", "employee"), Query.limit(200)]
+      [Query.equal("role", roleFilter), Query.limit(300)]
     );
 
     return Response.json({ data: employees.documents.map(mapUserSummary) });
