@@ -80,6 +80,7 @@ export interface TeamMemberItem {
   name: string;
   email: string;
   role: string;
+  region?: string;
   department?: string;
   managerId?: string;
   managerAssignedAt?: string | null;
@@ -164,7 +165,7 @@ export interface HrManagerDetail {
   employees: HrEmployeeDrilldown[];
 }
 
-export type AppRole = "employee" | "manager" | "hr";
+export type AppRole = "employee" | "manager" | "hr" | "region-admin";
 
 export type CheckInApprovalDecision = "approved" | "rejected" | "needs_changes";
 
@@ -211,10 +212,21 @@ export interface CurrentUserContext {
     name?: string;
     email?: string;
     role?: string;
+    region?: string;
     department?: string;
     managerId?: string;
     hrId?: string;
   };
+}
+
+export interface RegionAdminOverview {
+  region: string;
+  managers: HrManagerSummary[];
+  goals: Array<GoalItem & { employeeId?: string }>;
+  progressUpdates: ProgressUpdateItem[];
+  members: TeamMemberItem[];
+  checkIns: CheckInItem[];
+  cycles: string[];
 }
 
 async function getJwtHeader() {
@@ -495,6 +507,11 @@ export async function fetchMe() {
 export async function fetchHrManagers() {
   const payload = await requestJson("/api/hr/managers");
   return (payload?.data || []) as HrManagerSummary[];
+}
+
+export async function fetchRegionAdminOverview() {
+  const payload = await requestJson("/api/region-admin/overview");
+  return (payload?.data || {}) as RegionAdminOverview;
 }
 
 export async function fetchHrManagerDetail(managerId: string) {
