@@ -25,6 +25,7 @@ const roleEmails = {
   employee: "seed.employee.01@local.test",
   manager: "seed.manager.01@local.test",
   hr: "seed.hr.01@local.test",
+  "region-admin": "seed.region.admin.01@local.test",
 };
 
 const routeMatrix = [
@@ -46,6 +47,9 @@ const routeMatrix = [
   { role: "hr", path: "/hr/approvals" },
   { role: "hr", path: "/hr/check-ins" },
   { role: "hr", path: "/hr/managers/placeholder-id" },
+  { role: "region-admin", path: "/region-admin" },
+  { role: "region-admin", path: "/region-admin/team-analytics" },
+  { role: "region-admin", path: "/region-admin/check-ins" },
 ];
 
 async function main() {
@@ -59,6 +63,10 @@ async function main() {
   for (const [role, email] of Object.entries(roleEmails)) {
     const user = byEmail.get(email.toLowerCase());
     if (!user) {
+      if (role === "region-admin") {
+        continue;
+      }
+
       throw new Error(`Required seeded auth user missing: ${email}`);
     }
 
@@ -82,6 +90,18 @@ async function main() {
 
   for (const row of routeMatrix) {
     const token = sessions.get(row.role);
+    if (!token) {
+      results.push({
+        name: `${row.role} page ${row.path}`,
+        pass: true,
+        details: {
+          skipped: true,
+          reason: `No seeded auth session for role ${row.role}`,
+          path: row.path,
+        },
+      });
+      continue;
+    }
 
     const response = await fetch(`${baseUrl}${row.path}`, {
       headers: {

@@ -1,5 +1,5 @@
 import { account, databases } from "@/lib/appwrite";
-import { ALLOWED_ROLES, normalizeRole } from "@/lib/auth/roles";
+import { normalizeRole } from "@/lib/auth/roles";
 import { Query } from "appwrite";
 import { OAuthProvider } from "appwrite";
 
@@ -212,35 +212,58 @@ export async function getRoleRedirectFromServer() {
   }
 }
 
-export async function completeGoogleOnboarding(role = "employee") {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("Missing authenticated user session.");
+function mapOnboardingRoleError(error, role) {
+  const message = String(error?.message || error?.response?.message || "").trim();
+  const normalized = message.toLowerCase();
+
+  const roleSchemaMismatch =
+    normalized.includes("role") &&
+    (normalized.includes("enum") ||
+      normalized.includes("invalid") ||
+      normalized.includes("value must be one of") ||
+      normalized.includes("invalid format") ||
+      normalized.includes("invalid document structure") ||
+      normalized.includes("unknown attribute"));
+
+  if (roleSchemaMismatch) {
+    return new Error(
+      `Selected role \"${role}\" is not enabled in backend schema yet. Ask admin to run schema sync with --apply, then try again.`
+    );
   }
 
+  return error;
+}
+
+export async function completeGoogleOnboarding(role = "employee", options = {}) {
   const safeRole = normalizeRole(role) || "employee";
-  const existingProfile = await getUserProfile(user.$id);
+  const requestedRegion = String(options?.region || "").trim();
+  const safeRegion = safeRole === "region-admin" ? requestedRegion : "";
 
-  if (existingProfile) {
-    const existingRole = normalizeRole(existingProfile.role);
-
-    if (existingRole && ALLOWED_ROLES.includes(existingRole)) {
-      throw new Error("Role is already assigned. Contact HR to change role.");
-    }
-
-    if (!existingProfile.role) {
-      return databases.updateDocument(DATABASE_ID, USERS_TABLE, user.$id, {
-        role: safeRole,
-      });
-    }
-
-    return existingProfile;
+  if (safeRole === "region-admin" && !safeRegion) {
+    throw new Error("Region is required for region admin onboarding.");
   }
 
-  return databases.createDocument(DATABASE_ID, USERS_TABLE, user.$id, {
-    name: user.name || user.email || "",
-    email: user.email,
-    role: safeRole,
-    department: "engineering",
-  });
+  try {
+    const response = await fetch("/api/auth/onboarding", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        role: safeRole,
+        ...(safeRegion ? { region: safeRegion } : {}),
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(payload?.error || "Failed to finish onboarding.");
+    }
+
+    return payload?.data?.profile || null;
+  } catch (error) {
+    throw mapOnboardingRoleError(error, safeRole);
+  }
 }

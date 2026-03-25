@@ -9,11 +9,12 @@ import { PCDLoader } from "three/addons/loaders/PCDLoader.js";
 import { getCurrentUser, getUserRole } from "@/services/authService";
 import ChatBot from "@/src/components/ui/ChatBot";
 
-type AppRole = "employee" | "manager" | "hr";
+type AppRole = "employee" | "manager" | "hr" | "region-admin";
 
 function routeForRole(role: AppRole) {
   if (role === "employee") return "/employee";
   if (role === "manager") return "/manager";
+  if (role === "region-admin") return "/region-admin";
   return "/hr";
 }
 

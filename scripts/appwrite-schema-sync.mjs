@@ -28,7 +28,8 @@ const required = {
   [collections.users]: [
     { key: "name", type: "string", size: 256, required: true },
     { key: "email", type: "string", size: 320, required: true },
-    { key: "role", type: "enum", required: true, elements: ["employee", "manager", "hr"] },
+    { key: "role", type: "enum", required: true, elements: ["employee", "manager", "hr", "region-admin"] },
+    { key: "region", type: "string", size: 128, required: false },
     { key: "department", type: "string", size: 128, required: false },
     { key: "managerId", type: "string", size: 64, required: false },
     { key: "managerAssignedAt", type: "datetime", required: false },

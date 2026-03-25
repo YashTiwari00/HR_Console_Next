@@ -83,6 +83,7 @@ async function main() {
   const managerA = profileByEmail.get(managerEmail(1));
   const managerB = profileByEmail.get(managerEmail(2));
   const hr = profileByEmail.get("seed.hr.01@local.test");
+  const regionAdmin = userProfiles.find((item) => String(item.role || "").trim() === "region-admin");
 
   if (!employeeA || !employeeB || !managerA || !managerB || !hr) {
     throw new Error("Required seeded users are missing. Run seed first.");
@@ -379,6 +380,73 @@ async function main() {
       expectedStatus: 200,
     })
   );
+
+  if (regionAdmin?.$id && String(regionAdmin.region || "").trim()) {
+    results.push(
+      await apiCall({
+        name: "Region admin overview API",
+        path: "/api/region-admin/overview",
+        userId: regionAdmin.$id,
+        expectedStatus: 200,
+      })
+    );
+
+    const regionOverviewCheck = await apiCall({
+      name: "Region admin isolation check",
+      path: "/api/region-admin/overview",
+      userId: regionAdmin.$id,
+      expectedStatus: 200,
+    });
+
+    if (regionOverviewCheck.pass) {
+      const sessionToken = await sessionForUser(regionAdmin.$id);
+      const response = await fetch(`${baseUrl}/api/region-admin/overview`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: `a_session_${projectId}=${encodeURIComponent(sessionToken)}`,
+        },
+      });
+      const payload = await response.json().catch(() => ({}));
+      const expectedRegion = String(payload?.data?.region || "").trim();
+      const members = Array.isArray(payload?.data?.members) ? payload.data.members : [];
+      const crossRegion = members.filter(
+        (item) => String(item?.region || "").trim() && String(item?.region || "").trim() !== expectedRegion
+      );
+
+      results.push(
+        toResult(
+          "Region admin members are region-scoped",
+          response.status === 200 && expectedRegion.length > 0 && crossRegion.length === 0,
+          {
+            status: response.status,
+            expectedStatus: 200,
+            expectedRegion,
+            memberCount: members.length,
+            crossRegionCount: crossRegion.length,
+          }
+        )
+      );
+    } else {
+      results.push(regionOverviewCheck);
+    }
+
+    results.push(
+      await apiCall({
+        name: "HR blocked from region overview API",
+        path: "/api/region-admin/overview",
+        userId: hr.$id,
+        expectedStatus: 403,
+      })
+    );
+  } else {
+    results.push(
+      toResult("Region admin overview API", true, {
+        skipped: true,
+        reason: "No seeded region-admin profile with region found",
+      })
+    );
+  }
 
   const passed = results.filter((item) => item.pass).length;
   const failed = results.length - passed;

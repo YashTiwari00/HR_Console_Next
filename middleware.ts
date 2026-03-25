@@ -85,6 +85,7 @@ export const config = {
     "/employee/:path*",
     "/manager/:path*",
     "/hr/:path*",
+    "/region-admin/:path*",
     "/auth/callback",
     "/login",
     "/signup",
