@@ -8,7 +8,7 @@ import {
   Avatar,
   Button,
   Card,
-  ChatBot,
+  Companion,
   Divider,
 } from '@/src/components/ui';
 import { SidebarLayout, Stack } from '@/src/components/layout';
@@ -21,11 +21,11 @@ interface EmployeeLayoutProps {
 }
 
 const navItems = [
-  { label: 'Dashboard', href: '/employee', route: '/employee' },
-  { label: 'Goals Workspace', href: '/employee/goals', route: '/employee/goals' },
-  { label: 'Progress Updates', href: '/employee/progress', route: '/employee/progress' },
-  { label: 'Check-ins', href: '/employee/check-ins', route: '/employee/check-ins' },
-  { label: 'Cycle Timeline', href: '/employee/timeline', route: '/employee/timeline' },
+  { label: 'Dashboard',        href: '/employee',            route: '/employee',            tutorialId: 'nav-dashboard' },
+  { label: 'Goals Workspace',  href: '/employee/goals',      route: '/employee/goals',      tutorialId: 'nav-goals'     },
+  { label: 'Progress Updates', href: '/employee/progress',   route: '/employee/progress',   tutorialId: 'nav-progress'  },
+  { label: 'Check-ins',        href: '/employee/check-ins',  route: '/employee/check-ins',  tutorialId: 'nav-checkins'  },
+  { label: 'Cycle Timeline',   href: '/employee/timeline',   route: '/employee/timeline',   tutorialId: 'nav-timeline'  },
 ];
 
 const quickActions = [
@@ -126,6 +126,7 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
           <Link
             key={item.label}
             href={item.href}
+            data-tutorial={item.tutorialId}
             className={
               isActive
                 ? 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)] shadow-[var(--shadow-sm)]'
@@ -209,7 +210,7 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
           </div>
         </div>
       </SidebarLayout>
-      <ChatBot role="employee" userName={userName} />
+      <Companion role="employee" userName={userName} />
     </>
   );
 }

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Avatar, Button, Card, ChatBot, Divider } from "@/src/components/ui";
+import { Avatar, Button, Card, Companion, Divider } from "@/src/components/ui";
 import { SidebarLayout, Stack } from "@/src/components/layout";
 import SidebarThemeToggle from "@/src/components/theme/SidebarThemeToggle";
 import { logout } from "@/services/authService";
@@ -15,9 +15,9 @@ interface HrLayoutProps {
 }
 
 const navItems = [
-  { label: "Dashboard", href: "/hr", route: "/hr" },
-  { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics" },
-  { label: "Check-in Monitoring", href: "/hr/check-ins", route: "/hr/check-ins" },
+  { label: "Dashboard",           href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"     },
+  { label: "Team Ranking & Graph",href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics"},
+  { label: "Check-in Monitoring", href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"      },
 ];
 
 const quickActions = [
@@ -116,6 +116,7 @@ export default function HrLayout({ children }: HrLayoutProps) {
             <Link
               key={item.label}
               href={item.href}
+              data-tutorial={item.tutorialId}
               className={
                 isActive
                   ? "inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)] shadow-[var(--shadow-sm)]"
@@ -199,7 +200,7 @@ export default function HrLayout({ children }: HrLayoutProps) {
           </div>
         </div>
       </SidebarLayout>
-      <ChatBot role="hr" userName={userName} />
+      <Companion role="hr" userName={userName} />
     </>
   );
 }

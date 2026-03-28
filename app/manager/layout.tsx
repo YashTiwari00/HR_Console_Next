@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Avatar, Button, Card, ChatBot, Divider } from "@/src/components/ui";
+import { Avatar, Button, Card, Companion, Divider } from "@/src/components/ui";
 import { SidebarLayout, Stack } from "@/src/components/layout";
 import SidebarThemeToggle from "@/src/components/theme/SidebarThemeToggle";
 import { logout } from "@/services/authService";
@@ -19,19 +19,19 @@ type PersonaMode = "manager" | "employee";
 const PERSONA_KEY = "managerConsolePersona";
 
 const managerNavItems = [
-  { label: "Dashboard", href: "/manager", route: "/manager" },
-  { label: "Team Goal Assignment", href: "/manager/team-goals", route: "/manager/team-goals" },
-  { label: "Team Progress Overview", href: "/manager/team-progress", route: "/manager/team-progress" },
-  { label: "Team Ranking & Graph", href: "/manager/team-analytics", route: "/manager/team-analytics" },
-  { label: "Team Approvals", href: "/manager/team-approvals", route: "/manager/team-approvals" },
+  { label: "Dashboard",            href: "/manager",                route: "/manager",                tutorialId: "nav-dashboard"      },
+  { label: "Team Goal Assignment", href: "/manager/team-goals",     route: "/manager/team-goals",     tutorialId: "nav-team-goals"     },
+  { label: "Team Progress Overview",href: "/manager/team-progress", route: "/manager/team-progress",  tutorialId: "nav-team-progress"  },
+  { label: "Team Ranking & Graph", href: "/manager/team-analytics", route: "/manager/team-analytics", tutorialId: "nav-team-analytics" },
+  { label: "Team Approvals",       href: "/manager/team-approvals", route: "/manager/team-approvals", tutorialId: "nav-team-approvals" },
 ];
 
 const employeeNavItems = [
-  { label: "Personal Dashboard", href: "/manager/employee-dashboard", route: "/manager/employee-dashboard" },
-  { label: "Goal Workspace", href: "/manager/goals", route: "/manager/goals" },
-  { label: "Progress Updates", href: "/manager/progress", route: "/manager/progress" },
-  { label: "My Check-ins", href: "/manager/check-ins", route: "/manager/check-ins" },
-  { label: "My Cycle Timeline", href: "/manager/timeline", route: "/manager/timeline" },
+  { label: "Personal Dashboard", href: "/manager/employee-dashboard", route: "/manager/employee-dashboard", tutorialId: "nav-personal-dashboard" },
+  { label: "Goal Workspace",     href: "/manager/goals",              route: "/manager/goals",              tutorialId: "nav-goals"              },
+  { label: "Progress Updates",   href: "/manager/progress",           route: "/manager/progress",           tutorialId: "nav-progress"           },
+  { label: "My Check-ins",       href: "/manager/check-ins",          route: "/manager/check-ins",          tutorialId: "nav-checkins"           },
+  { label: "My Cycle Timeline",  href: "/manager/timeline",           route: "/manager/timeline",           tutorialId: "nav-timeline"           },
 ];
 
 const managerQuickActions = [
@@ -182,7 +182,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
       gap="4"
       className=" px-[var(--space-3)] py-[var(--space-4)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-bg)_100%)]"
     >
-      <Card>
+      <Card data-tutorial="persona-switch">
         <Stack gap="2">
           <p className="caption">Current View: {persona === "manager" ? "Manager" : "Employee"}</p>
           <div className="flex gap-2">
@@ -231,6 +231,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
             <Link
               key={item.label}
               href={item.href}
+              data-tutorial={item.tutorialId}
               className={
                 isActive
                   ? "inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 bg-[var(--color-primary)] text-[var(--color-button-text)] shadow-[var(--shadow-sm)]"
@@ -314,7 +315,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
           </div>
         </div>
       </SidebarLayout>
-      <ChatBot role="manager" userName={userName} />
+      <Companion role="manager" userName={userName} />
     </>
   );
 }
