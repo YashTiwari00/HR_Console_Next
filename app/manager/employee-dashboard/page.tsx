@@ -91,6 +91,9 @@ export default function ManagerEmployeeDashboardPage() {
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/check-ins">
               Open My Check-ins
             </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/meeting-calendar">
+              Open Meeting Calendar Dashboard
+            </Link>
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/timeline">
               Open My Cycle Timeline
             </Link>

@@ -41,10 +41,20 @@ export async function loginWithGoogle() {
       "/login",
       "NEXT_PUBLIC_OAUTH_FAILURE_URL"
     );
-    const scopes = String(process.env.NEXT_PUBLIC_OAUTH_SCOPES || "")
+    const scopesFromEnv = String(process.env.NEXT_PUBLIC_OAUTH_SCOPES || "")
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
+    const scopes =
+      scopesFromEnv.length > 0
+        ? scopesFromEnv
+        : [
+            "openid",
+            "email",
+            "profile",
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events",
+          ];
 
     await account.createOAuth2Token({
       provider: OAuthProvider.Google,

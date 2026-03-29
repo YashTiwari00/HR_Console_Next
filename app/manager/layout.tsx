@@ -20,6 +20,7 @@ const PERSONA_KEY = "managerConsolePersona";
 
 const managerNavItems = [
   { label: "Dashboard", href: "/manager", route: "/manager" },
+  { label: "Meeting Calendar", href: "/manager/meeting-calendar", route: "/manager/meeting-calendar" },
   { label: "Team Goal Assignment", href: "/manager/team-goals", route: "/manager/team-goals" },
   { label: "Team Progress Overview", href: "/manager/team-progress", route: "/manager/team-progress" },
   { label: "Team Ranking & Graph", href: "/manager/team-analytics", route: "/manager/team-analytics" },
@@ -36,6 +37,7 @@ const employeeNavItems = [
 
 const managerQuickActions = [
   { label: "Open Manager Dashboard", href: "/manager" },
+  { label: "Open Meeting Calendar", href: "/manager/meeting-calendar" },
   { label: "Assign Team Goal", href: "/manager/team-goals" },
   { label: "Review Team Progress", href: "/manager/team-progress" },
   { label: "Open Team Ranking & Graph", href: "/manager/team-analytics" },

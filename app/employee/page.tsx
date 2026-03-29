@@ -88,6 +88,12 @@ export default function EmployeePage() {
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/check-ins">
               Open Check-ins
             </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/meetings">
+              Open Meetings
+            </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/meeting-calendar">
+              Open Meeting Calendar Dashboard
+            </Link>
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/employee/timeline">
               Open Cycle Timeline
             </Link>

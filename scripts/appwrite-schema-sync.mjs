@@ -22,6 +22,10 @@ const collections = {
   ai_events: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
   checkin_approvals:
     process.env.NEXT_PUBLIC_CHECK_IN_APPROVALS_COLLECTION_ID || "checkin_approvals",
+  google_tokens:
+    process.env.NEXT_PUBLIC_GOOGLE_TOKENS_COLLECTION_ID || "google_tokens",
+  google_meet_requests:
+    process.env.NEXT_PUBLIC_GOOGLE_MEET_REQUESTS_COLLECTION_ID || "google_meet_requests",
 };
 
 const required = {
@@ -131,6 +135,42 @@ const required = {
     { key: "decision", type: "enum", required: true, elements: ["approved", "rejected", "needs_changes"] },
     { key: "comments", type: "string", size: 8192, required: false },
     { key: "decidedAt", type: "datetime", required: true },
+  ],
+  [collections.google_tokens]: [
+    { key: "userId", type: "string", size: 64, required: true },
+    { key: "email", type: "string", size: 320, required: true },
+    { key: "accessToken", type: "string", size: 4096, required: true },
+    { key: "refreshToken", type: "string", size: 4096, required: false },
+    { key: "expiry", type: "datetime", required: true },
+    { key: "scope", type: "string", size: 2048, required: false },
+    { key: "provider", type: "string", size: 32, required: false },
+  ],
+  [collections.google_meet_requests]: [
+    { key: "employeeId", type: "string", size: 64, required: true },
+    { key: "managerId", type: "string", size: 64, required: true },
+    {
+      key: "status",
+      type: "enum",
+      required: true,
+      elements: ["pending", "scheduled", "rejected", "canceled"],
+    },
+    {
+      key: "source",
+      type: "enum",
+      required: true,
+      elements: ["employee_request", "manager_direct"],
+    },
+    { key: "requestedAt", type: "datetime", required: true },
+    { key: "proposedStartTime", type: "datetime", required: false },
+    { key: "proposedEndTime", type: "datetime", required: false },
+    { key: "scheduledStartTime", type: "datetime", required: false },
+    { key: "scheduledEndTime", type: "datetime", required: false },
+    { key: "title", type: "string", size: 512, required: true },
+    { key: "description", type: "string", size: 8192, required: false },
+    { key: "managerNotes", type: "string", size: 8192, required: false },
+    { key: "meetLink", type: "string", size: 2048, required: false },
+    { key: "eventId", type: "string", size: 256, required: false },
+    { key: "timezone", type: "string", size: 128, required: true },
   ],
 };
 
