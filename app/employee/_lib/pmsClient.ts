@@ -273,6 +273,62 @@ export interface CheckInSummarySuggestion {
   };
 }
 
+export type MeetRequestStatus = "pending" | "scheduled" | "rejected" | "canceled";
+export type MeetRequestSource = "employee_request" | "manager_direct";
+
+export interface GoogleTokenStatus {
+  connected: boolean;
+  reason: "ok" | "expired" | "missing_token";
+  expiresAt: string | null;
+  email: string | null;
+}
+
+export interface FreeBusyResponse {
+  busy: Array<{ start: string; end: string }>;
+  timeMin: string;
+  timeMax: string;
+  timeZone: string;
+}
+
+export interface CalendarEventItem {
+  eventId: string;
+  title: string;
+  description: string;
+  startTime: string;
+  endTime: string;
+  meetLink: string;
+  eventLink: string;
+  status: string;
+  attendees: string[];
+}
+
+export interface CalendarEventsResponse {
+  targetUserId: string;
+  events: CalendarEventItem[];
+  timeMin: string;
+  timeMax: string;
+  timeZone: string;
+}
+
+export interface MeetRequestItem {
+  $id: string;
+  employeeId: string;
+  managerId: string;
+  status: MeetRequestStatus;
+  source: MeetRequestSource;
+  requestedAt: string;
+  proposedStartTime?: string | null;
+  proposedEndTime?: string | null;
+  scheduledStartTime?: string | null;
+  scheduledEndTime?: string | null;
+  title: string;
+  description?: string;
+  managerNotes?: string;
+  meetLink?: string;
+  eventId?: string;
+  timezone: string;
+}
+
 export async function requestJson(url: string, init?: RequestInit) {
   const jwtHeader = await getJwtHeader();
   const headers = new Headers(init?.headers);
@@ -298,6 +354,61 @@ export async function requestJson(url: string, init?: RequestInit) {
 export async function fetchCurrentUserContext() {
   const payload = await requestJson("/api/me");
   return (payload?.data || {}) as CurrentUserContext;
+}
+
+export async function fetchGoogleTokenStatus() {
+  const payload = await requestJson("/api/google/tokens/status");
+  return (payload?.data || {}) as GoogleTokenStatus;
+}
+
+export async function fetchGoogleTokenStatusForUser(targetUserId: string) {
+  const payload = await requestJson(
+    `/api/google/tokens/status?targetUserId=${encodeURIComponent(targetUserId)}`
+  );
+  return (payload?.data || {}) as GoogleTokenStatus & { targetUserId?: string };
+}
+
+export async function upsertGoogleToken(input: {
+  accessToken?: string;
+  refreshToken?: string;
+  expiry?: string;
+  email?: string;
+  scope?: string;
+}) {
+  const payload = await requestJson("/api/google/tokens", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as {
+    $id: string;
+    userId: string;
+    email: string;
+    expiry: string;
+    provider: string;
+  };
+}
+
+export async function upsertGoogleTokenAsAdmin(input: {
+  targetUserId: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiry?: string;
+  email?: string;
+  scope?: string;
+}) {
+  const payload = await requestJson("/api/google/tokens/admin-upsert", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as {
+    $id: string;
+    userId: string;
+    email: string;
+    expiry: string;
+    provider: string;
+  };
 }
 
 export async function uploadAttachment(file: File) {
@@ -373,6 +484,122 @@ export async function fetchCheckIns(scope?: ManagerScope, employeeId?: string) {
   const query = withListQuery({ scope, employeeId });
   const payload = await requestJson(`/api/check-ins${query}`);
   return (payload.data || []) as CheckInItem[];
+}
+
+export async function fetchMeetRequests(employeeId?: string) {
+  const query = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+  const payload = await requestJson(`/api/meet-requests${query}`);
+  return (payload?.data || []) as MeetRequestItem[];
+}
+
+export async function createMeetRequest(input: {
+  title: string;
+  description?: string;
+  proposedStartTime?: string;
+  proposedEndTime?: string;
+  timeZone?: string;
+}) {
+  const payload = await requestJson("/api/meet-requests", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as MeetRequestItem;
+}
+
+export async function updateMeetRequestAction(
+  requestId: string,
+  input:
+    | { action: "reject"; managerNotes?: string }
+    | {
+        action: "schedule";
+        startTime: string;
+        endTime: string;
+        title?: string;
+        description?: string;
+        managerNotes?: string;
+        timeZone?: string;
+      }
+) {
+  const payload = await requestJson(`/api/meet-requests/${encodeURIComponent(requestId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data;
+}
+
+export async function fetchEmployeeFreeBusy(input: {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  timeZone?: string;
+}) {
+  const payload = await requestJson("/api/calendar/freebusy", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as FreeBusyResponse;
+}
+
+export async function fetchCalendarEvents(input: {
+  employeeId?: string;
+  startDate: string;
+  endDate: string;
+  timeZone?: string;
+  maxResults?: number;
+}) {
+  const params = new URLSearchParams();
+
+  if (input.employeeId) {
+    params.set("employeeId", input.employeeId);
+  }
+
+  params.set("startDate", input.startDate);
+  params.set("endDate", input.endDate);
+
+  if (input.timeZone) {
+    params.set("timeZone", input.timeZone);
+  }
+
+  if (typeof input.maxResults === "number") {
+    params.set("maxResults", String(input.maxResults));
+  }
+
+  const payload = await requestJson(`/api/calendar/events?${params.toString()}`);
+  return (payload?.data || {
+    targetUserId: "",
+    events: [],
+    timeMin: input.startDate,
+    timeMax: input.endDate,
+    timeZone: input.timeZone || "UTC",
+  }) as CalendarEventsResponse;
+}
+
+export async function createManagerDirectMeeting(input: {
+  employeeId: string;
+  startTime: string;
+  endTime: string;
+  title: string;
+  description?: string;
+  managerNotes?: string;
+  timeZone?: string;
+}) {
+  const payload = await requestJson("/api/calendar/create-meeting", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as {
+    meeting: MeetRequestItem;
+    event: {
+      eventId: string;
+      eventLink: string;
+      meetLink: string;
+      status: string;
+    };
+  };
 }
 
 export async function fetchProgressUpdates(

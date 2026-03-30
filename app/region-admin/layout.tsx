@@ -15,9 +15,9 @@ interface RegionAdminLayoutProps {
 }
 
 const navItems = [
-  { label: "Dashboard",           href: "/region-admin",                route: "/region-admin",                tutorialId: "nav-dashboard"      },
-  { label: "Team Analytics",      href: "/region-admin/team-analytics", route: "/region-admin/team-analytics", tutorialId: "nav-team-analytics"  },
-  { label: "Check-in Monitoring", href: "/region-admin/check-ins",      route: "/region-admin/check-ins",      tutorialId: "nav-checkins"        },
+  { label: "Dashboard",           href: "/region-admin",                route: "/region-admin",                tutorialId: "nav-dashboard"     },
+  { label: "Team Analytics",      href: "/region-admin/team-analytics", route: "/region-admin/team-analytics", tutorialId: "nav-team-analytics" },
+  { label: "Check-in Monitoring", href: "/region-admin/check-ins",      route: "/region-admin/check-ins",      tutorialId: "nav-checkins"      },
 ];
 
 export default function RegionAdminLayout({ children }: RegionAdminLayoutProps) {

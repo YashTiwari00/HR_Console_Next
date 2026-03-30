@@ -21,17 +21,21 @@ interface EmployeeLayoutProps {
 }
 
 const navItems = [
-  { label: 'Dashboard',        href: '/employee',            route: '/employee',            tutorialId: 'nav-dashboard' },
-  { label: 'Goals Workspace',  href: '/employee/goals',      route: '/employee/goals',      tutorialId: 'nav-goals'     },
-  { label: 'Progress Updates', href: '/employee/progress',   route: '/employee/progress',   tutorialId: 'nav-progress'  },
-  { label: 'Check-ins',        href: '/employee/check-ins',  route: '/employee/check-ins',  tutorialId: 'nav-checkins'  },
-  { label: 'Cycle Timeline',   href: '/employee/timeline',   route: '/employee/timeline',   tutorialId: 'nav-timeline'  },
+  { label: 'Dashboard',        href: '/employee',                   route: '/employee',                   tutorialId: 'nav-dashboard'        },
+  { label: 'Goals Workspace',  href: '/employee/goals',             route: '/employee/goals',             tutorialId: 'nav-goals'            },
+  { label: 'Progress Updates', href: '/employee/progress',          route: '/employee/progress',          tutorialId: 'nav-progress'         },
+  { label: 'Check-ins',        href: '/employee/check-ins',         route: '/employee/check-ins',         tutorialId: 'nav-checkins'         },
+  { label: 'Meetings',         href: '/employee/meetings',          route: '/employee/meetings',          tutorialId: 'nav-meetings'         },
+  { label: 'Meeting Calendar', href: '/employee/meeting-calendar',  route: '/employee/meeting-calendar',  tutorialId: 'nav-meeting-calendar' },
+  { label: 'Cycle Timeline',   href: '/employee/timeline',          route: '/employee/timeline',          tutorialId: 'nav-timeline'         },
 ];
 
 const quickActions = [
   { label: 'Create Draft Goal', href: '/employee/goals' },
   { label: 'Submit Progress Update', href: '/employee/progress' },
   { label: 'Plan Check-in', href: '/employee/check-ins' },
+  { label: 'Open Meetings', href: '/employee/meetings' },
+  { label: 'Open Meeting Calendar', href: '/employee/meeting-calendar' },
 ];
 
 export default function EmployeeLayout({ children }: EmployeeLayoutProps) {

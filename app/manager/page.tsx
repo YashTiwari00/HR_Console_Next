@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
@@ -210,6 +211,23 @@ export default function ManagerPage() {
       </Grid>
 
       <Grid cols={1} colsLg={2} gap="3">
+        <Card title="Feature Pages" description="Use dedicated pages for manager workflows.">
+          <Stack gap="2">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/check-ins">
+              Open Team Check-ins
+            </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/meetings">
+              Open Meetings
+            </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/meeting-calendar">
+              Open Meeting Calendar Dashboard
+            </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/team-analytics">
+              Open Team Analytics
+            </Link>
+          </Stack>
+        </Card>
+
         <Card title="Team Goal Status" description="Latest statuses across your direct team.">
           <Stack gap="2">
             {!loading && teamGoals.length === 0 && <p className="caption">No team goals yet.</p>}

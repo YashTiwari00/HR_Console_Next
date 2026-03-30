@@ -15,9 +15,9 @@ interface HrLayoutProps {
 }
 
 const navItems = [
-  { label: "Dashboard",           href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"     },
-  { label: "Team Ranking & Graph",href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics"},
-  { label: "Check-in Monitoring", href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"      },
+  { label: "Dashboard",            href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"      },
+  { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics" },
+  { label: "Check-in Monitoring",  href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"       },
 ];
 
 const quickActions = [

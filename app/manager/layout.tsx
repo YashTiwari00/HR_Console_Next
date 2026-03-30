@@ -19,11 +19,12 @@ type PersonaMode = "manager" | "employee";
 const PERSONA_KEY = "managerConsolePersona";
 
 const managerNavItems = [
-  { label: "Dashboard",            href: "/manager",                route: "/manager",                tutorialId: "nav-dashboard"      },
-  { label: "Team Goal Assignment", href: "/manager/team-goals",     route: "/manager/team-goals",     tutorialId: "nav-team-goals"     },
-  { label: "Team Progress Overview",href: "/manager/team-progress", route: "/manager/team-progress",  tutorialId: "nav-team-progress"  },
-  { label: "Team Ranking & Graph", href: "/manager/team-analytics", route: "/manager/team-analytics", tutorialId: "nav-team-analytics" },
-  { label: "Team Approvals",       href: "/manager/team-approvals", route: "/manager/team-approvals", tutorialId: "nav-team-approvals" },
+  { label: "Dashboard",             href: "/manager",                      route: "/manager",                      tutorialId: "nav-dashboard"        },
+  { label: "Meeting Calendar",      href: "/manager/meeting-calendar",     route: "/manager/meeting-calendar",     tutorialId: "nav-meeting-calendar" },
+  { label: "Team Goal Assignment",  href: "/manager/team-goals",           route: "/manager/team-goals",           tutorialId: "nav-team-goals"       },
+  { label: "Team Progress Overview",href: "/manager/team-progress",        route: "/manager/team-progress",        tutorialId: "nav-team-progress"    },
+  { label: "Team Ranking & Graph",  href: "/manager/team-analytics",       route: "/manager/team-analytics",       tutorialId: "nav-team-analytics"   },
+  { label: "Team Approvals",        href: "/manager/team-approvals",       route: "/manager/team-approvals",       tutorialId: "nav-team-approvals"   },
 ];
 
 const employeeNavItems = [
@@ -36,6 +37,7 @@ const employeeNavItems = [
 
 const managerQuickActions = [
   { label: "Open Manager Dashboard", href: "/manager" },
+  { label: "Open Meeting Calendar", href: "/manager/meeting-calendar" },
   { label: "Assign Team Goal", href: "/manager/team-goals" },
   { label: "Review Team Progress", href: "/manager/team-progress" },
   { label: "Open Team Ranking & Graph", href: "/manager/team-analytics" },

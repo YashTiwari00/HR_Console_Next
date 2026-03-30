@@ -118,3 +118,57 @@ body::after {
 .heatmap-scroll::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--color-primary) 62%, var(--color-text) 22%);
 }
+
+.availability-calendar-shell {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.availability-calendar-shell .fc {
+  --fc-border-color: var(--color-border);
+  --fc-page-bg-color: var(--color-surface-muted);
+  --fc-neutral-bg-color: color-mix(in srgb, var(--color-surface) 86%, var(--color-bg) 14%);
+  --fc-now-indicator-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.availability-calendar-shell .fc .fc-scrollgrid,
+.availability-calendar-shell .fc .fc-timegrid-slots table,
+.availability-calendar-shell .fc .fc-timegrid-cols table {
+  border-color: var(--color-border);
+}
+
+.availability-calendar-shell .fc .fc-timegrid-axis,
+.availability-calendar-shell .fc .fc-timegrid-slot-label,
+.availability-calendar-shell .fc .fc-col-header-cell {
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-bg) 12%);
+}
+
+.availability-calendar-shell .fc .fc-col-header-cell-cushion,
+.availability-calendar-shell .fc .fc-timegrid-axis-cushion,
+.availability-calendar-shell .fc .fc-timegrid-slot-label-cushion {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.availability-calendar-shell .fc .fc-timegrid-slot,
+.availability-calendar-shell .fc .fc-timegrid-col {
+  background: color-mix(in srgb, var(--color-surface-muted) 92%, var(--color-bg) 8%);
+}
+
+.availability-calendar-shell .fc .availability-busy-block {
+  background: color-mix(in srgb, var(--color-danger) 40%, transparent) !important;
+}
+
+.availability-calendar-shell .fc .availability-selected-slot {
+  background: color-mix(in srgb, var(--color-primary) 72%, transparent);
+  border: 1px solid var(--color-primary);
+  color: var(--color-button-text);
+}
+
+.availability-calendar-shell .fc .availability-selected-slot .fc-event-main {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
