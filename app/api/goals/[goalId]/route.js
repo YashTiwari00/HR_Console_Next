@@ -1,14 +1,19 @@
 import { appwriteConfig } from "@/lib/appwrite";
-import { FRAMEWORK_TYPES, GOAL_STATUSES } from "@/lib/appwriteSchema";
+import { GOAL_LEVELS, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { Query, databaseId } from "@/lib/appwriteServer";
+import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
-
-const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function normalizeGoalLevel(value, fallback = GOAL_LEVELS.EMPLOYEE) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = new Set(Object.values(GOAL_LEVELS));
+  return allowed.has(normalized) ? normalized : fallback;
 }
 
 export async function GET(request, context) {
@@ -74,7 +79,7 @@ export async function PUT(request, context) {
     const title = (body.title || goal.title || "").trim();
     const description = (body.description || goal.description || "").trim();
     const cycleId = (body.cycleId || goal.cycleId || "").trim();
-    const frameworkType = (body.frameworkType || goal.frameworkType || "").trim();
+    const frameworkTypeInput = (body.frameworkType || goal.frameworkType || "").trim();
     const managerId = isManagerEditor
       ? String(goal.managerId || "").trim()
       : (body.managerId || goal.managerId || profile.managerId || "").trim();
@@ -83,20 +88,37 @@ export async function PUT(request, context) {
     const aiSuggested =
       typeof body.aiSuggested === "boolean" ? body.aiSuggested : Boolean(goal.aiSuggested);
     const weightage = toInt(body.weightage ?? goal.weightage, 0);
+    const parentGoalId = String(body.parentGoalId ?? goal.parentGoalId ?? "").trim() || null;
+    const goalLevelInput = typeof body.goalLevel !== "undefined" ? body.goalLevel : goal.goalLevel;
+    const goalLevel = normalizeGoalLevel(goalLevelInput);
+    const contributionPercent = toInt(body.contributionPercent ?? goal.contributionPercent, 100);
 
-    if (!title || !description || !cycleId || !frameworkType || !managerId) {
+    if (!title || !description || !cycleId || !frameworkTypeInput || !managerId) {
       return Response.json(
         { error: "title, description, cycleId, frameworkType and managerId are required." },
         { status: 400 }
       );
     }
 
-    if (!VALID_FRAMEWORKS.includes(frameworkType)) {
-      return Response.json({ error: "Invalid frameworkType." }, { status: 400 });
-    }
+    const frameworkPolicy = await getFrameworkPolicy(databases);
+    const frameworkType = assertFrameworkAllowed(frameworkTypeInput, frameworkPolicy);
 
     if (weightage < 1 || weightage > 100) {
       return Response.json({ error: "weightage must be between 1 and 100." }, { status: 400 });
+    }
+
+    if (typeof goalLevelInput !== "undefined" && !normalizeGoalLevel(goalLevelInput, "")) {
+      return Response.json(
+        { error: "goalLevel must be one of: business, manager, employee." },
+        { status: 400 }
+      );
+    }
+
+    if (contributionPercent < 0 || contributionPercent > 100) {
+      return Response.json(
+        { error: "contributionPercent must be between 0 and 100." },
+        { status: 400 }
+      );
     }
 
     const existingGoals = await databases.listDocuments(
@@ -133,6 +155,9 @@ export async function PUT(request, context) {
         cycleId,
         frameworkType,
         managerId,
+        parentGoalId,
+        goalLevel,
+        contributionPercent,
         dueDate,
         lineageRef,
         aiSuggested,

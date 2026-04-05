@@ -5,6 +5,18 @@ import interactionPlugin from "@fullcalendar/interaction";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import { useEffect, useMemo, useState } from "react";
 
+/**
+ * @typedef {{ start: string, end: string }} AvailabilitySlot
+ * @typedef {{ start?: string, end?: string }} AvailabilityRange
+ * @typedef {{
+ *  busySlots?: AvailabilitySlot[],
+ *  selectedSlot?: AvailabilitySlot | null,
+ *  onSelectSlot?: (start: string, end: string) => void,
+ *  loading?: boolean,
+ *  range?: AvailabilityRange,
+ * }} AvailabilityCalendarProps
+ */
+
 const SLOT_MINUTES = 30;
 
 function toDate(value) {
@@ -66,6 +78,7 @@ function formatSlotLabel(start, end) {
   return `${day} · ${time.format(startDate)} - ${time.format(endDate)}`;
 }
 
+/** @param {AvailabilityCalendarProps} props */
 export default function AvailabilityCalendar({
   busySlots = [],
   selectedSlot = null,

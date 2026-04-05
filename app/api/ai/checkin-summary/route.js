@@ -1,6 +1,7 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
 import { callOpenRouter } from "@/lib/openrouter";
+import { buildExplainability } from "@/lib/ai/explainability";
 
 export async function POST(request) {
   try {
@@ -54,7 +55,16 @@ Return ONLY this JSON shape:
         nextActions: parsed.nextActions?.length
           ? parsed.nextActions
           : ["Confirm next milestone before the next check-in."],
-        explainability: { source: "openrouter_llm", confidence: "high" },
+        explainability: buildExplainability({
+          source: "openrouter_llm",
+          confidence: "high",
+          whyFactors: [
+            `Goal context: ${goalTitle || "general"}`,
+            "Extracted progress highlights and blockers from check-in notes.",
+            "Action items prioritized for next milestone.",
+          ],
+          timeWindow: cycleId,
+        }),
         usage,
       },
     });

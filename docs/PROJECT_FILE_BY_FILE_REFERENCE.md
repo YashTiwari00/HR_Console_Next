@@ -59,10 +59,10 @@ Each entry includes:
   - Used by: goals UI feedback chips and notes.
 
 - [app/api/approvals/route.js](../app/api/approvals/route.js)
-  - Purpose: Manager and HR decision endpoint for submitted goals.
-  - GET logic: pending approval queue retrieval with hr origin filtering.
+  - Purpose: Manager and leadership decision endpoint for submitted goals.
+  - GET logic: pending approval queue retrieval with hierarchy-aware scope checks.
   - POST logic: decision validation, ownership and anti-self-approval rules, writes approval history and updates goal status.
-  - Used by: manager approvals page and HR governance workflows.
+  - Used by: manager and leadership approvals workflows.
 
 ### Check-ins
 
@@ -89,32 +89,32 @@ Each entry includes:
 
 - [app/api/team-members/route.js](../app/api/team-members/route.js)
   - Purpose: Return team member rows by role context.
-  - Key logic: manager sees own team, hr can see broader list.
-  - Used by: manager and HR pages that need employee directories.
+  - Key logic: manager and leadership see hierarchy-aligned team scope, hr can see broader monitoring list.
+  - Used by: manager, leadership, and HR pages that need employee directories.
 
 - [app/api/team-assignments/route.js](../app/api/team-assignments/route.js)
   - Purpose: List and create employee to manager assignments.
-  - GET logic: hr-only assignment listing with optional manager filtering.
+  - GET logic: leadership-managed assignment listing with optional manager filtering.
   - POST logic: validates roles and references, updates assignment metadata/version.
-  - Used by: HR team assignment page.
+  - Used by: leadership assignment workflows.
 
 - [app/api/team-assignments/[employeeId]/route.js](../app/api/team-assignments/[employeeId]/route.js)
   - Purpose: Update or remove one employee assignment.
   - PUT logic: change manager mapping with validation.
   - DELETE logic: clear mapping and maintain assignment integrity.
-  - Used by: HR reassignment/removal controls.
+  - Used by: leadership reassignment/removal controls.
 
 - [app/api/manager-assignments/route.js](../app/api/manager-assignments/route.js)
-  - Purpose: List and create manager to HR ownership mappings.
-  - GET logic: supports hr filters and unassigned manager views.
-  - POST logic: role and ownership validation, updates version metadata.
-  - Used by: HR mapping governance tools.
+  - Purpose: List and create manager to parent-manager hierarchy mappings.
+  - GET logic: supports leadership filters and unassigned manager views.
+  - POST logic: hierarchy validation and cycle prevention, updates version metadata.
+  - Used by: leadership hierarchy management tools.
 
 - [app/api/manager-assignments/[managerId]/route.js](../app/api/manager-assignments/[managerId]/route.js)
-  - Purpose: Update or remove one manager to HR mapping.
-  - PUT logic: remap manager ownership.
-  - DELETE logic: clear hr ownership for manager.
-  - Used by: HR management actions.
+  - Purpose: Update or remove one manager to parent-manager mapping.
+  - PUT logic: remap parent manager with hierarchy validation.
+  - DELETE logic: clear parent-manager mapping for manager.
+  - Used by: leadership management actions.
 
 ### HR Governance
 
@@ -206,7 +206,7 @@ Each entry includes:
 
 - [lib/teamAccess.js](../lib/teamAccess.js)
   - Purpose: relationship-aware access control and mapping helpers.
-  - Key logic: manager team resolution from assignments plus fallback from goals, HR ownership assertions, summary mappers.
+  - Key logic: manager subtree resolution from assignments plus fallback from goals, hierarchy assertions, summary mappers.
 
 - [lib/cycle.js](../lib/cycle.js)
   - Purpose: cycle and check-in identity utilities.

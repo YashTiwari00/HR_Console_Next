@@ -9,7 +9,7 @@ import Spinner from "../Spinner";
 /* ─── types ───────────────────────────────────────────────────────────── */
 
 type Message  = { role: "user" | "assistant"; content: string };
-type CompRole = "employee" | "manager" | "hr" | "region-admin";
+type CompRole = "employee" | "manager" | "hr" | "leadership" | "region-admin";
 type ApiRole  = "employee" | "manager" | "hr" | "guest";
 type AppMode  = "tutorial" | "chat";
 type Status   = "idle" | "loading" | "streaming";
@@ -149,29 +149,54 @@ const TUTORIAL: Record<CompRole, TutorialStep[]> = {
       body:  "You're the guardian of a fair, consistent process. Click me anytime you need help or insights.",
     },
   ],
-  "region-admin": [
+  leadership: [
     {
-      title: "Welcome, Regional Leader! 👋",
-      body:  "I'm Pip. You have a cross-regional view of performance. Let me walk you through what's available.",
+      title: "Welcome, Leadership! 👋",
+      body:  "I'm Pip. You have an organization-level view across managers, teams, and cycle health. Quick tour?",
     },
     {
-      title: "Regional Dashboard",
-      body:  "Aggregate performance data for your region — goal completion, check-in rates, and team health at a glance.",
+      title: "Leadership Dashboard",
+      body:  "Use this view for strategic snapshots: goal completion, check-in cadence, and performance signals across the org.",
       target: "[data-tutorial='nav-dashboard']",
     },
     {
       title: "Team Analytics",
-      body:  "Break down performance by team and manager within your region. Spot trends and outliers quickly.",
+      body:  "Drill into manager and team performance to identify momentum, risk, and support opportunities.",
       target: "[data-tutorial='nav-team-analytics']",
     },
     {
       title: "Check-in Monitoring",
-      body:  "Ensure consistent manager-employee engagement across your region by tracking check-in completion rates.",
+      body:  "Track coaching cadence and consistency so leadership can unblock execution early.",
       target: "[data-tutorial='nav-checkins']",
     },
     {
       title: "You're all set! 🎉",
-      body:  "Use your strategic view to guide regional decisions. I'm here whenever you need help.",
+      body:  "Use your strategic view to guide decisions and support managers. I'm here whenever you need help.",
+    },
+  ],
+  "region-admin": [
+    {
+      title: "Welcome, Leadership! 👋",
+      body:  "I'm Pip. This legacy role now uses leadership access. Let me walk you through what's available.",
+    },
+    {
+      title: "Leadership Dashboard",
+      body:  "Use this view for strategic snapshots: goal completion, check-in cadence, and performance signals across the org.",
+      target: "[data-tutorial='nav-dashboard']",
+    },
+    {
+      title: "Team Analytics",
+      body:  "Drill into manager and team performance to identify momentum, risk, and support opportunities.",
+      target: "[data-tutorial='nav-team-analytics']",
+    },
+    {
+      title: "Check-in Monitoring",
+      body:  "Track coaching cadence and consistency so leadership can unblock execution early.",
+      target: "[data-tutorial='nav-checkins']",
+    },
+    {
+      title: "You're all set! 🎉",
+      body:  "Use your strategic view to guide decisions and support managers. I'm here whenever you need help.",
     },
   ],
 };
@@ -181,14 +206,16 @@ const TUTORIAL: Record<CompRole, TutorialStep[]> = {
 const GREETINGS: Record<CompRole, string> = {
   employee:       "Tour done! I'm Pip 👋 Ask me anything about your goals, progress, or check-ins.",
   manager:        "Tour done! I'm Pip 👋 Ask me anything about team approvals, check-ins, or your own cycle.",
-  hr:             "Tour done! I'm Pip 👋 Ask me anything about team assignments, the approval queue, or cycle governance.",
-  "region-admin": "Tour done! I'm Pip 👋 Ask me anything about regional analytics, check-in health, or team performance.",
+  hr:             "Tour done! I'm Pip 👋 Ask me anything about governance monitoring, policy workflows, or cycle health.",
+  leadership:     "Tour done! I'm Pip 👋 Ask me anything about organization analytics, team performance, or strategic cycle insights.",
+  "region-admin": "Tour done! I'm Pip 👋 Ask me anything about organization analytics, team performance, or strategic cycle insights.",
 };
 
 const API_ROLE: Record<CompRole, ApiRole> = {
   employee:       "employee",
   manager:        "manager",
   hr:             "hr",
+  leadership:     "manager",
   "region-admin": "hr",
 };
 
@@ -672,7 +699,7 @@ export default function Companion({ role, userName, theme = "default" }: Compani
                 <div>
                   <p style={{ fontWeight: 600, fontSize: "0.83rem", color: t.headerText, lineHeight: 1.2 }}>Pip</p>
                   <p style={{ fontSize: "0.67rem", color: t.headerText, opacity: 0.7, textTransform: "capitalize" }}>
-                    {role === "region-admin" ? "regional admin" : role} workspace · HR Console
+                    {role === "region-admin" ? "leadership" : role} workspace · HR Console
                   </p>
                 </div>
               </div>

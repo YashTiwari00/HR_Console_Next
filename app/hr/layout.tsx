@@ -18,12 +18,20 @@ const navItems = [
   { label: "Dashboard",            href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"      },
   { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics" },
   { label: "Check-in Monitoring",  href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"       },
+  { label: "AI Governance",        href: "/hr/ai-governance",  route: "/hr/ai-governance",  tutorialId: "nav-ai-governance"  },
+  { label: "Calibration Workbench", href: "/hr/calibration",   route: "/hr/calibration",    tutorialId: "nav-calibration"    },
+  { label: "9-Box Talent Map",     href: "/hr/9-box",         route: "/hr/9-box",          tutorialId: "nav-9-box"          },
+  { label: "Notification Policy",  href: "/hr/notifications",  route: "/hr/notifications",  tutorialId: "nav-notifications"  },
 ];
 
 const quickActions = [
   { label: "View Team Ranking", href: "/hr/team-analytics" },
   { label: "Monitor Goal Progress", href: "/hr" },
   { label: "Monitor Manager Cadence", href: "/hr/check-ins" },
+  { label: "Review AI Governance", href: "/hr/ai-governance" },
+  { label: "Run Calibration Session", href: "/hr/calibration" },
+  { label: "Review 9-Box Snapshot", href: "/hr/9-box" },
+  { label: "Manage Notifications", href: "/hr/notifications" },
 ];
 
 export default function HrLayout({ children }: HrLayoutProps) {

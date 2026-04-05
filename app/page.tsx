@@ -1,22 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PCDLoader } from "three/addons/loaders/PCDLoader.js";
-import { getCurrentUser, getUserRole } from "@/services/authService";
 import ChatBot from "@/src/components/ui/ChatBot";
-
-type AppRole = "employee" | "manager" | "hr" | "region-admin";
-
-function routeForRole(role: AppRole) {
-  if (role === "employee") return "/employee";
-  if (role === "manager") return "/manager";
-  if (role === "region-admin") return "/region-admin";
-  return "/hr";
-}
 
 /* ─── styles ─────────────────────────────────────────────────────────────── */
 
@@ -536,14 +525,13 @@ const CSS = `
 /* ─── component ──────────────────────────────────────────────────────────── */
 
 export default function Home() {
-  const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
   const blurRef = useRef<HTMLDivElement>(null);
   const dotRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
-  const [checkingSession, setCheckingSession] = useState(false);
-  const [sessionState, setSessionState] = useState<"guest" | "profile-missing">("guest");
+  const [checkingSession] = useState(false);
+  const [sessionState] = useState<"guest" | "profile-missing">("guest");
 
   /* session check */
   // useEffect(() => {

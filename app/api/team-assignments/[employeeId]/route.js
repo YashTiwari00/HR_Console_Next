@@ -10,8 +10,8 @@ async function validateManager(databases, managerId) {
     managerId
   );
 
-  if (manager.role !== "manager") {
-    return { error: "target managerId must belong to a manager profile.", status: 400 };
+  if (!["manager", "leadership"].includes(String(manager.role || "").trim())) {
+    return { error: "target managerId must belong to a manager or leadership profile.", status: 400 };
   }
 
   return { manager };
@@ -51,7 +51,7 @@ async function applyAssignmentPatch(databases, employee, managerId, hrUserId) {
 export async function PUT(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const params = await context.params;
     const employeeId = (params.employeeId || "").trim();
@@ -102,7 +102,7 @@ export async function PUT(request, context) {
 export async function DELETE(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const params = await context.params;
     const employeeId = (params.employeeId || "").trim();

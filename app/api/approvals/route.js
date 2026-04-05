@@ -9,7 +9,7 @@ const VALID_DECISIONS = ["approved", "rejected", "needs_changes"];
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager", "hr"]);
+    requireRole(profile, ["manager", "leadership", "hr"]);
 
     const { searchParams } = new URL(request.url);
     const origin = (searchParams.get("origin") || "all").trim();
@@ -20,7 +20,7 @@ export async function GET(request) {
       Query.limit(100),
     ];
 
-    if (profile.role === "manager") {
+    if (profile.role === "manager" || profile.role === "leadership") {
       queries.push(Query.equal("managerId", profile.$id));
     }
 
@@ -66,7 +66,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager"]);
+    requireRole(profile, ["manager", "leadership"]);
 
     if (profile.role === "hr") {
       return Response.json(
@@ -97,13 +97,13 @@ export async function POST(request) {
       goalId
     );
 
-    if (profile.role === "manager" && goal.managerId !== profile.$id) {
+    if ((profile.role === "manager" || profile.role === "leadership") && goal.managerId !== profile.$id) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }
 
-    if (profile.role === "manager" && goal.employeeId === profile.$id) {
+    if ((profile.role === "manager" || profile.role === "leadership") && goal.employeeId === profile.$id) {
       return Response.json(
-        { error: "Managers cannot approve their own goals. HR approval is required." },
+        { error: "Managers cannot approve their own goals. Immediate upper manager approval is required." },
         { status: 403 }
       );
     }

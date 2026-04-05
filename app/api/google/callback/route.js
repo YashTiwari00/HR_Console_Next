@@ -43,7 +43,7 @@ function resolveRoleRedirect(role) {
   if (safeRole === "manager") return "/manager";
   if (safeRole === "employee") return "/employee";
   if (safeRole === "hr") return "/hr";
-  if (safeRole === "region-admin") return "/region-admin";
+  if (safeRole === "leadership") return "/leadership";
 
   return "/onboarding";
 }

@@ -1,41 +1,51 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { listUsersByIds, mapManagerAssignmentSummary, mapUserSummary } from "@/lib/teamAccess";
+import {
+  listDescendantManagerIds,
+  listUsersByIds,
+  mapManagerAssignmentSummary,
+  mapUserSummary,
+} from "@/lib/teamAccess";
 
-async function validateManagerAndHr(databases, managerId, hrId) {
-  if (!managerId || !hrId) {
-    return { error: "managerId and hrId are required.", status: 400 };
+async function validateManagerAndParent(databases, managerId, parentManagerId) {
+  if (!managerId || !parentManagerId) {
+    return { error: "managerId and parentManagerId are required.", status: 400 };
   }
 
-  if (managerId === hrId) {
-    return { error: "manager and hr cannot be the same user.", status: 400 };
+  if (managerId === parentManagerId) {
+    return { error: "manager cannot report to self.", status: 400 };
   }
 
-  const [manager, hr] = await Promise.all([
+  const [manager, parentManager] = await Promise.all([
     databases.getDocument(databaseId, appwriteConfig.usersCollectionId, managerId),
-    databases.getDocument(databaseId, appwriteConfig.usersCollectionId, hrId),
+    databases.getDocument(databaseId, appwriteConfig.usersCollectionId, parentManagerId),
   ]);
 
-  if (manager.role !== "manager") {
+  if (!["manager", "leadership"].includes(String(manager.role || "").trim())) {
     return { error: "target managerId must belong to a manager profile.", status: 400 };
   }
 
-  if (hr.role !== "hr") {
-    return { error: "target hrId must belong to an hr profile.", status: 400 };
+  if (!["manager", "leadership"].includes(String(parentManager.role || "").trim())) {
+    return { error: "target parentManagerId must belong to a manager or leadership profile.", status: 400 };
   }
 
-  return { manager, hr };
+  const descendantIds = await listDescendantManagerIds(databases, managerId);
+  if (descendantIds.includes(parentManagerId)) {
+    return { error: "Invalid hierarchy: parent manager cannot be a descendant of manager.", status: 400 };
+  }
+
+  return { manager, parentManager };
 }
 
-async function applyHrAssignmentPatch(databases, manager, hrId, actorId) {
-  const nextVersion = Number(manager.hrAssignmentVersion || 0) + 1;
+async function applyParentAssignmentPatch(databases, manager, parentManagerId, actorId) {
+  const nextVersion = Number(manager.assignmentVersion || 0) + 1;
 
   const fullPatch = {
-    hrId,
-    hrAssignedAt: hrId ? new Date().toISOString() : null,
-    hrAssignedBy: actorId,
-    hrAssignmentVersion: nextVersion,
+    managerId: parentManagerId,
+    managerAssignedAt: parentManagerId ? new Date().toISOString() : null,
+    managerAssignedBy: actorId,
+    assignmentVersion: nextVersion,
   };
 
   try {
@@ -51,7 +61,7 @@ async function applyHrAssignmentPatch(databases, manager, hrId, actorId) {
         databaseId,
         appwriteConfig.usersCollectionId,
         manager.$id,
-        { hrId }
+        { managerId: parentManagerId }
       );
     }
 
@@ -66,74 +76,74 @@ function toBoolean(value) {
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const { searchParams } = new URL(request.url);
-    const selectedHrId = (searchParams.get("hrId") || "").trim();
+    const selectedParentManagerId = (searchParams.get("parentManagerId") || "").trim();
     const onlyUnassigned = toBoolean(searchParams.get("unassigned"));
 
     const managersResult = await databases.listDocuments(
       databaseId,
       appwriteConfig.usersCollectionId,
-      [Query.equal("role", "manager"), Query.orderAsc("name"), Query.limit(200)]
+      [Query.equal("role", ["manager", "leadership"]), Query.orderAsc("name"), Query.limit(200)]
     );
 
     let managers = managersResult.documents;
 
-    if (selectedHrId) {
-      managers = managers.filter((item) => String(item.hrId || "").trim() === selectedHrId);
+    if (selectedParentManagerId) {
+      managers = managers.filter((item) => String(item.managerId || "").trim() === selectedParentManagerId);
     }
 
     if (onlyUnassigned) {
-      managers = managers.filter((item) => !String(item.hrId || "").trim());
+      managers = managers.filter((item) => !String(item.managerId || "").trim());
     }
 
-    const hrIds = Array.from(
-      new Set(managers.map((item) => String(item.hrId || "").trim()).filter(Boolean))
+    const parentManagerIds = Array.from(
+      new Set(managers.map((item) => String(item.managerId || "").trim()).filter(Boolean))
     );
 
     const assignedByIds = Array.from(
-      new Set(managers.map((item) => String(item.hrAssignedBy || "").trim()).filter(Boolean))
+      new Set(managers.map((item) => String(item.managerAssignedBy || "").trim()).filter(Boolean))
     );
 
-    const [hrsResult, assignedByUsers] = await Promise.all([
+    const [managerPool, assignedByUsers] = await Promise.all([
       databases.listDocuments(databaseId, appwriteConfig.usersCollectionId, [
-        Query.equal("role", "hr"),
+        Query.equal("role", ["manager", "leadership"]),
         Query.orderAsc("name"),
         Query.limit(200),
       ]),
       listUsersByIds(databases, assignedByIds),
     ]);
 
-    const hrById = new Map(hrsResult.documents.map((item) => [item.$id, item]));
+    const parentManagerById = new Map(managerPool.documents.map((item) => [item.$id, item]));
     const assignedByById = new Map(assignedByUsers.map((item) => [item.$id, item]));
 
-    // Ensure hr metadata can be resolved even when filter excludes the HR list.
-    if (hrIds.length > 0) {
-      const missingHrIds = hrIds.filter((id) => !hrById.has(id));
-      if (missingHrIds.length > 0) {
-        const missingHrProfiles = await listUsersByIds(databases, missingHrIds);
-        missingHrProfiles
-          .filter((item) => item.role === "hr")
-          .forEach((item) => hrById.set(item.$id, item));
+    if (parentManagerIds.length > 0) {
+      const missingParentIds = parentManagerIds.filter((id) => !parentManagerById.has(id));
+      if (missingParentIds.length > 0) {
+        const missingParentProfiles = await listUsersByIds(databases, missingParentIds);
+        missingParentProfiles
+          .filter((item) => ["manager", "leadership"].includes(String(item?.role || "").trim()))
+          .forEach((item) => parentManagerById.set(item.$id, item));
       }
     }
 
     const rows = managers.map((manager) =>
       mapManagerAssignmentSummary(manager, {
-        hrProfile: hrById.get(String(manager.hrId || "").trim()),
-        assignedByProfile: assignedByById.get(String(manager.hrAssignedBy || "").trim()),
+        parentManagerProfile: parentManagerById.get(String(manager.managerId || "").trim()),
+        assignedByProfile: assignedByById.get(String(manager.managerAssignedBy || "").trim()),
       })
     );
 
-    const unassignedManagers = managers.filter((item) => !String(item.hrId || "").trim()).length;
+    const unassignedManagers = managers.filter((item) => !String(item.managerId || "").trim()).length;
 
     return Response.json({
       data: rows,
       meta: {
         totalManagers: managers.length,
         unassignedManagers,
-        hrUsers: hrsResult.documents.map(mapUserSummary),
+        managerUsers: managerPool.documents.map(mapUserSummary),
+        hrUsers: managerPool.documents.map(mapUserSummary),
       },
     });
   } catch (error) {
@@ -144,29 +154,29 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const body = await request.json();
     const managerId = (body.managerId || "").trim();
-    const hrId = (body.hrId || "").trim();
+    const parentManagerId = (body.parentManagerId || body.hrId || "").trim();
 
-    const validated = await validateManagerAndHr(databases, managerId, hrId);
+    const validated = await validateManagerAndParent(databases, managerId, parentManagerId);
     if (validated.error) {
       return Response.json({ error: validated.error }, { status: validated.status });
     }
 
-    if (String(validated.manager.hrId || "").trim()) {
+    if (String(validated.manager.managerId || "").trim()) {
       return Response.json(
-        { error: "manager already has an hr assignment. Use PUT to reassign." },
+        { error: "manager already has a parent manager assignment. Use PUT to reassign." },
         { status: 409 }
       );
     }
 
-    const updated = await applyHrAssignmentPatch(databases, validated.manager, hrId, profile.$id);
+    const updated = await applyParentAssignmentPatch(databases, validated.manager, parentManagerId, profile.$id);
     return Response.json(
       {
         data: mapManagerAssignmentSummary(updated, {
-          hrProfile: validated.hr,
+          parentManagerProfile: validated.parentManager,
         }),
       },
       { status: 201 }

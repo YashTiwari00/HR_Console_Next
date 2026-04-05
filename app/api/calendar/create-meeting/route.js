@@ -4,7 +4,9 @@ import {
   createMeetCalendarEvent,
   getOrgDefaultTimezone,
 } from "@/lib/googleCalendar";
-import { ID, databaseId } from "@/lib/appwriteServer";
+import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { parseStringList, toMeetingType } from "@/lib/meetingIntelligence";
+import { upsertMeetingMetadata } from "@/lib/meetingMetadataStore";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee, listUsersByIds } from "@/lib/teamAccess";
 
@@ -37,7 +39,8 @@ async function createMeetingDocument(databases, payload) {
           message.includes('unknown attribute: "managernotes"')) &&
         "managerNotes" in nextPayload
       ) {
-        const { managerNotes, ...fallbackPayload } = nextPayload;
+        const fallbackPayload = { ...nextPayload };
+        delete fallbackPayload.managerNotes;
         nextPayload = fallbackPayload;
         continue;
       }
@@ -54,7 +57,8 @@ async function createMeetingDocument(databases, payload) {
         throw error;
       }
 
-      const { [missingAttr]: _ignored, ...fallbackPayload } = nextPayload;
+      const fallbackPayload = { ...nextPayload };
+      delete fallbackPayload[missingAttr];
       nextPayload = fallbackPayload;
     }
   }
@@ -75,7 +79,8 @@ async function createMeetingDocument(databases, payload) {
       throw error;
     }
 
-    const { managerNotes, ...fallbackPayload } = nextPayload;
+    const fallbackPayload = { ...nextPayload };
+    delete fallbackPayload.managerNotes;
     return databases.createDocument(
       databaseId,
       appwriteConfig.googleMeetRequestsCollectionId,
@@ -83,6 +88,42 @@ async function createMeetingDocument(databases, payload) {
       fallbackPayload
     );
   }
+}
+
+function normalizeIdList(input, maxItems = 25) {
+  return Array.from(
+    new Set(
+      (Array.isArray(input) ? input : parseStringList(input))
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, maxItems);
+}
+
+async function assertManagerGoalAccess(databases, managerId, employeeId, goalIds) {
+  if (!goalIds.length) return null;
+
+  const goals = await databases.listDocuments(
+    databaseId,
+    appwriteConfig.goalsCollectionId,
+    [
+      Query.equal("employeeId", employeeId),
+      Query.equal("managerId", managerId),
+      Query.equal("$id", goalIds),
+      Query.limit(Math.max(50, goalIds.length + 5)),
+    ]
+  );
+
+  const allowed = new Set(goals.documents.map((item) => String(item.$id || "").trim()));
+  const invalid = goalIds.filter((id) => !allowed.has(id));
+  if (invalid.length > 0) {
+    return Response.json(
+      { error: "Some selected goals are not accessible for this manager/employee context.", invalidGoalIds: invalid },
+      { status: 400 }
+    );
+  }
+
+  return null;
 }
 
 export async function POST(request) {
@@ -98,6 +139,9 @@ export async function POST(request) {
     const description = String(body?.description || "").trim();
     const managerNotes = String(body?.managerNotes || "").trim();
     const timeZone = String(body?.timeZone || getOrgDefaultTimezone()).trim();
+    const linkedGoalIds = normalizeIdList(body?.linkedGoalIds, 20);
+    const meetingType = toMeetingType(body?.meetingType);
+    const requestedParticipantIds = normalizeIdList(body?.participantIds, 30);
 
     if (!employeeId || !startTime || !endTime) {
       return Response.json(
@@ -115,7 +159,21 @@ export async function POST(request) {
 
     await assertManagerCanAccessEmployee(databases, profile.$id, employeeId);
 
-    const users = await listUsersByIds(databases, [profile.$id, employeeId]);
+    const goalAccessError = await assertManagerGoalAccess(
+      databases,
+      profile.$id,
+      employeeId,
+      linkedGoalIds
+    );
+    if (goalAccessError) {
+      return goalAccessError;
+    }
+
+    const participantIds = Array.from(
+      new Set([profile.$id, employeeId, ...requestedParticipantIds])
+    ).slice(0, 30);
+
+    const users = await listUsersByIds(databases, participantIds);
     const manager = users.find((item) => item.$id === profile.$id);
     const employee = users.find((item) => item.$id === employeeId);
 
@@ -127,7 +185,10 @@ export async function POST(request) {
       return Response.json({ error: "Manager profile email is missing." }, { status: 400 });
     }
 
-    const attendees = [employee.email, manager.email];
+    const attendeeEmails = users
+      .map((item) => String(item?.email || "").trim())
+      .filter(Boolean);
+    const attendees = Array.from(new Set([employee.email, manager.email, ...attendeeEmails]));
 
     const event = await createMeetCalendarEvent(databases, profile.$id, {
       title,
@@ -159,11 +220,28 @@ export async function POST(request) {
       meetLink: event.meetLink,
       eventId: event.eventId,
       timezone: timeZone,
+      meetingType,
+      linkedGoalIds: JSON.stringify(linkedGoalIds),
+      participantIds: JSON.stringify(participantIds),
+      participantEmails: JSON.stringify(attendees),
     });
+
+    await upsertMeetingMetadata(databases, meeting.$id, {
+      linkedGoalIds,
+      participantIds,
+      participantEmails: attendees,
+    });
+
+    const withMetadata = {
+      ...meeting,
+      linkedGoalIds,
+      participantIds,
+      participantEmails: attendees,
+    };
 
     return Response.json({
       data: {
-        meeting,
+        meeting: withMetadata,
         event,
       },
     });

@@ -1,14 +1,25 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import * as XLSX from "xlsx";
+import {
+  BulkGoalAiReviewPanel,
+  ConversationalGoalComposer,
+  ExplainabilityDrawer,
+  type GoalAiDraft,
+  PageHeader,
+} from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
 import {
+  BulkGoalAnalysisItem,
+  BulkGoalInput,
   createGoal,
+  fetchAiUsageSnapshot,
   fetchGoalFeedback,
   fetchGoals,
   fetchMe,
+  getBulkGoalAnalysis,
   getCycleIdFromDate,
   getGoalSuggestions,
   GoalItem,
@@ -25,6 +36,7 @@ const frameworkOptions = [
 ];
 
 export default function EmployeeGoalsPage() {
+  const [mode, setMode] = useState<"form" | "ai">("form");
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +45,9 @@ export default function EmployeeGoalsPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiSuggestion, setAiSuggestion] = useState<GoalSuggestion | null>(null);
+  const [aiUsageRemaining, setAiUsageRemaining] = useState<number | null>(null);
+  const [aiBudgetWarning, setAiBudgetWarning] = useState("");
+  const [explainabilityOpen, setExplainabilityOpen] = useState(false);
 
   const [goalForm, setGoalForm] = useState({
     title: "",
@@ -56,6 +71,185 @@ export default function EmployeeGoalsPage() {
     weightage: "20",
     dueDate: "",
   });
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkFallbackUsed, setBulkFallbackUsed] = useState(false);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkSourceGoals, setBulkSourceGoals] = useState<BulkGoalInput[]>([]);
+  const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
+  const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+
+  function readCell(row: Record<string, unknown>, keys: string[]) {
+    const entries = Object.entries(row);
+    for (const key of keys) {
+      const found = entries.find(([rowKey]) => rowKey.trim().toLowerCase() === key.trim().toLowerCase());
+      if (found && String(found[1] ?? "").trim()) {
+        return String(found[1]).trim();
+      }
+    }
+    return "";
+  }
+
+  function parseGoalRows(rows: Record<string, unknown>[]) {
+    return rows
+      .map((row) => {
+        const title = readCell(row, ["title", "goal title", "goal"]);
+        const description = readCell(row, ["description", "goal description"]);
+        const weightRaw = readCell(row, ["weight", "weightage", "%"]);
+        const weight = Number.parseInt(weightRaw || "0", 10);
+
+        return {
+          title,
+          description,
+          weight: Number.isInteger(weight) && weight > 0 ? weight : 10,
+        } as BulkGoalInput;
+      })
+      .filter((item) => item.title && item.description);
+  }
+
+  async function readGoalsFromWorkbook(file: File) {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const firstSheet = workbook.SheetNames?.[0];
+    if (!firstSheet) {
+      throw new Error("Workbook has no sheets.");
+    }
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], {
+      defval: "",
+    });
+
+    return parseGoalRows(rows);
+  }
+
+  function buildDrafts(analysis: BulkGoalAnalysisItem[], sourceGoals: BulkGoalInput[]) {
+    return analysis.map((item, index) => ({
+      title: item.improvedTitle || sourceGoals[index]?.title || "",
+      description: item.improvedDescription || sourceGoals[index]?.description || "",
+      metrics: item.suggestedMetrics || "",
+      weight: sourceGoals[index]?.weight || 10,
+      allocationSplitText: "",
+    }));
+  }
+
+  async function analyzeWorkbookGoals(sourceGoals: BulkGoalInput[]) {
+    if (sourceGoals.length === 0) {
+      throw new Error("No valid goals found in uploaded file.");
+    }
+
+    if (sourceGoals.length > 10) {
+      throw new Error("Upload contains more than 10 goals. Please reduce rows to 10 or fewer.");
+    }
+
+    const analysis = await getBulkGoalAnalysis({
+      goals: sourceGoals,
+      role: "employee",
+      cycleId: goalForm.cycleId,
+    });
+
+    setBulkAnalysis(analysis.goals);
+    setBulkDrafts(buildDrafts(analysis.goals, sourceGoals));
+    setBulkFallbackUsed(analysis.fallbackUsed);
+  }
+
+  async function handleBulkFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+
+    setBulkFileName(file.name);
+    setBulkError("");
+    setBulkLoading(true);
+
+    try {
+      const sourceGoals = await readGoalsFromWorkbook(file);
+      setBulkSourceGoals(sourceGoals);
+      await analyzeWorkbookGoals(sourceGoals);
+      setSuccess("Bulk goals analyzed with AI.");
+    } catch (err) {
+      setBulkAnalysis([]);
+      setBulkDrafts([]);
+      setBulkFallbackUsed(false);
+      setBulkError(err instanceof Error ? err.message : "Failed to process file.");
+    } finally {
+      setBulkLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  function handleBulkDraftChange(index: number, draft: GoalAiDraft) {
+    setBulkDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? draft : item)));
+  }
+
+  function handleApplyBulkSuggestion(index: number) {
+    const draft = bulkDrafts[index];
+    if (!draft) return;
+
+    setGoalForm((prev) => ({
+      ...prev,
+      title: draft.title,
+      description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
+      weightage: String(draft.weight || 10),
+    }));
+  }
+
+  function handleApplyAllBulkSuggestions() {
+    if (bulkDrafts.length === 0) return;
+    handleApplyBulkSuggestion(0);
+  }
+
+  async function persistBulkGoals(submitCreatedGoals: boolean) {
+    if (bulkDrafts.length === 0) return;
+
+    if (submitCreatedGoals) {
+      setBulkSubmitting(true);
+    } else {
+      setBulkSaving(true);
+    }
+
+    setBulkError("");
+
+    try {
+      const createdGoalIds: string[] = [];
+
+      for (const draft of bulkDrafts) {
+        const created = await createGoal({
+          title: draft.title,
+          description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
+          cycleId: goalForm.cycleId,
+          frameworkType: goalForm.frameworkType,
+          managerId: goalForm.managerId,
+          weightage: draft.weight,
+          dueDate: goalForm.dueDate || null,
+          aiSuggested: true,
+        });
+
+        const goalId = String(created?.data?.$id || created?.$id || "").trim();
+        if (goalId) {
+          createdGoalIds.push(goalId);
+        }
+      }
+
+      if (submitCreatedGoals) {
+        for (const goalId of createdGoalIds) {
+          await submitGoal(goalId);
+        }
+      }
+
+      setSuccess(
+        submitCreatedGoals
+          ? `Created and submitted ${createdGoalIds.length} goals for approval.`
+          : `Created ${bulkDrafts.length} draft goals from AI review.`
+      );
+      await loadGoals();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Failed to save bulk goals.");
+    } finally {
+      setBulkSaving(false);
+      setBulkSubmitting(false);
+    }
+  }
 
   const loadGoals = useCallback(async () => {
     setLoading(true);
@@ -85,6 +279,38 @@ export default function EmployeeGoalsPage() {
   useEffect(() => {
     loadGoals();
   }, [loadGoals]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAiUsage() {
+      try {
+        const usage = await fetchAiUsageSnapshot(goalForm.cycleId);
+        if (!active) return;
+
+        const feature = usage.features.find((item) => item.featureType === "goal_suggestion");
+        const remaining = typeof feature?.remaining === "number" ? feature.remaining : null;
+        setAiUsageRemaining(remaining);
+
+        if (remaining !== null && remaining <= 1) {
+          setAiBudgetWarning(
+            `AI goal suggestion budget is low (${remaining} remaining this cycle).`
+          );
+        } else {
+          setAiBudgetWarning("");
+        }
+      } catch {
+        if (!active) return;
+        setAiUsageRemaining(null);
+      }
+    }
+
+    loadAiUsage();
+
+    return () => {
+      active = false;
+    };
+  }, [goalForm.cycleId]);
 
   useEffect(() => {
     let active = true;
@@ -224,6 +450,22 @@ export default function EmployeeGoalsPage() {
       if (!suggestions[0]) {
         setAiError("No suggestion returned. Try refining your prompt.");
       }
+
+      try {
+        const usage = await fetchAiUsageSnapshot(goalForm.cycleId);
+        const feature = usage.features.find((item) => item.featureType === "goal_suggestion");
+        const remaining = typeof feature?.remaining === "number" ? feature.remaining : null;
+        setAiUsageRemaining(remaining);
+        if (remaining !== null && remaining <= 1) {
+          setAiBudgetWarning(
+            `AI goal suggestion budget is low (${remaining} remaining this cycle).`
+          );
+        } else {
+          setAiBudgetWarning("");
+        }
+      } catch {
+        // Ignore usage refresh failures.
+      }
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "Failed to generate suggestion.");
     } finally {
@@ -257,88 +499,187 @@ export default function EmployeeGoalsPage() {
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
       {aiError && <Alert variant="warning" title="AI suggestion issue" description={aiError} onDismiss={() => setAiError("")} />}
+      {aiBudgetWarning && (
+        <Alert variant="warning" title="AI Budget Warning" description={aiBudgetWarning} onDismiss={() => setAiBudgetWarning("")} />
+      )}
+
+      <Card title="Bulk Goal Import" description="Upload Excel goals and review AI improvements before saving.">
+        <Stack gap="3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="file"
+              label="Upload Excel (.xlsx, .xls)"
+              accept=".xlsx,.xls"
+              onChange={handleBulkFileUpload}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => analyzeWorkbookGoals(bulkSourceGoals)}
+              loading={bulkLoading}
+              disabled={bulkSourceGoals.length === 0}
+            >
+              Re-run AI Analysis
+            </Button>
+            <Button
+              type="button"
+              onClick={() => persistBulkGoals(false)}
+              loading={bulkSaving}
+              disabled={bulkDrafts.length === 0 || bulkSubmitting}
+            >
+              Save Goals
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => persistBulkGoals(true)}
+              loading={bulkSubmitting}
+              disabled={bulkDrafts.length === 0 || bulkSaving}
+            >
+              Submit for Approval
+            </Button>
+          </div>
+          <p className="caption">
+            Expected columns in first sheet: title, description, weight or weightage. Max 10 goals per upload.
+          </p>
+          {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
+          <BulkGoalAiReviewPanel
+            role="employee"
+            items={bulkAnalysis}
+            drafts={bulkDrafts}
+            loading={bulkLoading}
+            fallbackUsed={bulkFallbackUsed}
+            error={bulkError}
+            onDraftChange={handleBulkDraftChange}
+            onApplySuggestion={handleApplyBulkSuggestion}
+            onApplyAll={handleApplyAllBulkSuggestions}
+            onDismissError={() => setBulkError("")}
+          />
+        </Stack>
+      </Card>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "form" ? "primary" : "secondary"}
+          onClick={() => setMode("form")}
+        >
+          Form Mode
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "ai" ? "primary" : "secondary"}
+          onClick={() => setMode("ai")}
+        >
+          AI Mode
+        </Button>
+      </div>
 
       <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Create Goal" description="Start with a clear, measurable outcome.">
-          <form className="space-y-3" onSubmit={handleCreateGoal}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="secondary" onClick={handleAiSuggest} loading={aiLoading}>
-                {aiSuggestion ? "Regenerate AI Suggestion" : "Suggest with AI"}
-              </Button>
-              {aiSuggestion && (
-                <Button type="button" onClick={handleAcceptAiSuggestion}>
-                  Accept Suggestion
+        {mode === "form" ? (
+          <Card title="Create Goal" description="Start with a clear, measurable outcome.">
+            <form className="space-y-3" onSubmit={handleCreateGoal}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" onClick={handleAiSuggest} loading={aiLoading}>
+                  {aiSuggestion ? "Regenerate AI Suggestion" : "Suggest with AI"}
                 </Button>
-              )}
-            </div>
-
-            {aiSuggestion && (
-              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
-                <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
-                <p className="caption mt-1">{aiSuggestion.title}</p>
-                <p className="caption mt-1">{aiSuggestion.description}</p>
-                {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
+                <span className="caption">
+                  Remaining AI suggestions this cycle: {aiUsageRemaining === null ? "..." : aiUsageRemaining}
+                </span>
+                {aiSuggestion && (
+                  <Button type="button" onClick={handleAcceptAiSuggestion}>
+                    Accept Suggestion
+                  </Button>
+                )}
               </div>
-            )}
 
-            <Input
-              label="Goal Title"
-              value={goalForm.title}
-              onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
-              required
-            />
-            <Textarea
-              label="Description"
-              value={goalForm.description}
-              onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
-              required
-            />
-            <Grid cols={1} colsMd={2} gap="2">
+              {aiSuggestion && (
+                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
+                  <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
+                  <p className="caption mt-1">{aiSuggestion.title}</p>
+                  <p className="caption mt-1">{aiSuggestion.description}</p>
+                  {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
+                  {aiSuggestion.explainability && (
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setExplainabilityOpen(true)}
+                      >
+                        View Explainability
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Input
-                label="Cycle ID"
-                value={goalForm.cycleId}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, cycleId: event.target.value }))}
+                label="Goal Title"
+                value={goalForm.title}
+                onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
                 required
               />
-              <Input
-                label="Manager ID"
-                value={goalForm.managerId}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, managerId: event.target.value }))}
-                helperText={
-                  managerResolved
-                    ? "Auto-filled from your profile mapping."
-                    : "Auto-resolve failed. Enter manually or set users.managerId in Appwrite."
-                }
-              />
-            </Grid>
-            <Grid cols={1} colsMd={3} gap="2">
-              <Dropdown
-                label="Framework"
-                value={goalForm.frameworkType}
-                onChange={(frameworkType) =>
-                  setGoalForm((prev) => ({ ...prev, frameworkType }))
-                }
-                options={frameworkOptions}
-              />
-              <Input
-                label="Weightage"
-                type="number"
-                min={1}
-                max={100}
-                value={goalForm.weightage}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, weightage: event.target.value }))}
+              <Textarea
+                label="Description"
+                value={goalForm.description}
+                onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
                 required
               />
-              <Input
-                label="Due Date"
-                type="date"
-                value={goalForm.dueDate}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, dueDate: event.target.value }))}
-              />
-            </Grid>
-            <Button type="submit" loading={submitting}>Create Draft Goal</Button>
-          </form>
-        </Card>
+              <Grid cols={1} colsMd={2} gap="2">
+                <Input
+                  label="Cycle ID"
+                  value={goalForm.cycleId}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, cycleId: event.target.value }))}
+                  required
+                />
+                <Input
+                  label="Manager ID"
+                  value={goalForm.managerId}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, managerId: event.target.value }))}
+                  helperText={
+                    managerResolved
+                      ? "Auto-filled from your profile mapping."
+                      : "Auto-resolve failed. Enter manually or set users.managerId in Appwrite."
+                  }
+                />
+              </Grid>
+              <Grid cols={1} colsMd={3} gap="2">
+                <Dropdown
+                  label="Framework"
+                  value={goalForm.frameworkType}
+                  onChange={(frameworkType) =>
+                    setGoalForm((prev) => ({ ...prev, frameworkType }))
+                  }
+                  options={frameworkOptions}
+                />
+                <Input
+                  label="Weightage"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={goalForm.weightage}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, weightage: event.target.value }))}
+                  required
+                />
+                <Input
+                  label="Due Date"
+                  type="date"
+                  value={goalForm.dueDate}
+                  onChange={(event) => setGoalForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                />
+              </Grid>
+              <Button type="submit" loading={submitting}>Create Draft Goal</Button>
+            </form>
+          </Card>
+        ) : (
+          <ConversationalGoalComposer
+            cycleId={goalForm.cycleId}
+            frameworkType={goalForm.frameworkType}
+          />
+        )}
 
         <Card title="Queue Snapshot" description="Keep the review cycle moving.">
           <Stack gap="2">
@@ -468,6 +809,13 @@ export default function EmployeeGoalsPage() {
           ))}
         </Stack>
       </Card>
+
+      <ExplainabilityDrawer
+        open={explainabilityOpen}
+        onClose={() => setExplainabilityOpen(false)}
+        payload={aiSuggestion?.explainability || null}
+        title="Goal Suggestion Explainability"
+      />
     </Stack>
   );
 }

@@ -28,24 +28,13 @@ async function getProfileByUserId(databases, userId) {
 
 async function applyOnboardingMutation(databases, user, currentProfile, nextRole, nextRegion) {
   const role = normalizeRole(nextRole) || "employee";
-  const region = role === "region-admin" ? toSafeString(nextRegion) : "";
-
-  if (role === "region-admin" && !region) {
-    const error = new Error("Region is required for region admin onboarding.");
-    error.statusCode = 400;
-    throw error;
-  }
+  const region = toSafeString(nextRegion);
 
   if (currentProfile) {
     const existingRole = normalizeRole(currentProfile.role);
     const existingRegion = toSafeString(currentProfile.region);
 
-    if (
-      existingRole === "region-admin" &&
-      role === "region-admin" &&
-      region &&
-      !existingRegion
-    ) {
+    if (existingRole === "leadership" && role === "leadership" && region && !existingRegion) {
       return databases.updateDocument(databaseId, appwriteConfig.usersCollectionId, user.$id, {
         region,
       });

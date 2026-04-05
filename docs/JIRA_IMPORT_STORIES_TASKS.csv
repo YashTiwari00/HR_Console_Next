@@ -1,0 +1,58 @@
+Issue Type,Summary,Description,Priority,Labels,Epic Link,Story Points
+Story,Create timeline aggregate API,Add API endpoint for cycle timeline status blockers next-action and role visibility constraints.,Highest,"phase-a,p0,timeline,api",P0 Timeline Workspace Foundation,8
+Task,Implement timeline state resolver,Build deterministic resolver mapping lifecycle entities to one current stage and allowed transitions.,Highest,"phase-a,p0,timeline,backend",P0 Timeline Workspace Foundation,5
+Task,Add timeline telemetry events,Emit events for stage view action click and forbidden transition attempts with reason codes.,High,"phase-a,p0,timeline,telemetry",P0 Timeline Workspace Foundation,3
+Story,Build employee timeline page v1,Create employee timeline workspace with inline nodes and one primary action per stage.,Highest,"phase-a,p0,timeline,frontend",P0 Timeline Workspace Foundation,8
+Story,Build manager and HR timeline pages v1,Create manager and HR timeline variants with role-specific node actions and status cards.,Highest,"phase-a,p0,timeline,frontend",P0 Timeline Workspace Foundation,8
+Task,Add deep-link compatibility for existing pages,Keep existing route pages functional and reachable as fallback links from timeline view.,High,"phase-a,p0,timeline,compatibility",P0 Timeline Workspace Foundation,3
+Story,Introduce framework policy schema,Create framework_policies model with defaults and actor audit fields.,Highest,"phase-a,p0,framework,data-model",P0 Framework Policy Engine,5
+Story,Expand framework support,Add Balanced Scorecard and Competency framework options in validation and UI flows.,Highest,"phase-a,p0,framework",P0 Framework Policy Engine,5
+Task,Add HR framework policy API,Implement read and update API for framework enablement and defaults by business scope.,High,"phase-a,p0,framework,api",P0 Framework Policy Engine,5
+Task,Update goal validation to policy-driven checks,Replace hardcoded framework acceptance logic with effective-policy validation layer.,Highest,"phase-a,p0,framework,backend",P0 Framework Policy Engine,5
+Task,Add migration-safe handling for existing goals,Ensure legacy goals remain readable editable and submit-safe after framework expansion.,High,"phase-a,p0,framework,migration",P0 Framework Policy Engine,3
+Story,Create notification entities,Add templates jobs and events data models with status retry and suppression support.,Highest,"phase-a,p0,notifications,data-model",P0 Notifications and Nudges,5
+Story,Build notification scheduler,Implement scheduler worker or cron route to process due jobs and retries.,Highest,"phase-a,p0,notifications,backend",P0 Notifications and Nudges,8
+Task,Implement email dispatcher abstraction,Create provider-agnostic email dispatch layer with structured failure reason logging.,High,"phase-a,p0,notifications,service",P0 Notifications and Nudges,5
+Task,Build in-app pending action feed,Expose user-visible notification feed with actionable links and read states.,High,"phase-a,p0,notifications,frontend",P0 Notifications and Nudges,5
+Task,Add HR notification policy UI,Create policy page for templates schedules digest windows and suppression settings.,High,"phase-a,p0,notifications,frontend",P0 Notifications and Nudges,8
+Story,Create lineage edge schema,Add parent-child relation model with contribution percentage and lineage level metadata.,Highest,"phase-a,p0,lineage,data-model",P0 Goal Lineage Baseline,5
+Story,Implement lineage read API,Build graph-safe API returning ordered lineage path and contribution summaries.,Highest,"phase-a,p0,lineage,api",P0 Goal Lineage Baseline,5
+Task,Add contribution validation guardrails,Enforce bounded contribution totals and reject invalid cascades with clear errors.,High,"phase-a,p0,lineage,validation",P0 Goal Lineage Baseline,3
+Task,Build lineage UI panel,Add goal detail lineage panel with plain-language parent objective explanation and badges.,High,"phase-a,p0,lineage,frontend",P0 Goal Lineage Baseline,5
+Task,Add legacy fallback rendering for lineage,Render goals without lineage metadata gracefully without blocking existing flows.,High,"phase-a,p0,lineage,compatibility",P0 Goal Lineage Baseline,3
+Story,Define shared explainable AI response contract,Create standard response envelope with recommendation whyFactors confidence and timeWindow.,High,"phase-b,p1,ai,contract",P1 Explainable AI Contract,5
+Task,Apply explainable contract to goal suggestion API,Update goal suggestion endpoint and tests to enforce explainability fields.,High,"phase-b,p1,ai,api",P1 Explainable AI Contract,3
+Task,Apply explainable contract to check-in summary API,Update check-in summary endpoint and tests to enforce explainability fields.,High,"phase-b,p1,ai,api",P1 Explainable AI Contract,3
+Task,Add explainability drawer component,Build reusable UI component to display rationale factors confidence and time window.,High,"phase-b,p1,ai,frontend",P1 Explainable AI Contract,5
+Story,Create calibration session entities,Add calibration_sessions and calibration_decisions with actor rationale and version fields.,High,"phase-b,p1,calibration,data-model",P1 HR Calibration Workbench,5
+Story,Build calibration API surface,Implement create update list and decision capture APIs for HR calibration sessions.,High,"phase-b,p1,calibration,api",P1 HR Calibration Workbench,8
+Task,Create calibration distribution views,Add visual distribution and drift indicators by manager team and department.,High,"phase-b,p1,calibration,frontend",P1 HR Calibration Workbench,8
+Task,Add calibration audit timeline,Capture and display decision changes with before-after state and rationale snapshots.,High,"phase-b,p1,calibration,audit",P1 HR Calibration Workbench,5
+Story,Build pre-check-in AI agenda service,Generate agenda discussion priorities and blocker prompts before meetings.,High,"phase-b,p1,checkins,ai",P1 Check-in Intelligence Upgrade,5
+Task,Add commitments extractor after meeting,Extract commitments owners and due dates from check-in content and transcript inputs.,High,"phase-b,p1,checkins,ai",P1 Check-in Intelligence Upgrade,5
+Task,Implement manager coaching quality score,Generate internal quality signal for feedback specificity constructiveness and actionability.,High,"phase-b,p1,checkins,ai",P1 Check-in Intelligence Upgrade,5
+Task,Add tone guidance suggestions,Provide manager-facing tone and clarity suggestions before feedback submit.,Medium,"phase-b,p1,checkins,ai",P1 Check-in Intelligence Upgrade,3
+Story,Add AI usage counters in user flows,Show remaining usage per feature and cycle near each AI action entry point.,High,"phase-b,p1,ai,governance,frontend",P1 AI Governance Visibility,5
+Task,Build HR AI governance panel,Add summary analytics for feature usage outliers and quota adherence.,Medium,"phase-b,p1,ai,governance,analytics",P1 AI Governance Visibility,5
+Task,Add AI budget warning thresholds,Trigger warning banners when users approach usage cap thresholds.,Medium,"phase-b,p1,ai,governance",P1 AI Governance Visibility,3
+Story,Introduce leadership role and route protection,Add leadership role normalization authorization and protected route handling.,Medium,"phase-c,p2,leadership,rbac",P2 Leadership Command Center,5
+Story,Build leadership overview API,Implement aggregated decision-safe analytics endpoint with strict data minimization.,Medium,"phase-c,p2,leadership,api",P2 Leadership Command Center,8
+Task,Create leadership dashboard v1,Build dashboard for trends risks and readiness signals without unnecessary PII exposure.,Medium,"phase-c,p2,leadership,frontend",P2 Leadership Command Center,8
+Task,Add metric definition registry,Document metric formulas windows and caveats used in leadership views.,Medium,"phase-c,p2,leadership,governance",P2 Leadership Command Center,3
+Story,Define matrix reviewer data model,Create assignment model for secondary reviewers with weighted influence fields.,Medium,"phase-c,p2,matrix-review,data-model",P2 Matrix Reviewer Model,5
+Task,Build matrix feedback capture flow,Allow secondary reviewer feedback capture without granting final rating authority.,Medium,"phase-c,p2,matrix-review,workflow",P2 Matrix Reviewer Model,5
+Task,Blend matrix feedback into manager summary,Include weighted secondary feedback in manager decision support summaries.,Medium,"phase-c,p2,matrix-review,ai",P2 Matrix Reviewer Model,3
+Story,Define goal import template and parser,Create import template spec and parser with strict schema validation errors.,Medium,"phase-c,p2,import,parser",P2 Goal Import Pipeline,5
+Story,Implement import preview endpoint,Build preview-only endpoint returning row-level validation and conflict checks.,Medium,"phase-c,p2,import,api",P2 Goal Import Pipeline,5
+Task,Implement idempotent commit endpoint,Commit import job with idempotency key and per-row success failure results.,Medium,"phase-c,p2,import,api",P2 Goal Import Pipeline,8
+Task,Add import audit and rollback report,Persist import run audit details and generate remediation guidance for failures.,Medium,"phase-c,p2,import,audit",P2 Goal Import Pipeline,3
+Story,Create 9-box model and readiness schema,Define potential-performance matrix model and readiness band fields.,Medium,"phase-c,p2,succession,data-model",P2 Succession and 9-Box,5
+Task,Build HR 9-box dashboard,Create HR dashboard for talent mapping and development pathway recommendations.,Medium,"phase-c,p2,succession,frontend",P2 Succession and 9-Box,8
+Task,Build leadership succession snapshot,Create leadership-safe aggregated readiness and bench-strength views.,Medium,"phase-c,p2,succession,leadership",P2 Succession and 9-Box,5
+Story,Run authorization regression matrix,Add and run role-scope test matrix across all new APIs and pages.,Highest,"production,security,rbac,tests",Production Security and Compliance Gates,8
+Task,Add audit trail coverage checks,Verify approvals ratings AI override and calibration events are audit-complete.,Highest,"production,compliance,audit",Production Security and Compliance Gates,5
+Task,Complete data minimization review,Validate non-HR personas do not receive unnecessary sensitive fields.,Highest,"production,security,privacy",Production Security and Compliance Gates,5
+Story,Define SLO dashboards and alerts,Implement core API success latency notification and scheduler reliability dashboards.,Highest,"production,reliability,slo",Production Observability and Incident Readiness,5
+Task,Create incident runbooks,Publish runbooks for auth regressions notification failures AI outages and data mismatch events.,High,"production,operations,runbook",Production Observability and Incident Readiness,3
+Task,Execute backup restore drill,Run and document restore drill for key collections with RTO and RPO evidence.,High,"production,operations,backup",Production Observability and Incident Readiness,3
+Task,Define rollback triggers and ownership,Set threshold-based rollback conditions and owner escalation matrix for release phases.,High,"production,operations,rollback",Production Observability and Incident Readiness,3

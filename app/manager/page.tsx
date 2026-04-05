@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { GoalLineageView, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
@@ -29,6 +29,7 @@ export default function ManagerPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMemberItem[]>([]);
   const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [lineageGoalId, setLineageGoalId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -165,6 +166,42 @@ export default function ManagerPage() {
     return counts;
   }, [departmentFilter, heatMapRows]);
 
+  const topAtRiskGoals = useMemo(() => {
+    const goalsWithState = teamGoals.map((goal) => {
+      const latest = latestUpdateByGoalId.get(goal.$id);
+      const ragState: HeatMapState = latest?.ragStatus || "no_update";
+      const progress = Number(goal.progressPercent || 0);
+
+      let riskScore = 0;
+      if (ragState === "behind") riskScore += 100;
+      else if (ragState === "no_update") riskScore += 65;
+      else if (ragState === "on_track") riskScore += 30;
+      else if (ragState === "completed") riskScore += 10;
+
+      riskScore += Math.max(0, 100 - progress);
+
+      return {
+        goal,
+        ragState,
+        progress,
+        riskScore,
+      };
+    });
+
+    return goalsWithState
+      .filter((item) => item.goal.status !== "closed")
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 3);
+  }, [latestUpdateByGoalId, teamGoals]);
+
+  useEffect(() => {
+    if (lineageGoalId && topAtRiskGoals.some((item) => item.goal.$id === lineageGoalId)) {
+      return;
+    }
+
+    setLineageGoalId(topAtRiskGoals[0]?.goal.$id || "");
+  }, [lineageGoalId, topAtRiskGoals]);
+
   const heatMapLegend: Array<{ key: HeatMapState; label: string; className: string }> = [
     { key: "on_track", label: "On Track", className: "bg-[var(--color-badge-success-bg)] text-[var(--color-text)] border-[var(--color-badge-success-border)]" },
     { key: "behind", label: "Behind", className: "bg-[var(--color-badge-warning-bg)] text-[var(--color-text)] border-[var(--color-badge-warning-border)]" },
@@ -255,6 +292,55 @@ export default function ManagerPage() {
                 {item.employeeId && <p className="caption mt-1">Employee: {item.employeeId}</p>}
               </div>
             ))}
+          </Stack>
+        </Card>
+
+        <Card title="Goal Lineage Snapshot" description="Top at-risk goals with full parent-child context.">
+          <Stack gap="3">
+            {!loading && topAtRiskGoals.length === 0 && <p className="caption">No active goals available yet.</p>}
+
+            {topAtRiskGoals.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {topAtRiskGoals.map((item) => {
+                  const employee = item.goal.employeeId ? employeeInfoById.get(item.goal.employeeId) : undefined;
+                  const goalLink = `/manager/team-goals?goalId=${encodeURIComponent(item.goal.$id)}`;
+
+                  return (
+                    <div key={item.goal.$id} className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setLineageGoalId(item.goal.$id)}
+                        className={
+                          lineageGoalId === item.goal.$id
+                            ? "rounded-[var(--radius-sm)] border border-transparent bg-[var(--color-primary)] px-2 py-1 caption text-[var(--color-button-text)]"
+                            : "rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]"
+                        }
+                        title={`${item.goal.title} • ${item.ragState.replace("_", " ")} • ${item.progress}%`}
+                      >
+                        {(employee?.name || item.goal.employeeId || "Team") + ": " + item.goal.title}
+                      </button>
+                      <Link
+                        href={goalLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 caption text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]"
+                        title="Open in team goals"
+                      >
+                        Open
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {lineageGoalId && (
+              <GoalLineageView
+                goalId={lineageGoalId}
+                embedded
+                goalHrefBuilder={(goalId) => `/manager/team-goals?goalId=${encodeURIComponent(goalId)}`}
+              />
+            )}
           </Stack>
         </Card>
       </Grid>

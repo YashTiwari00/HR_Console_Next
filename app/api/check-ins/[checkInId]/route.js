@@ -4,11 +4,12 @@ import { databaseId } from "@/lib/appwriteServer";
 import { computeAndPersistEmployeeCycleScore, getCycleState } from "@/lib/finalRatings";
 import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
+import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 export async function PATCH(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager"]);
+    requireRole(profile, ["manager", "leadership"]);
 
     const params = await context.params;
     const checkInId = params.checkInId;
@@ -28,10 +29,12 @@ export async function PATCH(request, context) {
     const goalOwnerId = String(goal.employeeId || "").trim();
     const checkInManagerId = String(checkIn.managerId || "").trim();
     const isManagerSelfGoal =
-      profile.role === "manager" && goalOwnerId === String(profile.$id || "").trim();
+      (profile.role === "manager" || profile.role === "leadership") && goalOwnerId === String(profile.$id || "").trim();
 
-    if (profile.role === "manager" && checkInManagerId !== profile.$id && !isManagerSelfGoal) {
-      return Response.json({ error: "Forbidden for this check-in." }, { status: 403 });
+    if (profile.role === "manager" || profile.role === "leadership") {
+      if (checkInManagerId !== profile.$id && !isManagerSelfGoal) {
+        await assertManagerCanAccessEmployee(databases, profile.$id, goalOwnerId);
+      }
     }
 
     if (goal.status !== GOAL_STATUSES.APPROVED && goal.status !== GOAL_STATUSES.CLOSED) {
@@ -61,7 +64,7 @@ export async function PATCH(request, context) {
     }
 
     if (isFinalCheckIn) {
-      if (profile.role !== "manager") {
+      if (profile.role !== "manager" && profile.role !== "leadership") {
         return Response.json(
           { error: "Only managers can submit final employee rating." },
           { status: 403 }
@@ -86,7 +89,7 @@ export async function PATCH(request, context) {
         isFinalCheckIn,
         managerRating: isFinalCheckIn ? parsedRating.value : null,
         ratedAt: isFinalCheckIn ? new Date().toISOString() : null,
-        managerId: profile.$id,
+        managerId: checkInManagerId,
       };
 
       try {

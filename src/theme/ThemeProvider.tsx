@@ -59,9 +59,10 @@ function readThemePreference(): ThemePreference {
 }
 
 function getInitialThemeState() {
+  const themePreference = readThemePreference();
   return {
-    themePreference: "light" as ThemePreference,
-    systemTheme: "light" as EffectiveTheme,
+    themePreference,
+    systemTheme: resolveEffectiveTheme("system"),
   };
 }
 
@@ -87,11 +88,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     return themePreference;
   }, [systemTheme, themePreference]);
-
-  useEffect(() => {
-    setThemePreferenceState(readThemePreference());
-    setSystemTheme(getSystemTheme());
-  }, []);
 
   useEffect(() => {
     applyRootTheme(effectiveTheme);

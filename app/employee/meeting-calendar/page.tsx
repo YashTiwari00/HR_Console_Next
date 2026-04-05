@@ -3,16 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Select, Textarea } from "@/src/components/ui";
 import {
+  askMeetingQuestion,
   createMeetRequest,
+  downloadMeetingReport,
   fetchCalendarEvents,
   fetchCurrentUserContext,
   fetchEmployeeFreeBusy,
+  fetchGoals,
   fetchGoogleTokenStatus,
+  fetchMeetingIntelligence,
   fetchMeetRequests,
   formatDate,
+  generateMeetingIntelligence,
+  GoalItem,
   GoogleTokenStatus,
+  MeetingIntelligenceReport,
   MeetRequestItem,
 } from "@/app/employee/_lib/pmsClient";
 import AvailabilityCalendar from "@/components/calendar/AvailabilityCalendar";
@@ -68,6 +75,19 @@ export default function EmployeeMeetingCalendarDashboardPage() {
   const [description, setDescription] = useState("");
   const [proposedStart, setProposedStart] = useState("");
   const [proposedEnd, setProposedEnd] = useState("");
+  const [meetingType, setMeetingType] = useState<"individual" | "group">("individual");
+  const [linkedGoalIds, setLinkedGoalIds] = useState<string[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
+
+  const [selectedMeetingId, setSelectedMeetingId] = useState("");
+  const [transcriptText, setTranscriptText] = useState("");
+  const [meetingQuestion, setMeetingQuestion] = useState("");
+  const [meetingAnswer, setMeetingAnswer] = useState("");
+  const [meetingCitations, setMeetingCitations] = useState<string[]>([]);
+  const [meetingReport, setMeetingReport] = useState<MeetingIntelligenceReport | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [askingQuestion, setAskingQuestion] = useState(false);
   const [availabilityStart, setAvailabilityStart] = useState(() => toDateTimeLocalValue(new Date()));
   const [availabilityEnd, setAvailabilityEnd] = useState(() => {
     const nextWeek = new Date();
@@ -131,6 +151,62 @@ export default function EmployeeMeetingCalendarDashboardPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadGoals = async () => {
+      try {
+        const rows = await fetchGoals();
+        if (cancelled) return;
+        const approved = rows.filter((item) => item.status === "approved" || item.status === "submitted");
+        setGoals(approved);
+        setLinkedGoalIds((current) => current.filter((id) => approved.some((goal) => goal.$id === id)));
+      } catch {
+        if (!cancelled) {
+          setGoals([]);
+        }
+      }
+    };
+
+    loadGoals();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMeetingId) {
+      setMeetingReport(null);
+      setTranscriptText("");
+      setMeetingAnswer("");
+      setMeetingCitations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadReport = async () => {
+      setLoadingReport(true);
+      try {
+        const payload = await fetchMeetingIntelligence(selectedMeetingId);
+        if (cancelled) return;
+        setMeetingReport(payload.report || null);
+        setTranscriptText(payload.report?.transcriptText || "");
+      } catch {
+        if (!cancelled) {
+          setMeetingReport(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingReport(false);
+        }
+      }
+    };
+
+    loadReport();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMeetingId]);
 
   const stats = useMemo(() => {
     const pending = meetRequests.filter((item) => item.status === "pending").length;
@@ -218,6 +294,8 @@ export default function EmployeeMeetingCalendarDashboardPage() {
         proposedStartTime: startIso,
         proposedEndTime: endIso,
         timeZone: DEFAULT_TIMEZONE,
+        linkedGoalIds,
+        meetingType,
       });
 
       setSuccess("Meeting request submitted successfully.");
@@ -278,6 +356,85 @@ export default function EmployeeMeetingCalendarDashboardPage() {
     setProposedStart(toDateTimeLocalValue(start));
     setProposedEnd(toDateTimeLocalValue(end));
   }
+
+  async function handleGenerateMeetingIntelligence() {
+    setError("");
+    setSuccess("");
+
+    if (!selectedMeetingId) {
+      setError("Select a scheduled meeting first.");
+      return;
+    }
+
+    if (!transcriptText.trim()) {
+      setError("Paste transcript before generating intelligence.");
+      return;
+    }
+
+    setGeneratingReport(true);
+    try {
+      const payload = await generateMeetingIntelligence(selectedMeetingId, {
+        transcriptText,
+        transcriptSource: "google_meet_or_manual",
+      });
+      setMeetingReport(payload.report || null);
+      setSuccess("Meeting intelligence generated.");
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to generate meeting intelligence.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  }
+
+  async function handleAskQuestion() {
+    setError("");
+    setSuccess("");
+
+    if (!selectedMeetingId || !meetingQuestion.trim()) {
+      setError("Select a meeting and enter a question.");
+      return;
+    }
+
+    setAskingQuestion(true);
+    try {
+      const payload = await askMeetingQuestion(selectedMeetingId, meetingQuestion);
+      setMeetingAnswer(payload.answer || "");
+      setMeetingCitations(payload.citations || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to answer the meeting question.");
+    } finally {
+      setAskingQuestion(false);
+    }
+  }
+
+  async function handleDownloadReport() {
+    if (!selectedMeetingId) {
+      setError("Select a meeting first.");
+      return;
+    }
+
+    try {
+      await downloadMeetingReport(selectedMeetingId);
+      setSuccess("Meeting report download started.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download meeting report.");
+    }
+  }
+
+  const scheduledMeetings = useMemo(
+    () => meetRequests.filter((item) => item.status === "scheduled"),
+    [meetRequests]
+  );
+
+  const scheduledMeetingOptions = useMemo(
+    () =>
+      scheduledMeetings.map((item) => ({
+        value: item.$id,
+        label: `${item.title} (${formatDate(item.scheduledStartTime || item.startTime || item.requestedAt)})`,
+      })),
+    [scheduledMeetings]
+  );
 
   return (
     <Stack gap="4">
@@ -393,6 +550,8 @@ export default function EmployeeMeetingCalendarDashboardPage() {
                   </Badge>
                 </div>
                 <p className="caption mt-1">Requested: {formatDate(item.requestedAt)}</p>
+                <p className="caption mt-1">Meeting type: {item.meetingType || "individual"}</p>
+                <p className="caption mt-1">Linked goals: {item.linkedGoalIds?.length || 0}</p>
               </div>
             ))}
           </Stack>
@@ -477,6 +636,34 @@ export default function EmployeeMeetingCalendarDashboardPage() {
               onChange={(event) => setTitle(event.target.value)}
               required
             />
+            <Select
+              label="Meeting type"
+              value={meetingType}
+              onChange={(event) => setMeetingType(event.target.value === "group" ? "group" : "individual")}
+              options={[
+                { value: "individual", label: "Individual" },
+                { value: "group", label: "Group" },
+              ]}
+            />
+            <div className="space-y-2">
+              <p className="body-sm text-[var(--color-text)]">Goals for this meeting</p>
+              {goals.length === 0 && <p className="caption">No approved/submitted goals available.</p>}
+              {goals.map((goal) => (
+                <Checkbox
+                  key={goal.$id}
+                  label={goal.title}
+                  description={`Progress ${goal.progressPercent || 0}%`}
+                  checked={linkedGoalIds.includes(goal.$id)}
+                  onChange={(event) => {
+                    setLinkedGoalIds((current) =>
+                      event.target.checked
+                        ? Array.from(new Set([...current, goal.$id]))
+                        : current.filter((id) => id !== goal.$id)
+                    );
+                  }}
+                />
+              ))}
+            </div>
             <Textarea
               label="Description"
               value={description}
@@ -503,6 +690,77 @@ export default function EmployeeMeetingCalendarDashboardPage() {
               Submit Request
             </Button>
           </form>
+        </Card>
+
+        <Card title="Meeting Intelligence" description="View transcript, generate AI summary, ask questions, and download report.">
+          <Stack gap="3">
+            <Select
+              label="Scheduled meeting"
+              value={selectedMeetingId}
+              onChange={(event) => setSelectedMeetingId(event.target.value)}
+              options={scheduledMeetingOptions}
+              placeholder="Select scheduled meeting"
+            />
+            {loadingReport && <p className="caption">Loading meeting intelligence...</p>}
+
+            <Textarea
+              label="Transcript"
+              rows={5}
+              value={transcriptText}
+              onChange={(event) => setTranscriptText(event.target.value)}
+              placeholder="Paste transcript from Google Meet or integrated source"
+            />
+
+            <Button
+              variant="secondary"
+              onClick={handleGenerateMeetingIntelligence}
+              loading={generatingReport}
+              disabled={!selectedMeetingId}
+            >
+              Generate AI Meeting Intelligence
+            </Button>
+
+            {meetingReport && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                <p className="body-sm font-medium text-[var(--color-text)]">Summary</p>
+                <p className="caption mt-1">{meetingReport.summary}</p>
+                {meetingReport.keyTakeaways?.length > 0 && (
+                  <ul className="mt-2 list-disc pl-5 caption">
+                    {meetingReport.keyTakeaways.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <Input
+              label="Ask meeting AI"
+              value={meetingQuestion}
+              onChange={(event) => setMeetingQuestion(event.target.value)}
+              placeholder="What were my action items?"
+            />
+            <Button variant="secondary" onClick={handleAskQuestion} loading={askingQuestion} disabled={!selectedMeetingId}>
+              Ask AI
+            </Button>
+
+            {meetingAnswer && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                <p className="body-sm text-[var(--color-text)]">{meetingAnswer}</p>
+                {meetingCitations.length > 0 && (
+                  <ul className="mt-2 list-disc pl-5 caption">
+                    {meetingCitations.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
+              Download Meeting Report
+            </Button>
+          </Stack>
         </Card>
       </Grid>
     </Stack>

@@ -26,7 +26,10 @@ const roleEmails = {
   manager: "seed.manager.01@local.test",
   hr: "seed.hr.01@local.test",
   "region-admin": "seed.region.admin.01@local.test",
+  leadership: "seed.leadership.01@local.test",
 };
+
+const optionalRoles = new Set(["region-admin", "leadership"]);
 
 const routeMatrix = [
   { role: "employee", path: "/employee" },
@@ -46,10 +49,14 @@ const routeMatrix = [
   { role: "hr", path: "/hr/team-assignments" },
   { role: "hr", path: "/hr/approvals" },
   { role: "hr", path: "/hr/check-ins" },
+  { role: "hr", path: "/hr/ai-governance" },
+  { role: "hr", path: "/hr/calibration" },
+  { role: "hr", path: "/hr/notifications" },
   { role: "hr", path: "/hr/managers/placeholder-id" },
   { role: "region-admin", path: "/region-admin" },
   { role: "region-admin", path: "/region-admin/team-analytics" },
   { role: "region-admin", path: "/region-admin/check-ins" },
+  { role: "leadership", path: "/leadership" },
 ];
 
 async function main() {
@@ -63,7 +70,7 @@ async function main() {
   for (const [role, email] of Object.entries(roleEmails)) {
     const user = byEmail.get(email.toLowerCase());
     if (!user) {
-      if (role === "region-admin") {
+      if (optionalRoles.has(role)) {
         continue;
       }
 
@@ -111,15 +118,18 @@ async function main() {
     });
 
     const isDynamicManagerDetail = row.path.startsWith("/hr/managers/");
+    const acceptsRedirect = row.path === "/hr/team-assignments";
     const expectedStatus = isDynamicManagerDetail ? 200 : 200;
-    const pass = response.status === expectedStatus;
+    const pass = acceptsRedirect
+      ? response.status === 200 || response.status === 307
+      : response.status === expectedStatus;
 
     results.push({
       name: `${row.role} page ${row.path}`,
       pass,
       details: {
         status: response.status,
-        expectedStatus,
+        expectedStatus: acceptsRedirect ? "200 or 307" : expectedStatus,
         path: row.path,
       },
     });

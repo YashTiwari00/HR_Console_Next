@@ -3,7 +3,13 @@ import { MEET_REQUEST_SOURCES, MEET_REQUEST_STATUSES } from "@/lib/appwriteSchem
 import { getGoogleTokenStatus, getOrgDefaultTimezone } from "@/lib/googleCalendar";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { parseStringList, toMeetingType } from "@/lib/meetingIntelligence";
+import {
+  applyMeetingMetadataMap,
+  listMeetingMetadataMap,
+  upsertMeetingMetadata,
+} from "@/lib/meetingMetadataStore";
+import { assertManagerCanAccessEmployee, listUsersByIds } from "@/lib/teamAccess";
 
 async function createMeetingRequestWithFallback(databases, payload) {
   let nextPayload = { ...payload };
@@ -31,7 +37,8 @@ async function createMeetingRequestWithFallback(databases, payload) {
         throw error;
       }
 
-      const { [missingAttr]: _ignored, ...rest } = nextPayload;
+      const rest = { ...nextPayload };
+      delete rest[missingAttr];
       nextPayload = rest;
     }
   }
@@ -42,6 +49,49 @@ async function createMeetingRequestWithFallback(databases, payload) {
     ID.unique(),
     nextPayload
   );
+}
+
+function normalizeIdList(input, maxItems = 25) {
+  return Array.from(
+    new Set(
+      (Array.isArray(input) ? input : parseStringList(input))
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, maxItems);
+}
+
+async function resolveParticipantEmails(databases, participantIds) {
+  if (!participantIds.length) return [];
+  const users = await listUsersByIds(databases, participantIds);
+  return users
+    .map((item) => String(item?.email || "").trim())
+    .filter(Boolean);
+}
+
+async function assertEmployeeGoalAccess(databases, employeeId, goalIds) {
+  if (!goalIds.length) return;
+
+  const result = await databases.listDocuments(
+    databaseId,
+    appwriteConfig.goalsCollectionId,
+    [
+      Query.equal("employeeId", employeeId),
+      Query.equal("$id", goalIds),
+      Query.limit(Math.max(50, goalIds.length + 5)),
+    ]
+  );
+
+  const accessible = new Set(result.documents.map((item) => String(item.$id || "").trim()));
+  const invalid = goalIds.filter((goalId) => !accessible.has(goalId));
+  if (invalid.length > 0) {
+    return Response.json(
+      { error: "Some selected goals are not accessible for this employee.", invalidGoalIds: invalid },
+      { status: 400 }
+    );
+  }
+
+  return null;
 }
 
 export async function GET(request) {
@@ -103,7 +153,12 @@ export async function GET(request) {
       );
     }
 
-    return Response.json({ data: response.documents });
+    const metadataMap = await listMeetingMetadataMap(
+      databases,
+      response.documents.map((item) => String(item.$id || "").trim())
+    );
+
+    return Response.json({ data: applyMeetingMetadataMap(response.documents, metadataMap) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -121,6 +176,9 @@ export async function POST(request) {
     const proposedEndTime = String(body?.proposedEndTime || "").trim();
     const timeZone = String(body?.timeZone || getOrgDefaultTimezone()).trim();
     const managerId = String(profile?.managerId || "").trim();
+    const linkedGoalIds = normalizeIdList(body?.linkedGoalIds, 20);
+    const meetingType = toMeetingType(body?.meetingType);
+    const extraParticipantIds = normalizeIdList(body?.participantIds, 30);
 
     if (!proposedStartTime || !proposedEndTime) {
       return Response.json(
@@ -149,6 +207,16 @@ export async function POST(request) {
 
     const now = new Date().toISOString();
 
+    const goalAccessError = await assertEmployeeGoalAccess(databases, profile.$id, linkedGoalIds);
+    if (goalAccessError) {
+      return goalAccessError;
+    }
+
+    const participantIds = Array.from(
+      new Set([profile.$id, managerId, ...extraParticipantIds])
+    ).slice(0, 30);
+    const participantEmails = await resolveParticipantEmails(databases, participantIds);
+
     const normalizedProposedStart = new Date(proposedStartTime).toISOString();
     const normalizedProposedEnd = new Date(proposedEndTime).toISOString();
 
@@ -166,9 +234,26 @@ export async function POST(request) {
       title,
       description,
       timezone: timeZone,
+      meetingType,
+      linkedGoalIds: JSON.stringify(linkedGoalIds),
+      participantIds: JSON.stringify(participantIds),
+      participantEmails: JSON.stringify(participantEmails),
     });
 
-    return Response.json({ data: created });
+    await upsertMeetingMetadata(databases, created.$id, {
+      linkedGoalIds,
+      participantIds,
+      participantEmails,
+    });
+
+    const withMetadata = {
+      ...created,
+      linkedGoalIds,
+      participantIds,
+      participantEmails,
+    };
+
+    return Response.json({ data: withMetadata });
   } catch (error) {
     return errorResponse(error);
   }

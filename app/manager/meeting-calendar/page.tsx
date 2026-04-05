@@ -3,16 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Select } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Select, Textarea } from "@/src/components/ui";
 import {
+  askMeetingQuestion,
   createManagerDirectMeeting,
+  downloadMeetingReport,
   fetchCalendarEvents,
   fetchEmployeeFreeBusy,
+  fetchGoals,
   fetchGoogleTokenStatus,
   fetchGoogleTokenStatusForUser,
+  fetchMeetingIntelligence,
   fetchMeetRequests,
   fetchTeamMembers,
   formatDate,
+  generateMeetingIntelligence,
+  GoalItem,
+  MeetingIntelligenceReport,
   MeetRequestItem,
   TeamMemberItem,
   updateMeetRequestAction,
@@ -119,6 +126,20 @@ export default function ManagerMeetingCalendarDashboardPage() {
   const [meetingTitle, setMeetingTitle] = useState("1:1 Meeting");
   const [meetingStart, setMeetingStart] = useState("");
   const [meetingEnd, setMeetingEnd] = useState("");
+  const [meetingType, setMeetingType] = useState<"individual" | "group">("individual");
+  const [linkedGoalIds, setLinkedGoalIds] = useState<string[]>([]);
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
+  const [employeeGoals, setEmployeeGoals] = useState<GoalItem[]>([]);
+
+  const [selectedMeetingId, setSelectedMeetingId] = useState("");
+  const [transcriptText, setTranscriptText] = useState("");
+  const [meetingQuestion, setMeetingQuestion] = useState("");
+  const [meetingAnswer, setMeetingAnswer] = useState("");
+  const [meetingCitations, setMeetingCitations] = useState<string[]>([]);
+  const [meetingReport, setMeetingReport] = useState<MeetingIntelligenceReport | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [askingQuestion, setAskingQuestion] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -219,6 +240,23 @@ export default function ManagerMeetingCalendarDashboardPage() {
     }
   }, [connectionByEmployeeId, managerGoogleConnected]);
 
+  const loadEmployeeGoals = useCallback(async (employeeId: string) => {
+    if (!employeeId) {
+      setEmployeeGoals([]);
+      setLinkedGoalIds([]);
+      return;
+    }
+
+    try {
+      const goals = await fetchGoals("team", employeeId);
+      const approvedGoals = goals.filter((goal) => goal.status === "approved" || goal.status === "submitted");
+      setEmployeeGoals(approvedGoals);
+      setLinkedGoalIds((current) => current.filter((id) => approvedGoals.some((goal) => goal.$id === id)));
+    } catch {
+      setEmployeeGoals([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
@@ -226,6 +264,44 @@ export default function ManagerMeetingCalendarDashboardPage() {
   useEffect(() => {
     loadEmployeeEvents(selectedEmployeeId);
   }, [loadEmployeeEvents, selectedEmployeeId]);
+
+  useEffect(() => {
+    loadEmployeeGoals(selectedEmployeeId);
+  }, [loadEmployeeGoals, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (!selectedMeetingId) {
+      setMeetingReport(null);
+      setTranscriptText("");
+      setMeetingAnswer("");
+      setMeetingCitations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setLoadingReport(true);
+      try {
+        const payload = await fetchMeetingIntelligence(selectedMeetingId);
+        if (cancelled) return;
+        setMeetingReport(payload.report || null);
+        setTranscriptText(payload.report?.transcriptText || "");
+      } catch {
+        if (!cancelled) {
+          setMeetingReport(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingReport(false);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMeetingId]);
 
   const pendingApprovals = useMemo(
     () => meetRequests.filter((request) => request.status === "pending"),
@@ -367,6 +443,9 @@ export default function ManagerMeetingCalendarDashboardPage() {
         endTime: endIso,
         title: meetingTitle,
         timeZone: DEFAULT_TIMEZONE,
+        linkedGoalIds,
+        meetingType,
+        participantIds,
       });
 
       setSuccess(
@@ -404,6 +483,9 @@ export default function ManagerMeetingCalendarDashboardPage() {
         title: item.title,
         description: item.description,
         timeZone: item.timezone || DEFAULT_TIMEZONE,
+        linkedGoalIds: item.linkedGoalIds || [],
+        meetingType: item.meetingType || "individual",
+        participantIds: item.participantIds || [],
       });
 
       setSuccess("Meeting request approved and scheduled.");
@@ -446,6 +528,85 @@ export default function ManagerMeetingCalendarDashboardPage() {
     setMeetingStart(toDateTimeLocalValue(start));
     setMeetingEnd(toDateTimeLocalValue(end));
   }
+
+  async function handleGenerateMeetingIntelligence() {
+    setError("");
+    setSuccess("");
+
+    if (!selectedMeetingId) {
+      setError("Select a scheduled meeting first.");
+      return;
+    }
+
+    if (!transcriptText.trim()) {
+      setError("Paste transcript before generating meeting intelligence.");
+      return;
+    }
+
+    setGeneratingReport(true);
+    try {
+      const payload = await generateMeetingIntelligence(selectedMeetingId, {
+        transcriptText,
+        transcriptSource: "google_meet_or_manual",
+      });
+      setMeetingReport(payload.report || null);
+      setSuccess("Meeting intelligence generated successfully.");
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to generate meeting intelligence.");
+    } finally {
+      setGeneratingReport(false);
+    }
+  }
+
+  async function handleAskQuestion() {
+    setError("");
+    setSuccess("");
+
+    if (!selectedMeetingId || !meetingQuestion.trim()) {
+      setError("Select a meeting and enter a question.");
+      return;
+    }
+
+    setAskingQuestion(true);
+    try {
+      const payload = await askMeetingQuestion(selectedMeetingId, meetingQuestion);
+      setMeetingAnswer(payload.answer || "");
+      setMeetingCitations(payload.citations || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to answer the meeting question.");
+    } finally {
+      setAskingQuestion(false);
+    }
+  }
+
+  async function handleDownloadReport() {
+    if (!selectedMeetingId) {
+      setError("Select a meeting first.");
+      return;
+    }
+
+    try {
+      await downloadMeetingReport(selectedMeetingId);
+      setSuccess("Meeting report download started.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download meeting report.");
+    }
+  }
+
+  const scheduledMeetings = useMemo(
+    () => meetRequests.filter((item) => item.status === "scheduled"),
+    [meetRequests]
+  );
+
+  const scheduledMeetingOptions = useMemo(
+    () =>
+      scheduledMeetings.map((item) => ({
+        value: item.$id,
+        label: `${item.title} (${formatDate(item.scheduledStartTime || item.startTime || item.requestedAt)})`,
+      })),
+    [scheduledMeetings]
+  );
 
   return (
     <Stack gap="4">
@@ -585,6 +746,8 @@ export default function ManagerMeetingCalendarDashboardPage() {
                   <Badge variant="info">pending</Badge>
                 </div>
                 <p className="caption mt-1">Requested: {formatDate(request.requestedAt)}</p>
+                <p className="caption mt-1">Meeting type: {request.meetingType || "individual"}</p>
+                <p className="caption mt-1">Linked goals: {request.linkedGoalIds?.length || 0}</p>
                 {request.proposedStartTime && request.proposedEndTime && (
                   <p className="caption mt-1">
                     Proposed: {formatDate(request.proposedStartTime)} to {formatDate(request.proposedEndTime)}
@@ -706,6 +869,57 @@ export default function ManagerMeetingCalendarDashboardPage() {
               value={meetingTitle}
               onChange={(event) => setMeetingTitle(event.target.value)}
             />
+            <Select
+              label="Meeting type"
+              value={meetingType}
+              onChange={(event) => setMeetingType(event.target.value === "group" ? "group" : "individual")}
+              options={[
+                { value: "individual", label: "Individual" },
+                { value: "group", label: "Group" },
+              ]}
+            />
+
+            <div className="space-y-2">
+              <p className="body-sm text-[var(--color-text)]">Link goals to this meeting</p>
+              {employeeGoals.length === 0 && (
+                <p className="caption">No approved/submitted goals found for selected employee.</p>
+              )}
+              {employeeGoals.map((goal) => (
+                <Checkbox
+                  key={goal.$id}
+                  label={goal.title}
+                  description={`Progress ${goal.progressPercent || 0}%`}
+                  checked={linkedGoalIds.includes(goal.$id)}
+                  onChange={(event) => {
+                    setLinkedGoalIds((current) =>
+                      event.target.checked
+                        ? Array.from(new Set([...current, goal.$id]))
+                        : current.filter((id) => id !== goal.$id)
+                    );
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <p className="body-sm text-[var(--color-text)]">Additional participants</p>
+              {teamMembers
+                .filter((member) => member.$id !== selectedEmployeeId)
+                .map((member) => (
+                  <Checkbox
+                    key={member.$id}
+                    label={member.name || member.email || member.$id}
+                    checked={participantIds.includes(member.$id)}
+                    onChange={(event) => {
+                      setParticipantIds((current) =>
+                        event.target.checked
+                          ? Array.from(new Set([...current, member.$id]))
+                          : current.filter((id) => id !== member.$id)
+                      );
+                    }}
+                  />
+                ))}
+            </div>
             <Input
               label="Meeting start"
               type="datetime-local"
@@ -724,6 +938,97 @@ export default function ManagerMeetingCalendarDashboardPage() {
               disabled={!selectedEmployeeId || !managerGoogleConnected}
             >
               Schedule Meeting
+            </Button>
+          </Stack>
+        </Card>
+
+        <Card title="Meeting Intelligence" description="Capture transcript, generate structured intelligence, ask questions, and download report.">
+          <Stack gap="3">
+            <Select
+              label="Scheduled meeting"
+              value={selectedMeetingId}
+              onChange={(event) => setSelectedMeetingId(event.target.value)}
+              options={scheduledMeetingOptions}
+              placeholder="Select scheduled meeting"
+            />
+            {loadingReport && <p className="caption">Loading meeting intelligence...</p>}
+
+            <Textarea
+              label="Transcript"
+              rows={5}
+              value={transcriptText}
+              onChange={(event) => setTranscriptText(event.target.value)}
+              placeholder="Paste Google Meet transcript or integrated transcript source"
+            />
+            <Button
+              variant="secondary"
+              onClick={handleGenerateMeetingIntelligence}
+              loading={generatingReport}
+              disabled={!selectedMeetingId}
+            >
+              Generate AI Meeting Intelligence
+            </Button>
+
+            {meetingReport && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                <p className="body-sm font-medium text-[var(--color-text)]">Summary</p>
+                <p className="caption mt-1">{meetingReport.summary}</p>
+                {meetingReport.keyTakeaways?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="body-sm text-[var(--color-text)]">Key takeaways</p>
+                    <ul className="mt-1 list-disc pl-5 caption">
+                      {meetingReport.keyTakeaways.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {meetingReport.actionItems?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="body-sm text-[var(--color-text)]">Action items</p>
+                    <ul className="mt-1 list-disc pl-5 caption">
+                      {meetingReport.actionItems.map((item, index) => (
+                        <li key={`${item.owner}-${item.action}-${index}`}>
+                          {item.owner}: {item.action}
+                          {item.dueDate ? ` (due ${formatDate(item.dueDate)})` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Input
+              label="Ask meeting AI"
+              value={meetingQuestion}
+              onChange={(event) => setMeetingQuestion(event.target.value)}
+              placeholder="e.g. What were my action items?"
+            />
+            <Button
+              variant="secondary"
+              onClick={handleAskQuestion}
+              loading={askingQuestion}
+              disabled={!selectedMeetingId}
+            >
+              Ask AI
+            </Button>
+
+            {meetingAnswer && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                <p className="body-sm text-[var(--color-text)]">{meetingAnswer}</p>
+                {meetingCitations.length > 0 && (
+                  <ul className="mt-2 list-disc pl-5 caption">
+                    {meetingCitations.map((citation) => (
+                      <li key={citation}>{citation}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
+              Download Meeting Report
             </Button>
           </Stack>
         </Card>

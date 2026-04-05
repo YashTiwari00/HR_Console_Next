@@ -1,0 +1,15 @@
+Issue Type,Summary,Description,Priority,Labels,Epic Name
+Epic,P0 - Timeline Workspace Foundation,Build timeline-first lifecycle workspace with deterministic state and role-safe actions.,Highest,"prd-gap,phase-a,p0,timeline",P0 Timeline Workspace Foundation
+Epic,P0 - Framework Policy Engine,Replace hardcoded framework behavior with policy-driven configuration for HR/admin.,Highest,"prd-gap,phase-a,p0,framework",P0 Framework Policy Engine
+Epic,P0 - Notifications and Nudges,Implement reminder scheduling and lifecycle nudges with delivery tracking.,Highest,"prd-gap,phase-a,p0,notifications",P0 Notifications and Nudges
+Epic,P0 - Goal Lineage Baseline,Implement goal-to-team-to-business lineage model and contribution visibility.,Highest,"prd-gap,phase-a,p0,lineage",P0 Goal Lineage Baseline
+Epic,P1 - Explainable AI Contract,Standardize AI outputs with factors confidence and time-window explainability metadata.,High,"prd-gap,phase-b,p1,ai,explainability",P1 Explainable AI Contract
+Epic,P1 - HR Calibration Workbench,Add calibration workflows with distribution analysis drift indicators and audit trail.,High,"prd-gap,phase-b,p1,calibration,hr",P1 HR Calibration Workbench
+Epic,P1 - Check-in Intelligence Upgrade,Upgrade check-ins with AI agenda commitments and manager coaching quality signals.,High,"prd-gap,phase-b,p1,checkins,ai",P1 Check-in Intelligence Upgrade
+Epic,P1 - AI Governance Visibility,Add user-facing AI usage counters and HR governance visibility for budget adherence.,High,"prd-gap,phase-b,p1,ai,governance",P1 AI Governance Visibility
+Epic,P2 - Leadership Command Center,Add leadership persona and aggregated decision-safe analytics dashboard.,Medium,"prd-gap,phase-c,p2,leadership,analytics",P2 Leadership Command Center
+Epic,P2 - Matrix Reviewer Model,Implement additional reviewer workflow for dual reporting without final-rating privilege expansion.,Medium,"prd-gap,phase-c,p2,matrix-review",P2 Matrix Reviewer Model
+Epic,P2 - Goal Import Pipeline,Support spreadsheet goal import with preview validation and idempotent commit.,Medium,"prd-gap,phase-c,p2,import,goals",P2 Goal Import Pipeline
+Epic,P2 - Succession and 9-Box,Add talent readiness and performance potential views for HR and leadership.,Medium,"prd-gap,phase-c,p2,succession,9box",P2 Succession and 9-Box
+Epic,Production - Security and Compliance Gates,Enforce go-live security and compliance gates for role safety auditability and data minimization.,Highest,"production,security,compliance,go-live",Production Security and Compliance Gates
+Epic,Production - Observability and Incident Readiness,Implement SLOs telemetry alerts runbooks and rollback triggers before broad rollout.,Highest,"production,reliability,observability,operations",Production Observability and Incident Readiness

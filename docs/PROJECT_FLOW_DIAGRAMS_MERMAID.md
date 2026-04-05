@@ -135,15 +135,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[HR opens team assignments] --> B[GET /api/team-assignments]
-    B --> C[HR selects employee and manager]
+    A[Leadership opens team assignments] --> B[GET /api/team-assignments]
+    B --> C[Leadership selects employee and manager]
     C --> D[POST /api/team-assignments]
     D --> E[Validate employee role and manager role]
     E --> F[Update users.managerId and assignment metadata]
     F --> G[Return updated employee profile]
 
-    H[HR maps manager to HR owner] --> I[POST /api/manager-assignments]
-    I --> J[Validate manager and HR roles]
-    J --> K[Update users.hrId and hr assignment metadata]
+    H[Leadership maps manager to parent manager] --> I[POST /api/manager-assignments]
+    I --> J[Validate manager and leadership roles]
+    J --> K[Update manager hierarchy assignment metadata]
     K --> L[Return mapping summary]
 ```

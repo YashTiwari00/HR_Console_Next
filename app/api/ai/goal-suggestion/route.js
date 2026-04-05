@@ -1,11 +1,12 @@
 import { FRAMEWORK_TYPES } from "@/lib/appwriteSchema";
+import { buildExplainability } from "@/lib/ai/explainability";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
 import { callOpenRouter } from "@/lib/openrouter";
 
 const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 
-async function buildSuggestions({ frameworkType, profile, prompt }) {
+async function buildSuggestions({ cycleId, frameworkType, profile, prompt }) {
   const context = prompt?.trim() || "Improve execution quality and delivery confidence";
   const designation = profile.designation || profile.role || "professional";
 
@@ -28,7 +29,16 @@ Return ONLY this JSON shape (weightages must sum to 100):
   const parsed = JSON.parse(raw);
   return (parsed.suggestions ?? []).map((s) => ({
     ...s,
-    explainability: { source: "openrouter_llm", confidence: "high" },
+    explainability: buildExplainability({
+      source: "openrouter_llm",
+      confidence: "high",
+      whyFactors: [
+        s?.rationale,
+        `Mapped to framework ${frameworkType}`,
+        "Aligned with role-specific goal phrasing and measurable outcome style.",
+      ],
+      timeWindow: cycleId,
+    }),
   }));
 }
 
@@ -60,12 +70,21 @@ export async function POST(request) {
       featureType: "goal_suggestion",
     });
 
-    const suggestions = await buildSuggestions({ frameworkType, profile, prompt });
+    const suggestions = await buildSuggestions({ cycleId, frameworkType, profile, prompt });
 
     return Response.json({
       data: {
         suggestions,
-        explainability: { source: "openrouter_llm", confidence: "high" },
+        explainability: buildExplainability({
+          source: "openrouter_llm",
+          confidence: "high",
+          whyFactors: [
+            "Framework fit check",
+            "Role and designation context",
+            "Prompt intent alignment",
+          ],
+          timeWindow: cycleId,
+        }),
         usage,
       },
     });

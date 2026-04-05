@@ -10,15 +10,18 @@ import {
   createCheckIn,
   fetchCheckIns,
   fetchGoals,
+  fetchMeetRequests,
   formatDate,
   getAttachmentDownloadPath,
   GoalItem,
+  MeetRequestItem,
   uploadAttachments,
 } from "@/app/employee/_lib/pmsClient";
 
 export default function EmployeeCheckInsPage() {
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
+  const [meetingsByGoal, setMeetingsByGoal] = useState<Record<string, MeetRequestItem[]>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -40,9 +43,43 @@ export default function EmployeeCheckInsPage() {
     setError("");
 
     try {
-      const [nextGoals, nextCheckIns] = await Promise.all([fetchGoals(), fetchCheckIns()]);
+      const [nextGoals, nextCheckIns, nextMeetRequests] = await Promise.all([
+        fetchGoals(),
+        fetchCheckIns(),
+        fetchMeetRequests().catch(() => []),
+      ]);
       setGoals(nextGoals);
       setCheckIns(nextCheckIns);
+
+      const groupedMeetings = nextMeetRequests.reduce<Record<string, MeetRequestItem[]>>((acc, meeting) => {
+        const linkedGoalIds = meeting.linkedGoalIds || [];
+        if (linkedGoalIds.length === 0) return acc;
+
+        const hasContext = Boolean(
+          (meeting.intelligenceSummary && meeting.intelligenceSummary.trim()) ||
+            (meeting.transcriptText && meeting.transcriptText.trim())
+        );
+        if (!hasContext) return acc;
+
+        linkedGoalIds.forEach((goalId) => {
+          if (!acc[goalId]) {
+            acc[goalId] = [];
+          }
+          acc[goalId].push(meeting);
+        });
+
+        return acc;
+      }, {});
+
+      Object.values(groupedMeetings).forEach((meetings) => {
+        meetings.sort((a, b) => {
+          const aTime = new Date(a.scheduledStartTime || a.proposedStartTime || a.requestedAt || 0).getTime();
+          const bTime = new Date(b.scheduledStartTime || b.proposedStartTime || b.requestedAt || 0).getTime();
+          return bTime - aTime;
+        });
+      });
+
+      setMeetingsByGoal(groupedMeetings);
 
       if (nextGoals.length > 0) {
         const eligible = nextGoals.filter((goal) => goal.status === "approved");
@@ -177,6 +214,26 @@ export default function EmployeeCheckInsPage() {
             {!loading && checkIns.length === 0 && <p className="caption">No check-ins yet.</p>}
             {checkIns.map((checkIn) => (
               <div key={checkIn.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                {(() => {
+                  const linkedMeetings = meetingsByGoal[checkIn.goalId] || [];
+                  return linkedMeetings.length > 0 ? (
+                    <div className="mb-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                      <p className="caption font-medium">Meeting intelligence context</p>
+                      {linkedMeetings.slice(0, 2).map((meeting) => (
+                        <div key={meeting.$id} className="mt-1">
+                          <p className="caption">
+                            {meeting.title || "Goal-linked meeting"}
+                            {meeting.scheduledStartTime ? ` (${formatDate(meeting.scheduledStartTime)})` : ""}
+                          </p>
+                          <p className="caption text-[var(--color-text-muted)]">
+                            {meeting.intelligenceSummary || meeting.transcriptText || "Meeting notes available."}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
+
                 <div className="flex items-center justify-between gap-2">
                   <p className="body-sm text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
                   <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>

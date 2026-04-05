@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type TutorialBuddyRole = "employee" | "manager" | "hr" | "region-admin";
+export type TutorialBuddyRole = "employee" | "manager" | "hr" | "leadership" | "region-admin";
 
 export interface TutorialBuddyProps {
   role: TutorialBuddyRole;
@@ -89,26 +89,48 @@ const STEPS: Record<TutorialBuddyRole, TutorialStep[]> = {
       body: "You're the guardian of a fair, consistent process. Use your access to intervene early and support managers.",
     },
   ],
-  "region-admin": [
+  leadership: [
     {
-      title: "Welcome, Regional Leader! 🗺️",
-      body: "I'm Pip! You have a cross-regional view to monitor performance trends across multiple teams.",
+      title: "Welcome, Leadership! 🏢",
+      body: "I'm Pip! You have organization-wide visibility into manager performance, team health, and cycle execution.",
     },
     {
-      title: "Regional Dashboard",
-      body: "Your Dashboard surfaces aggregate performance data — goal completion rates, check-in health, and team summaries.",
+      title: "Dashboard Overview",
+      body: "Your Dashboard surfaces strategic trends across goals, check-ins, and overall execution health.",
     },
     {
       title: "Team Analytics",
-      body: "Team Analytics breaks down performance by region, team, and manager so you can spot patterns quickly.",
+      body: "Use Team Analytics to compare manager groups, identify risk pockets, and spot high-performing teams.",
     },
     {
       title: "Check-in Monitoring",
-      body: "Monitor check-in completion rates across your region to ensure consistent manager-employee engagement.",
+      body: "Track coaching cadence and consistency to ensure teams maintain healthy manager-employee conversations.",
     },
     {
       title: "Strategic View",
-      body: "Use your data to identify coaching gaps, celebrate top-performing teams, and guide regional strategy.",
+      body: "Use these signals to guide org decisions, unblock managers, and keep execution aligned.",
+    },
+  ],
+  "region-admin": [
+    {
+      title: "Welcome, Leadership! 🏢",
+      body: "I'm Pip! This legacy role now uses leadership access across the organization.",
+    },
+    {
+      title: "Dashboard Overview",
+      body: "Your Dashboard surfaces strategic trends across goals, check-ins, and overall execution health.",
+    },
+    {
+      title: "Team Analytics",
+      body: "Use Team Analytics to compare manager groups, identify risk pockets, and spot high-performing teams.",
+    },
+    {
+      title: "Check-in Monitoring",
+      body: "Track coaching cadence and consistency to ensure teams maintain healthy manager-employee conversations.",
+    },
+    {
+      title: "Strategic View",
+      body: "Use these signals to guide org decisions, unblock managers, and keep execution aligned.",
     },
   ],
 };
@@ -178,25 +200,22 @@ function PipCharacter({ blinking }: { blinking: boolean }) {
 
 export default function TutorialBuddy({ role, userName }: TutorialBuddyProps) {
   const steps = STEPS[role];
-  const [visible, setVisible] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [visible] = useState(true);
+  const [open, setOpen] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    try {
+      return !window.localStorage.getItem(STORAGE_KEY(role));
+    } catch {
+      return true;
+    }
+  });
   const [step, setStep] = useState(0);
   const [blinking, setBlinking] = useState(false);
   const [bouncing, setBouncing] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-
-  /* Read localStorage after mount */
-  useEffect(() => {
-    try {
-      const done = window.localStorage.getItem(STORAGE_KEY(role));
-      if (!done) {
-        setOpen(true);
-      }
-    } catch {
-      setOpen(true);
-    }
-    setVisible(true);
-  }, [role]);
 
   /* Blink animation every ~4s */
   useEffect(() => {

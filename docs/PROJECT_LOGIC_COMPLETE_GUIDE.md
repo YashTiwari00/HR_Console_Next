@@ -4,10 +4,13 @@
 
 HR Console is a role-based Performance Management System (PMS) built with Next.js App Router and Appwrite.
 
-It supports three core personas:
+It supports five core personas:
 - Employee: create goals, submit progress updates, run check-ins, track timeline.
 - Manager: do own PMS activity plus review and approve team goals/check-ins.
 - HR: govern assignments, monitor quality/cadence, close cycles, enforce policy.
+- Leadership: consume aggregate-only strategic insights for risk, readiness, and execution quality.
+
+Legacy `region-admin` users are normalized to leadership and routed to leadership surfaces.
 
 The system is intentionally built around one lifecycle:
 1. Goal creation and approval.
@@ -26,7 +29,7 @@ Source intent and product requirements are captured in [Guide.md](../Guide.md).
 - Next.js 16 App Router
 - React 19
 - TypeScript on major app pages/components
-- Role layouts under `app/employee`, `app/manager`, `app/hr`
+- Role layouts under `app/employee`, `app/manager`, `app/hr`, `app/leadership`
 
 ### 2.2 Backend stack inside same app
 - Next.js Route Handlers under `app/api/*`
@@ -86,11 +89,19 @@ Source intent and product requirements are captured in [Guide.md](../Guide.md).
 - Employee: `app/employee/*`
 - Manager: `app/manager/*`
 - HR: `app/hr/*`
+- Leadership: `app/leadership/*`
 
 Each area has:
 - `layout.tsx`: sidebar nav, user context, logout, ChatBot mount.
 - `page.tsx`: dashboard summary.
 - workflow pages: goals/progress/check-ins/timeline (role-appropriate variants).
+
+Additional role-specific modules:
+- Employee: `meeting-calendar`, `meetings` (Google Calendar-based meeting request and schedule visibility).
+- Manager: `team-goals`, `team-progress`, `team-check-ins`, `team-approvals`, `team-analytics`, `employee-dashboard`, `meeting-calendar`, `meetings`, `google-token-setup`.
+- HR: `approvals`, `check-ins`, `team-assignments`, `team-analytics`, `managers/[managerId]` drilldown.
+- Leadership: aggregate command center for trend, risk, and succession snapshots.
+- Legacy region-admin routes are preserved only as redirects to leadership pages.
 
 ### 4.3 API area
 All server endpoints are in `app/api/*` and grouped by concern:
@@ -101,8 +112,13 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - check-ins and HR check-in approvals
 - team and manager assignments
 - HR governance and cycle close
+- analytics insights
+- leadership governance overview
 - attachments
 - AI features
+- Google OAuth token management
+- calendar/freebusy/events retrieval
+- meet request lifecycle and direct meeting creation
 
 ### 4.4 Shared libraries
 - `lib/appwrite.js`: client SDK instances + collection config.
@@ -122,6 +138,7 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - `scripts/appwrite-schema-sync.mjs`: audit/apply Appwrite attributes and collections.
 - `scripts/seed-appwrite-dummy-data.mjs`: seed medium dataset for testing.
 - `scripts/verify-seed-data.mjs`: seed verification.
+- `scripts/test-employee-trajectory.mjs`: focused auth + trend checks for trajectory endpoint.
 - `scripts/smoke-api-routes.mjs`: API smoke checks with seeded users.
 - `scripts/smoke-ui-pages.mjs`: route reachability smoke checks.
 
@@ -151,6 +168,7 @@ Key behavior:
 - `employee`
 - `manager`
 - `hr`
+- `leadership`
 
 Anything else becomes null and routes to `/onboarding`.
 
@@ -174,7 +192,8 @@ Purpose: identity + organizational mapping.
 Important fields:
 - `$id`, `name`, `email`, `role`, `department`
 - employee manager mapping: `managerId`, `managerAssignedAt`, `managerAssignedBy`, `assignmentVersion`
-- manager HR mapping: `hrId`, `hrAssignedAt`, `hrAssignedBy`, `hrAssignmentVersion`
+- manager hierarchy mapping: manager profiles also use `managerId` to point at an upper manager/leadership node
+- legacy HR mapping fields (`hrId`, `hrAssignedAt`, `hrAssignedBy`, `hrAssignmentVersion`) may still exist for historical compatibility
 
 ## 6.2 goals
 Purpose: primary performance objectives.
@@ -239,6 +258,22 @@ Purpose: usage caps and tracking for AI features.
 Fields:
 - `userId`, `featureType`, `cycleId`, `requestCount`, `lastUsedAt`, optional metadata.
 
+## 6.11 google_tokens
+Purpose: per-user Google OAuth token store for calendar/meeting integrations.
+
+Fields:
+- `userId`, `email`, `accessToken`, `refreshToken`, `expiry`, `scope`, `provider`
+
+## 6.12 google_meet_requests
+Purpose: employee meeting requests and manager scheduling decisions backed by Google Meet events.
+
+Fields:
+- ownership: `employeeId`, `managerId`
+- workflow: `status` in `{pending, scheduled, rejected}`, `source`, `requestedAt`
+- schedule: `proposedStartTime`, `proposedEndTime`, `scheduledStartTime`, `scheduledEndTime`, `timezone`
+- context: `title`, `description`, `managerNotes`
+- external links: `meetLink`, `eventId`
+
 ---
 
 ## 7. API catalog with behavior and rules
@@ -261,6 +296,15 @@ Fields:
 - File: `app/api/auth/logout/route.js`
 - Revokes current session when available and always clears local cookies.
 
+### POST /api/auth/onboarding
+- File: `app/api/auth/onboarding/route.js`
+- Purpose: writes or updates profile role after login for first-time users.
+- Input: `{ role, region? }`
+- Rules:
+  - role must normalize into allowed roles.
+  - role defaults to employee if invalid/missing.
+  - if profile already has a valid role, route prevents accidental overwrites.
+
 ### GET /api/me
 - File: `app/api/me/route.js`
 - Returns user and profile context used by layouts/pages.
@@ -269,7 +313,7 @@ Fields:
 
 ### GET /api/goals
 - File: `app/api/goals/route.js`
-- Roles: employee, manager, hr.
+- Roles: employee, manager, leadership, hr.
 - Scope behavior:
   - employee: own goals only.
   - manager: own/team/all with team-boundary checks.
@@ -279,7 +323,7 @@ Fields:
 
 ### POST /api/goals
 - File: `app/api/goals/route.js`
-- Roles: employee, manager.
+- Roles: employee, manager, leadership.
 - Input: title, description, cycleId, frameworkType, managerId?, weightage, dueDate?, lineageRef?, aiSuggested?.
 - Rules:
   - required fields validation
@@ -287,13 +331,21 @@ Fields:
   - weightage 1..100
   - total cycle weightage per employee must not exceed 100
   - cycleId normalized server-side
-- Manager approver resolution fallback chain for manager role:
-  1. profile.hrId
-  2. profile.managerId (legacy fallback)
-  3. first available HR user
+- Manager approver resolution for manager/leadership role:
+  1. profile.managerId (immediate upper manager)
+  2. fail if missing (must assign upper manager first)
 - Schema compatibility write flow:
   - try dual write with `progressPercent` + `processPercent`
   - fallback to modern-only or legacy-only depending on schema errors
+
+### POST /api/goals/for-employee
+- File: `app/api/goals/for-employee/route.js`
+- Roles: manager.
+- Purpose: manager creates a draft goal on behalf of a team member.
+- Rules:
+  - manager must have access to employee by team mapping checks.
+  - same framework and cycle weightage validations as employee flow.
+  - status is created as draft with manager as approver.
 
 ### GET /api/goals/[goalId]
 - File: `app/api/goals/[goalId]/route.js`
@@ -318,20 +370,19 @@ Fields:
 
 ### GET /api/approvals
 - File: `app/api/approvals/route.js`
-- Roles: manager, hr.
+- Roles: manager, leadership, hr.
 - Returns submitted goals pending decisions.
-- HR origin filter (`origin=manager`) narrows to manager-owned goals under proper HR ownership.
+- HR is monitor-only in approvals flow.
 
 ### POST /api/approvals
 - File: `app/api/approvals/route.js`
-- Roles: manager, hr.
+- Roles: manager, leadership.
 - Input: goalId, decision, comments.
 - Rules:
   - decision must be approved/rejected/needs_changes
   - goal must be submitted
   - manager cannot approve own goals
   - manager must be assigned approver for the goal
-  - HR cannot decide manager goals owned by different HR owner
 - Side effects:
   - updates goal status
   - writes goal_approvals decision row
@@ -351,7 +402,7 @@ Fields:
 
 ### GET /api/check-ins
 - File: `app/api/check-ins/route.js`
-- Scope behavior for employee/manager/hr.
+- Scope behavior for employee/manager/leadership/hr.
 - Enrichment:
   - checkInCode generated from cycle/id suffix
   - latest HR review merged
@@ -363,7 +414,7 @@ Fields:
 
 ### POST /api/check-ins
 - File: `app/api/check-ins/route.js`
-- Roles: employee, manager.
+- Roles: employee, manager, leadership.
 - Input: goalId, scheduledAt, optional status/notes/transcript/final flag/attachments.
 - Rules:
   - goal must be approved
@@ -374,7 +425,7 @@ Fields:
 
 ### PATCH /api/check-ins/[checkInId]
 - File: `app/api/check-ins/[checkInId]/route.js`
-- Roles: manager, hr (with manager-focused final rating constraints).
+- Roles: manager, leadership (with manager-focused final rating constraints).
 - Intended transition: planned -> completed.
 - Final check-in rules:
   - only manager can submit final rating
@@ -389,25 +440,25 @@ Fields:
 
 ### GET/POST /api/team-assignments
 - File: `app/api/team-assignments/route.js`
-- HR-only.
+- Leadership-only.
 - Lists or creates employee->manager assignments.
 - Tracks assignment timestamps/versions where schema allows.
 
 ### PUT/DELETE /api/team-assignments/[employeeId]
 - File: `app/api/team-assignments/[employeeId]/route.js`
-- HR-only.
+- Leadership-only.
 - Update or clear manager mapping.
 
 ### GET/POST /api/manager-assignments
 - File: `app/api/manager-assignments/route.js`
-- HR-only.
-- Lists managers with HR assignment status and metadata.
-- Assign manager -> HR owner.
+- Leadership-only.
+- Lists managers with parent-manager assignment status and metadata.
+- Assign manager -> parent manager.
 
 ### PUT/DELETE /api/manager-assignments/[managerId]
 - File: `app/api/manager-assignments/[managerId]/route.js`
-- HR-only.
-- Update/clear manager->HR mapping.
+- Leadership-only.
+- Update/clear manager->parent-manager mapping.
 
 ### GET /api/team-members
 - File: `app/api/team-members/route.js`
@@ -474,6 +525,115 @@ Fields:
 - File: `app/api/ai/_lib/aiUsage.js`
 - Enforces per-user-per-cycle cap for feature families.
 
+## 7.10 Google OAuth token and calendar APIs
+
+### GET /api/google/connect
+- File: `app/api/google/connect/route.js`
+- Auth: any authenticated user.
+- Purpose: starts Google OAuth flow for calendar scopes and redirects to Google consent screen.
+- Dependencies: `GOOGLE_CLIENT_ID`, callback URL resolution via env or request origin.
+
+### GET /api/google/callback
+- File: `app/api/google/callback/route.js`
+- Purpose: exchanges OAuth code for access/refresh token and persists tokens in google tokens collection.
+- Rules:
+  - requires authenticated app session.
+  - rejects if no refresh token exists after exchange (with reconnect guidance).
+  - redirects user to role home route after save.
+
+### POST /api/google/tokens
+- File: `app/api/google/tokens/route.js`
+- Purpose: upsert Google token data for current authenticated user.
+
+### GET /api/google/tokens/status
+- File: `app/api/google/tokens/status/route.js`
+- Purpose: returns token connection/expiry status.
+- Scope:
+  - self-check for all roles.
+  - manager/hr can check `targetUserId` with manager team-access enforcement.
+
+### POST /api/google/tokens/admin-upsert
+- File: `app/api/google/tokens/admin-upsert/route.js`
+- Roles: manager, hr.
+- Purpose: privileged token upsert for target user (manager scope still team-bound).
+
+### GET /api/calendar/events
+- File: `app/api/calendar/events/route.js`
+- Roles: employee, manager, hr.
+- Input: `startDate`, `endDate`, optional `employeeId`, `timeZone`, `maxResults`.
+- Rules:
+  - valid ISO range required.
+  - employee can only read self events.
+  - manager can read self or own team member events.
+
+### POST /api/calendar/freebusy
+- File: `app/api/calendar/freebusy/route.js`
+- Roles: employee, manager, hr.
+- Purpose: reads free/busy windows for scheduling support.
+- Rules:
+  - valid ISO range required.
+  - manager free/busy checks are team-access constrained.
+
+### POST /api/calendar/create-meeting
+- File: `app/api/calendar/create-meeting/route.js`
+- Roles: manager.
+- Purpose: directly schedules Google Meet event with employee and manager attendees and logs internal meeting request document.
+- Output: created calendar event metadata + internal meet request document.
+
+## 7.11 Meeting request APIs
+
+### GET /api/meet-requests
+- File: `app/api/meet-requests/route.js`
+- Roles: employee, manager.
+- Purpose: lists meeting requests.
+- Scope:
+  - employee: requests where employeeId=self.
+  - manager: requests where managerId=self, optional employee filter with access validation.
+
+### POST /api/meet-requests
+- File: `app/api/meet-requests/route.js`
+- Roles: employee.
+- Purpose: employee creates a pending meeting request to assigned manager.
+- Rules:
+  - manager assignment required.
+  - Google token must be connected for employee.
+  - persists pending request with proposed schedule fields.
+
+### PATCH /api/meet-requests/[requestId]
+- File: `app/api/meet-requests/[requestId]/route.js`
+- Roles: manager.
+- Actions:
+  - `reject`: closes request as rejected with optional manager notes.
+  - `schedule`: creates Google Meet event and updates request as scheduled.
+- Rules: manager can only act on own assigned requests.
+
+## 7.12 Leadership hierarchy notes
+
+### Leadership migration notes
+- Legacy route family `app/region-admin/*` is retained only as redirect shims to leadership routes.
+- Canonical strategic scope is now leadership via `/leadership` and leadership APIs.
+- Region is no longer a required onboarding gate for leadership access.
+
+  ## 7.13 Analytics API
+
+  ### GET /api/analytics/employee-trajectory
+  - File: `app/api/analytics/employee-trajectory/route.js`
+  - Roles: employee, manager, hr.
+  - Purpose: returns last 3 cycle score points and deterministic trend label for an employee.
+  - Scope:
+    - employee: self only
+    - manager: self or direct reports only
+    - hr: any employee
+  - Output shape:
+    - `employeeId`
+    - `cycles[]` with `cycleId`, `cycleName`, `closedAt`, `computedAt`, `scoreX100`, `scoreLabel`
+    - `trendLabel` in `{new, stable, improving, declining}`
+    - `trendDeltaPercent`
+  - Rules:
+    - read-only aggregation; no score mutation
+    - empty or malformed history returns safe default (`cycles: []`, `trendLabel: new`, `trendDeltaPercent: 0`)
+    - stable threshold currently uses absolute delta percent <= 3
+
 ---
 
 ## 8. Frontend role modules and their logic
@@ -484,6 +644,7 @@ Fields:
 - Loads goals and check-ins in parallel.
 - Computes approved goals and average progress locally.
 - Renders KPI cards and quick links.
+- Optionally renders a trajectory card (last 3 cycles + trend badge) when feature flag is enabled.
 
 ### Goals workspace (`app/employee/goals/page.tsx`)
 - Fetches goals and latest feedback.
@@ -501,6 +662,13 @@ Fields:
 - Lists check-ins with review and rating context.
 - Creates planned check-ins and evidence attachments.
 
+### Meetings workspace (`app/employee/meetings/page.tsx`)
+- Submits meeting requests to manager with proposed schedule.
+- Tracks pending/scheduled/rejected states.
+
+### Meeting calendar (`app/employee/meeting-calendar/page.tsx`)
+- Shows employee calendar context and meeting availability data from Google APIs.
+
 ### Timeline (`app/employee/timeline/page.tsx`)
 - Lifecycle visualization with status narrative and ordering.
 
@@ -517,6 +685,11 @@ Fields:
 ### Team progress/check-ins
 - Dedicated views for cross-team monitoring and action.
 
+### Meetings and calendar
+- `app/manager/meetings/page.tsx`: handles employee requests and manager direct scheduling.
+- `app/manager/meeting-calendar/page.tsx`: calendar/event/freebusy operational view.
+- `app/manager/google-token-setup/page.tsx`: token onboarding and connection state troubleshooting.
+
 ### Manager timeline/progress/check-ins
 - Mirrors employee workflow for manager's own goals.
 
@@ -526,8 +699,11 @@ Fields:
 - Manager-level summary table and KPI aggregation.
 - Includes role reassignment action using `/api/hr/roles/[userId]`.
 
+- HR is monitor/audit only for goals and check-ins (no approval or grading writes).
+
 ### Team assignments (`app/hr/team-assignments/page.tsx`)
-- Manages employee->manager and manager->HR links.
+- Legacy entry redirected to `/hr`.
+- Manager hierarchy assignments are now leadership-managed via manager assignment APIs.
 
 ### HR approvals (`app/hr/approvals/page.tsx`)
 - Runs check-in governance and closure operations.
@@ -537,6 +713,13 @@ Fields:
 
 ### Manager drilldown (`app/hr/managers/[managerId]/page.tsx`)
 - Deep view for one manager's team and cycle health.
+
+## 8.4 Leadership module (canonical)
+
+### Leadership dashboards (`app/leadership/*`)
+- Leadership command center is the canonical strategic surface.
+- Includes aggregate trend, risk, quality bands, and succession readiness views.
+- Legacy regional admin paths now redirect into leadership and should not be extended with new feature work.
 
 ---
 
@@ -685,13 +868,16 @@ Logic:
 
 ## 13.3 Smoke tests
 Commands:
+- `npm run test:trajectory`
 - `npm run smoke:api`
 - `npm run smoke:ui`
 
 Logic:
+- trajectory script validates auth matrix and trend classification edge cases
 - creates sessions for seeded users
 - verifies happy paths and blocked paths
 - checks route reachability and permission boundaries
+- UI smoke accepts `/hr/team-assignments` as either direct `200` or redirect `307` based on current route behavior
 
 ---
 
@@ -714,6 +900,8 @@ Logic:
 - NEXT_PUBLIC_EMPLOYEE_CYCLE_SCORES_COLLECTION_ID
 - NEXT_PUBLIC_MANAGER_CYCLE_RATINGS_COLLECTION_ID
 - NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID
+- NEXT_PUBLIC_GOOGLE_TOKENS_COLLECTION_ID
+- NEXT_PUBLIC_GOOGLE_MEET_REQUESTS_COLLECTION_ID
 - NEXT_PUBLIC_ATTACHMENTS_BUCKET_ID
 
 ### 14.3 OAuth/public client options
@@ -721,10 +909,19 @@ Logic:
 - NEXT_PUBLIC_OAUTH_FAILURE_URL
 - NEXT_PUBLIC_OAUTH_SCOPES
 
-### 14.4 AI settings
+### 14.4 Feature flags
+- NEXT_PUBLIC_ENABLE_EMPLOYEE_TRAJECTORY
+
+### 14.5 AI settings
 - OPENROUTER_API_KEY
 
-### 14.5 Script/runtime extras
+### 14.6 Google integration settings
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- GOOGLE_OAUTH_REDIRECT_URI (optional explicit callback)
+- NEXT_PUBLIC_APP_ORIGIN or APP_ORIGIN (for callback URI resolution fallback)
+
+### 14.7 Script/runtime extras
 - SMOKE_BASE_URL
 - SEED_AUTH_PASSWORD
 
@@ -737,6 +934,9 @@ Logic:
 3. Final check-in patch path returns explicit schema guidance if required fields absent.
 4. Team/manager assignment routes handle partial schemas via fallback updates.
 5. Missing optional collections (like checkin_approvals or manager_cycle_ratings) are tolerated with safe empty results.
+6. Meet request routes retry after stripping unknown attributes to survive partial schema rollout.
+7. Calendar + token flows surface actionable errors for missing OAuth env variables and missing refresh tokens.
+8. Trajectory endpoint and client normalize malformed score/timeline payloads and fall back to safe empty-state outputs.
 
 This makes deployments resilient while schema migration catches up.
 
@@ -755,11 +955,13 @@ Use this explanation when presenting the project:
 - `/api/auth/redirect`
 - `/api/auth/session`
 - `/api/auth/logout`
+- `/api/auth/onboarding`
 - `/api/me`
 - `/api/goals`
 - `/api/goals/[goalId]`
 - `/api/goals/[goalId]/submit`
 - `/api/goals/feedback`
+- `/api/goals/for-employee`
 - `/api/approvals`
 - `/api/progress-updates`
 - `/api/check-ins`
@@ -774,11 +976,49 @@ Use this explanation when presenting the project:
 - `/api/hr/checkin-approvals`
 - `/api/hr/cycles/[cycleId]/close`
 - `/api/hr/roles/[userId]`
+- `/api/analytics/employee-trajectory`
+- `/api/framework-policies`
+- `/api/timeline/[cycleId]`
+- `/api/timeline/lifecycle`
 - `/api/attachments`
 - `/api/attachments/[fileId]/download`
 - `/api/ai/chat`
 - `/api/ai/goal-suggestion`
 - `/api/ai/checkin-summary`
+- `/api/ai/conversational-goals`
+- `/api/ai/checkin-agenda`
+- `/api/ai/checkin-intelligence`
+- `/api/ai/usage`
+- `/api/goals/[goalId]/cascade`
+- `/api/goals/[goalId]/children`
+- `/api/goals/import/template`
+- `/api/goals/import/preview`
+- `/api/goals/import/commit`
+- `/api/matrix-reviewers/assignments`
+- `/api/matrix-reviewers/feedback`
+- `/api/matrix-reviewers/summary`
+- `/api/hr/9-box`
+- `/api/hr/ai-governance/overview`
+- `/api/hr/calibration-sessions`
+- `/api/hr/calibration-sessions/[sessionId]/decisions`
+- `/api/hr/calibration-sessions/[sessionId]/timeline`
+- `/api/notifications/templates`
+- `/api/notifications/jobs`
+- `/api/notifications/scheduler`
+- `/api/notifications/feed`
+- `/api/notifications/events/[eventId]/read`
+- `/api/leadership/overview`
+- `/api/leadership/succession`
+- `/api/google/connect`
+- `/api/google/callback`
+- `/api/google/tokens`
+- `/api/google/tokens/status`
+- `/api/google/tokens/admin-upsert`
+- `/api/calendar/events`
+- `/api/calendar/freebusy`
+- `/api/calendar/create-meeting`
+- `/api/meet-requests`
+- `/api/meet-requests/[requestId]`
 
 ---
 
@@ -789,3 +1029,123 @@ This guide is intended as a living technical handbook. If new modules are added,
 - entity model section,
 - business rules section,
 - and at least one end-to-end flow walkthrough.
+
+---
+
+## 18.1 Recent changes and new features (April 2026)
+
+This update extends the project from a core PMS flow into a policy-driven, timeline-first, decision-intelligence platform.
+
+### A) Leadership role and command center
+- Added a dedicated leadership route shell (`app/leadership/layout.tsx`) and dashboard (`app/leadership/page.tsx`).
+- Added strategic APIs:
+  - `/api/leadership/overview`
+  - `/api/leadership/succession`
+- Leadership responses are aggregate-first and intended to minimize unnecessary user-level exposure.
+
+### B) Framework policy engine
+- Added framework governance API `/api/framework-policies`.
+- Framework enablement is now policy-driven for write-time validation (including AI-assisted drafting flows).
+- New utility layer in `lib/frameworkPolicies.js` supports default/fallback behavior and schema-compat writes.
+
+### C) Timeline-first lifecycle aggregation
+- Added `/api/timeline/[cycleId]` for role-safe cycle aggregate state and optional timeline events.
+- Added `/api/timeline/lifecycle` for filtered lifecycle event stream retrieval.
+- Added deterministic stage resolver in `lib/workflow/timelineState.js` and telemetry helper in `lib/telemetry/timeline.js`.
+
+### D) AI upgrades: conversational + explainable
+- Added conversational goal drafting endpoint `/api/ai/conversational-goals`.
+- Added pre-check-in agenda endpoint `/api/ai/checkin-agenda`.
+- Added check-in intelligence endpoint `/api/ai/checkin-intelligence`.
+- Added usage snapshot endpoint `/api/ai/usage`.
+- Added reusable explainability helper (`lib/ai/explainability.js`) and drawer component (`src/components/patterns/ExplainabilityDrawer.tsx`).
+- Added reusable conversational composer component (`src/components/patterns/ConversationalGoalComposer.tsx`).
+
+### E) Matrix reviewer model
+- Added assignment API `/api/matrix-reviewers/assignments`.
+- Added feedback API `/api/matrix-reviewers/feedback`.
+- Added blended summary API `/api/matrix-reviewers/summary`.
+- Added matrix utilities in `lib/matrixReviews.js`.
+- Added UI surfaces:
+  - Manager matrix reviews page (`app/manager/matrix-reviews/page.tsx`)
+  - Employee matrix feedback page (`app/employee/matrix-feedback/page.tsx`)
+
+### F) HR strategic governance surfaces
+- Added HR AI governance API `/api/hr/ai-governance/overview` and UI page (`app/hr/ai-governance/page.tsx`).
+- Added HR calibration APIs:
+  - `/api/hr/calibration-sessions`
+  - `/api/hr/calibration-sessions/[sessionId]/decisions`
+  - `/api/hr/calibration-sessions/[sessionId]/timeline`
+- Added HR calibration UI (`app/hr/calibration/page.tsx`).
+- Added HR 9-box API `/api/hr/9-box` and UI (`app/hr/9-box/page.tsx`).
+
+### G) Notifications platform
+- Added templates/jobs/feed/scheduler/read APIs:
+  - `/api/notifications/templates`
+  - `/api/notifications/jobs`
+  - `/api/notifications/scheduler`
+  - `/api/notifications/feed`
+  - `/api/notifications/events/[eventId]/read`
+- Added scheduler engine with retry, dedupe suppression, and delivery event logging.
+- Added HR notifications policy UI (`app/hr/notifications/page.tsx`).
+
+### H) Goal cascade and import pipeline
+- Added cascade endpoints:
+  - `/api/goals/[goalId]/cascade`
+  - `/api/goals/[goalId]/children`
+- Added import endpoints:
+  - `/api/goals/import/template`
+  - `/api/goals/import/preview`
+  - `/api/goals/import/commit`
+- Import commit flow now supports idempotency keys and import-job audit tracking.
+
+### I) Talent and succession analytics foundation
+- Added shared talent snapshot builder (`app/api/_lib/talentSnapshot.js`).
+- HR 9-box and leadership succession APIs both consume this derived banding logic (`performanceBand`, `potentialBand`, `readinessBand`).
+
+### J) Test and developer workflow updates
+- Expanded smoke UI matrix to include leadership route and additional HR pages.
+- Added focused trajectory regression script (`scripts/test-employee-trajectory.mjs`).
+- Added stable local dev launcher (`scripts/dev-stable.ps1`) to clean stale Next dev process/lock scenarios.
+
+---
+
+## 19. LLM conversation handoff block
+
+Use this when sharing context with another LLM:
+
+### 19.1 Project identity summary
+- Product: HR Console
+- Domain: performance management (goals, progress, check-ins, approvals, cycle closure)
+- Roles: employee, manager, hr, leadership (legacy aliases normalize to leadership)
+- Core backend: Next.js route handlers + Appwrite
+- Core data entities: users, goals, approvals, check-ins, progress updates, cycle scores, manager ratings, AI events, meeting requests, google tokens
+
+### 19.2 What the assistant should optimize for
+- Preserve role-based access control and never bypass scope checks.
+- Preserve lifecycle states and transition rules.
+- Preserve rating visibility policy (hidden until cycle close).
+- Keep schema-compatibility fallbacks intact unless migration is explicitly complete.
+- Prefer additive, backward-compatible changes in APIs and frontend payload parsing.
+
+### 19.3 Critical invariants
+- Goal cycle weightage per employee must never exceed 100.
+- Only submitted goals can be approved/rejected/needs_changes.
+- Manager cannot self-approve own submitted goals.
+- Check-ins are allowed only on approved goals and capped per-goal.
+- Final manager rating is constrained to final-check-in paths and role checks.
+- Manager scope traverses full descendant subtree in hierarchy-aware endpoints.
+- Meeting scheduling must honor manager-employee access and Google token prerequisites.
+
+### 19.4 Typical prompts that this project supports
+- "Trace why a manager cannot approve a goal and show which rule failed."
+- "Explain the full data flow from employee meeting request to scheduled Google Meet link."
+- "Find all places where rating visibility flips from hidden to visible."
+- "Add a new analytics KPI to HR and leadership dashboards without breaking role boundaries."
+- "List every API that touches goals and describe side effects."
+
+### 19.5 Safe assumptions for future contributors
+- The app favors strict server-side authorization (`requireAuth`, `requireRole`, team access assertions).
+- Frontend state is role-aware and depends heavily on `app/employee/_lib/pmsClient.ts` helpers.
+- Appwrite schema drift is expected across environments; compatibility paths are intentional.
+- Documentation in `docs/*` plus this guide should be updated with every new endpoint or role surface.

@@ -4,7 +4,7 @@ This guide is written so you can explain the project to someone who is new to th
 
 ## 1. One-line summary
 
-HR Console is a role-based performance management application where employees set goals, managers coach and approve, and HR governs fairness and cycle closure.
+HR Console is a role-based performance management application where employees set goals, managers and leadership coach and approve, and HR monitors fairness and cycle closure.
 
 ## 2. Think of the app as 3 layers
 
@@ -13,6 +13,7 @@ HR Console is a role-based performance management application where employees se
 - Employee workspace
 - Manager workspace
 - HR workspace
+- Leadership workspace
 
 ### Layer 2: Frontend data helpers
 - A shared client file sends all API requests:
@@ -31,7 +32,7 @@ HR Console is a role-based performance management application where employees se
 3. OAuth callback lands at [app/auth/callback/page.jsx](../app/auth/callback/page.jsx).
 4. Callback calls `/api/auth/session` to create server session cookies.
 5. App asks `/api/auth/redirect` where user should go based on role.
-6. User lands on employee, manager, hr dashboard, or onboarding.
+6. User lands on employee, manager, hr, leadership dashboard, or onboarding.
 
 ### 3.2 Why middleware exists
 - Middleware checks access before pages load.
@@ -55,10 +56,14 @@ File: [middleware.ts](../middleware.ts)
 - Approve or request changes for submitted team goals
 
 ### HR
-- Manage assignment structure
 - Monitor manager and team performance
 - Review check-in governance queue
 - Close cycle and reveal ratings
+
+### Leadership
+- Manage manager hierarchy and team assignment structure
+- Monitor manager and team performance
+- Approve team goals/check-ins within hierarchy scope
 
 ## 5. The most important object in the system: Goal
 
@@ -97,12 +102,14 @@ If validation fails, UI shows error alert.
 
 Approval endpoint: [app/api/approvals/route.js](../app/api/approvals/route.js)
 
-When manager or HR submits decision:
+When manager or leadership submits decision:
 - validates decision type
 - ensures goal is still submitted
 - prevents manager self-approval
 - updates goal status
 - stores approval history row
+
+HR remains monitor-only for goals/check-ins approvals.
 
 So approval is not just status update, it is also audit logging.
 
@@ -137,7 +144,7 @@ This is the switch from private manager evaluation to visible final outcome.
 
 There are two mapping layers:
 - employee -> manager
-- manager -> hr owner
+- manager -> parent manager
 
 Endpoints:
 - [app/api/team-assignments/route.js](../app/api/team-assignments/route.js)
@@ -146,7 +153,7 @@ Endpoints:
 Why this matters:
 - Determines who can see what.
 - Determines who can approve what.
-- Keeps governance boundaries clear.
+- Preserves hierarchy boundaries and approval routing.
 
 ## 11. AI features explained simply
 
@@ -171,7 +178,7 @@ Usage cap tracking file:
 ## 12. Core helper files you should know first
 
 - [lib/serverAuth.js](../lib/serverAuth.js): auth and role guard foundation.
-- [lib/teamAccess.js](../lib/teamAccess.js): manager and HR scope checks.
+- [lib/teamAccess.js](../lib/teamAccess.js): manager subtree, leadership scope, and HR monitoring checks.
 - [lib/finalRatings.js](../lib/finalRatings.js): score persistence and visibility toggles.
 - [lib/ratings.js](../lib/ratings.js): rating math and labels.
 - [lib/cycle.js](../lib/cycle.js): cycle id and check-in code generation.
@@ -181,7 +188,7 @@ Usage cap tracking file:
 
 Use this script:
 
-"The app is a role-based PMS with strict middleware and API-level authorization. Employees create and submit goals, managers review and coach through check-ins, and HR manages team mapping and governance. The frontend uses a shared API client, while route handlers enforce business constraints such as cycle weightage limits, status transition rules, and visibility gating for final ratings. AI features assist writing and summarization with usage caps tracked per cycle. Closing a cycle computes final scores and makes ratings visible." 
+"The app is a role-based PMS with strict middleware and API-level authorization. Employees create and submit goals, managers and leadership review and coach through check-ins, and HR monitors governance and closes cycles. The frontend uses a shared API client, while route handlers enforce business constraints such as cycle weightage limits, status transition rules, and visibility gating for final ratings. AI features assist writing and summarization with usage caps tracked per cycle. Closing a cycle computes final scores and makes ratings visible." 
 
 ## 14. If you want to learn the code quickly
 

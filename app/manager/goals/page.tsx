@@ -1,14 +1,20 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { BulkGoalAiReviewPanel, ExplainabilityDrawer, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
 import {
+  BulkGoalAnalysisItem,
+  BulkGoalInput,
+  createGoalCascade,
   createGoal,
   fetchGoalFeedback,
   fetchGoals,
   fetchMe,
+  fetchTeamMembers,
+  getBulkGoalAnalysis,
   getCycleIdFromDate,
   getGoalSuggestions,
   GoalItem,
@@ -33,6 +39,7 @@ export default function ManagerGoalsPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiSuggestion, setAiSuggestion] = useState<GoalSuggestion | null>(null);
+  const [explainabilityOpen, setExplainabilityOpen] = useState(false);
 
   const [goalForm, setGoalForm] = useState({
     title: "",
@@ -56,6 +63,260 @@ export default function ManagerGoalsPage() {
     weightage: "20",
     dueDate: "",
   });
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkFallbackUsed, setBulkFallbackUsed] = useState(false);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkSourceGoals, setBulkSourceGoals] = useState<BulkGoalInput[]>([]);
+  const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
+  const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [managerTeamMemberIds, setManagerTeamMemberIds] = useState<string[]>([]);
+
+  function readCell(row: Record<string, unknown>, keys: string[]) {
+    const entries = Object.entries(row);
+    for (const key of keys) {
+      const found = entries.find(([rowKey]) => rowKey.trim().toLowerCase() === key.trim().toLowerCase());
+      if (found && String(found[1] ?? "").trim()) {
+        return String(found[1]).trim();
+      }
+    }
+    return "";
+  }
+
+  function parseGoalRows(rows: Record<string, unknown>[]) {
+    return rows
+      .map((row) => {
+        const title = readCell(row, ["title", "goal title", "goal"]);
+        const description = readCell(row, ["description", "goal description"]);
+        const weightRaw = readCell(row, ["weight", "weightage", "%"]);
+        const weight = Number.parseInt(weightRaw || "0", 10);
+
+        return {
+          title,
+          description,
+          weight: Number.isInteger(weight) && weight > 0 ? weight : 10,
+        } as BulkGoalInput;
+      })
+      .filter((item) => item.title && item.description);
+  }
+
+  async function readGoalsFromWorkbook(file: File) {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const firstSheet = workbook.SheetNames?.[0];
+    if (!firstSheet) {
+      throw new Error("Workbook has no sheets.");
+    }
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], {
+      defval: "",
+    });
+
+    return parseGoalRows(rows);
+  }
+
+  function buildDrafts(analysis: BulkGoalAnalysisItem[], sourceGoals: BulkGoalInput[]) {
+    return analysis.map((item, index) => ({
+      title: item.improvedTitle || sourceGoals[index]?.title || "",
+      description: item.improvedDescription || sourceGoals[index]?.description || "",
+      metrics: item.suggestedMetrics || "",
+      weight: sourceGoals[index]?.weight || 10,
+      allocationSplitText: Array.isArray(item.allocationSuggestions?.[0]?.split)
+        ? item.allocationSuggestions[0].split.join("/")
+        : "",
+    }));
+  }
+
+  async function analyzeWorkbookGoals(sourceGoals: BulkGoalInput[]) {
+    if (sourceGoals.length === 0) {
+      throw new Error("No valid goals found in uploaded file.");
+    }
+
+    if (sourceGoals.length > 10) {
+      throw new Error("Upload contains more than 10 goals. Please reduce rows to 10 or fewer.");
+    }
+
+    const analysis = await getBulkGoalAnalysis({
+      goals: sourceGoals,
+      role: "manager",
+      cycleId: goalForm.cycleId,
+    });
+
+    setBulkAnalysis(analysis.goals);
+    setBulkDrafts(buildDrafts(analysis.goals, sourceGoals));
+    setBulkFallbackUsed(analysis.fallbackUsed);
+  }
+
+  async function handleBulkFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+
+    setBulkFileName(file.name);
+    setBulkError("");
+    setBulkLoading(true);
+
+    try {
+      const sourceGoals = await readGoalsFromWorkbook(file);
+      setBulkSourceGoals(sourceGoals);
+      await analyzeWorkbookGoals(sourceGoals);
+      setSuccess("Bulk goals analyzed with AI.");
+    } catch (err) {
+      setBulkAnalysis([]);
+      setBulkDrafts([]);
+      setBulkFallbackUsed(false);
+      setBulkError(err instanceof Error ? err.message : "Failed to process file.");
+    } finally {
+      setBulkLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  function handleBulkDraftChange(index: number, draft: GoalAiDraft) {
+    setBulkDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? draft : item)));
+  }
+
+  function handleApplyBulkSuggestion(index: number) {
+    const draft = bulkDrafts[index];
+    if (!draft) return;
+
+    setGoalForm((prev) => ({
+      ...prev,
+      title: draft.title,
+      description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
+      weightage: String(draft.weight || 10),
+    }));
+  }
+
+  function handleApplyAllBulkSuggestions() {
+    if (bulkDrafts.length === 0) return;
+    handleApplyBulkSuggestion(0);
+  }
+
+  function parseSplitText(splitText: string) {
+    const parts = String(splitText || "")
+      .split("/")
+      .map((item) => Number.parseInt(item.trim(), 10))
+      .filter((item) => Number.isInteger(item) && item > 0);
+
+    if (parts.length === 0) return [] as number[];
+
+    const total = parts.reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return [] as number[];
+
+    const normalized = parts.map((value) => Math.round((value / total) * 100));
+    const normalizedTotal = normalized.reduce((sum, value) => sum + value, 0);
+    if (normalizedTotal !== 100 && normalized.length > 0) {
+      normalized[0] += 100 - normalizedTotal;
+    }
+
+    return normalized;
+  }
+
+  async function persistAllocationCascade(goalId: string, draft: GoalAiDraft, analysis: BulkGoalAnalysisItem | undefined) {
+    const suggestion = analysis?.allocationSuggestions?.[0];
+    if (!suggestion) return;
+
+    const suggestedUsers = Math.max(1, Number(suggestion.suggestedUsers || 1));
+    const selectedMembers = managerTeamMemberIds.slice(0, suggestedUsers);
+    if (selectedMembers.length === 0) return;
+
+    const splitFromDraft = parseSplitText(draft.allocationSplitText);
+    const split = splitFromDraft.length > 0
+      ? splitFromDraft
+      : Array.isArray(suggestion.split)
+      ? suggestion.split
+      : [];
+
+    if (!Array.isArray(split) || split.length === 0) {
+      return;
+    }
+
+    const contributions = selectedMembers.map((employeeId, index) => ({
+      employeeId,
+      contributionPercent: Number(split[index] || 0),
+    }));
+
+    const validContributions = contributions.filter((item) => Number.isInteger(item.contributionPercent) && item.contributionPercent > 0);
+    if (validContributions.length === 0) return;
+
+    const total = validContributions.reduce((sum, item) => sum + item.contributionPercent, 0);
+    if (total > 100) {
+      const normalized = validContributions.map((item) => ({
+        ...item,
+        contributionPercent: Math.round((item.contributionPercent / total) * 100),
+      }));
+      const normalizedTotal = normalized.reduce((sum, item) => sum + item.contributionPercent, 0);
+      if (normalizedTotal !== 100 && normalized.length > 0) {
+        normalized[0].contributionPercent += 100 - normalizedTotal;
+      }
+
+      await createGoalCascade({
+        parentGoalId: goalId,
+        employeeIds: normalized.map((item) => item.employeeId),
+        splitStrategy: {
+          type: "custom",
+          contributions: normalized,
+        },
+      });
+      return;
+    }
+
+    await createGoalCascade({
+      parentGoalId: goalId,
+      employeeIds: validContributions.map((item) => item.employeeId),
+      splitStrategy: {
+        type: "custom",
+        contributions: validContributions,
+      },
+    });
+  }
+
+  async function handleSaveBulkGoals() {
+    if (bulkDrafts.length === 0) return;
+
+    setBulkSaving(true);
+    setBulkError("");
+
+    try {
+      let cascadedCount = 0;
+
+      for (let index = 0; index < bulkDrafts.length; index += 1) {
+        const draft = bulkDrafts[index];
+        const created = await createGoal({
+          title: draft.title,
+          description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
+          cycleId: goalForm.cycleId,
+          frameworkType: goalForm.frameworkType,
+          managerId: goalForm.managerId,
+          weightage: draft.weight,
+          dueDate: goalForm.dueDate || null,
+          aiSuggested: true,
+        });
+
+        const createdGoalId = String(created?.data?.$id || created?.$id || "").trim();
+        if (createdGoalId) {
+          try {
+            await persistAllocationCascade(createdGoalId, draft, bulkAnalysis[index]);
+            cascadedCount += 1;
+          } catch {
+            // Keep saving goals even when cascade persistence fails for a row.
+          }
+        }
+      }
+
+      if (cascadedCount > 0) {
+        setSuccess(`Created ${bulkDrafts.length} draft goals and applied allocation cascade to ${cascadedCount} goal(s).`);
+      } else {
+        setSuccess(`Created ${bulkDrafts.length} draft goals from AI review.`);
+      }
+      await loadGoals();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Failed to save bulk goals.");
+    } finally {
+      setBulkSaving(false);
+    }
+  }
 
   const loadGoals = useCallback(async () => {
     setLoading(true);
@@ -104,6 +365,33 @@ export default function ManagerGoalsPage() {
     }
 
     loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadTeamMembers() {
+      try {
+        const members = await fetchTeamMembers();
+        if (!active) return;
+
+        const employeeIds = (Array.isArray(members) ? members : [])
+          .filter((item) => String(item.role || "").trim().toLowerCase() === "employee")
+          .map((item) => String(item.$id || "").trim())
+          .filter(Boolean);
+
+        setManagerTeamMemberIds(employeeIds);
+      } catch {
+        if (!active) return;
+        setManagerTeamMemberIds([]);
+      }
+    }
+
+    loadTeamMembers();
 
     return () => {
       active = false;
@@ -258,6 +546,52 @@ export default function ManagerGoalsPage() {
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
       {aiError && <Alert variant="warning" title="AI suggestion issue" description={aiError} onDismiss={() => setAiError("")} />}
 
+      <Card title="Bulk Goal Import & Allocation" description="Upload Excel goals, review AI improvements, and apply allocation suggestions.">
+        <Stack gap="3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="file"
+              label="Upload Excel (.xlsx, .xls)"
+              accept=".xlsx,.xls"
+              onChange={handleBulkFileUpload}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => analyzeWorkbookGoals(bulkSourceGoals)}
+              loading={bulkLoading}
+              disabled={bulkSourceGoals.length === 0}
+            >
+              Re-run AI Analysis
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveBulkGoals}
+              loading={bulkSaving}
+              disabled={bulkDrafts.length === 0}
+            >
+              Save Goals
+            </Button>
+          </div>
+          <p className="caption">
+            Expected columns in first sheet: title, description, weight or weightage. Max 10 goals per upload.
+          </p>
+          {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
+          <BulkGoalAiReviewPanel
+            role="manager"
+            items={bulkAnalysis}
+            drafts={bulkDrafts}
+            loading={bulkLoading}
+            fallbackUsed={bulkFallbackUsed}
+            error={bulkError}
+            onDraftChange={handleBulkDraftChange}
+            onApplySuggestion={handleApplyBulkSuggestion}
+            onApplyAll={handleApplyAllBulkSuggestions}
+            onDismissError={() => setBulkError("")}
+          />
+        </Stack>
+      </Card>
+
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Create Goal" description="Start with a clear, measurable outcome.">
           <form className="space-y-3" onSubmit={handleCreateGoal}>
@@ -278,6 +612,18 @@ export default function ManagerGoalsPage() {
                 <p className="caption mt-1">{aiSuggestion.title}</p>
                 <p className="caption mt-1">{aiSuggestion.description}</p>
                 {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
+                {aiSuggestion.explainability && (
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExplainabilityOpen(true)}
+                    >
+                      View Explainability
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -468,6 +814,13 @@ export default function ManagerGoalsPage() {
           ))}
         </Stack>
       </Card>
+
+      <ExplainabilityDrawer
+        open={explainabilityOpen}
+        onClose={() => setExplainabilityOpen(false)}
+        payload={aiSuggestion?.explainability || null}
+        title="Goal Suggestion Explainability"
+      />
     </Stack>
   );
 }

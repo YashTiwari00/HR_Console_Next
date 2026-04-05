@@ -4,7 +4,9 @@ import {
   createMeetCalendarEvent,
   getOrgDefaultTimezone,
 } from "@/lib/googleCalendar";
-import { databaseId } from "@/lib/appwriteServer";
+import { Query, databaseId } from "@/lib/appwriteServer";
+import { parseStringList, toMeetingType } from "@/lib/meetingIntelligence";
+import { getMeetingWithMetadata, upsertMeetingMetadata } from "@/lib/meetingMetadataStore";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { listUsersByIds } from "@/lib/teamAccess";
 
@@ -37,7 +39,8 @@ async function updateMeetingRequestWithFallback(databases, requestId, payload) {
           message.includes('unknown attribute: "managernotes"')) &&
         "managerNotes" in nextPayload
       ) {
-        const { managerNotes, ...fallbackPayload } = nextPayload;
+        const fallbackPayload = { ...nextPayload };
+        delete fallbackPayload.managerNotes;
         nextPayload = fallbackPayload;
         continue;
       }
@@ -54,7 +57,8 @@ async function updateMeetingRequestWithFallback(databases, requestId, payload) {
         throw error;
       }
 
-      const { [missingAttr]: _ignored, ...fallbackPayload } = nextPayload;
+      const fallbackPayload = { ...nextPayload };
+      delete fallbackPayload[missingAttr];
       nextPayload = fallbackPayload;
     }
   }
@@ -75,7 +79,8 @@ async function updateMeetingRequestWithFallback(databases, requestId, payload) {
       throw error;
     }
 
-    const { managerNotes, ...fallbackPayload } = nextPayload;
+    const fallbackPayload = { ...nextPayload };
+    delete fallbackPayload.managerNotes;
     return databases.updateDocument(
       databaseId,
       appwriteConfig.googleMeetRequestsCollectionId,
@@ -83,6 +88,42 @@ async function updateMeetingRequestWithFallback(databases, requestId, payload) {
       fallbackPayload
     );
   }
+}
+
+function normalizeIdList(input, maxItems = 25) {
+  return Array.from(
+    new Set(
+      (Array.isArray(input) ? input : parseStringList(input))
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    )
+  ).slice(0, maxItems);
+}
+
+async function assertGoalAccess(databases, managerId, employeeId, goalIds) {
+  if (!goalIds.length) return null;
+
+  const result = await databases.listDocuments(
+    databaseId,
+    appwriteConfig.goalsCollectionId,
+    [
+      Query.equal("employeeId", employeeId),
+      Query.equal("managerId", managerId),
+      Query.equal("$id", goalIds),
+      Query.limit(Math.max(50, goalIds.length + 5)),
+    ]
+  );
+
+  const allowed = new Set(result.documents.map((item) => String(item.$id || "").trim()));
+  const invalid = goalIds.filter((id) => !allowed.has(id));
+  if (invalid.length > 0) {
+    return Response.json(
+      { error: "Some selected goals are not accessible for this manager/employee context.", invalidGoalIds: invalid },
+      { status: 400 }
+    );
+  }
+
+  return null;
 }
 
 export async function PATCH(request, context) {
@@ -97,11 +138,12 @@ export async function PATCH(request, context) {
       return Response.json({ error: "requestId is required." }, { status: 400 });
     }
 
-    const existing = await databases.getDocument(
+    const existingRaw = await databases.getDocument(
       databaseId,
       appwriteConfig.googleMeetRequestsCollectionId,
       requestId
     );
+    const existing = await getMeetingWithMetadata(databases, existingRaw);
 
     if (String(existing.managerId || "") !== String(profile.$id || "")) {
       return Response.json({ error: "Forbidden for this meeting request." }, { status: 403 });
@@ -120,7 +162,7 @@ export async function PATCH(request, context) {
         managerNotes: String(body?.managerNotes || "").trim(),
       });
 
-      return Response.json({ data: rejected });
+      return Response.json({ data: await getMeetingWithMetadata(databases, rejected) });
     }
 
     const startTime = String(body?.startTime || existing?.proposedStartTime || "").trim();
@@ -129,6 +171,12 @@ export async function PATCH(request, context) {
     const description = String(body?.description || existing?.description || "").trim();
     const managerNotes = String(body?.managerNotes || "").trim();
     const timeZone = String(body?.timeZone || existing?.timezone || getOrgDefaultTimezone()).trim();
+    const linkedGoalIds = normalizeIdList(body?.linkedGoalIds || existing?.linkedGoalIds, 20);
+    const meetingType = toMeetingType(body?.meetingType || existing?.meetingType);
+    const participantIds = normalizeIdList(
+      body?.participantIds || existing?.participantIds,
+      30
+    );
 
     if (!startTime || !endTime) {
       return Response.json(
@@ -144,7 +192,21 @@ export async function PATCH(request, context) {
       );
     }
 
-    const users = await listUsersByIds(databases, [profile.$id, existing.employeeId]);
+    const goalAccessError = await assertGoalAccess(
+      databases,
+      profile.$id,
+      existing.employeeId,
+      linkedGoalIds
+    );
+    if (goalAccessError) {
+      return goalAccessError;
+    }
+
+    const allParticipantIds = Array.from(
+      new Set([profile.$id, existing.employeeId, ...participantIds])
+    ).slice(0, 30);
+
+    const users = await listUsersByIds(databases, allParticipantIds);
     const manager = users.find((item) => item.$id === profile.$id);
     const employee = users.find((item) => item.$id === existing.employeeId);
 
@@ -156,7 +218,10 @@ export async function PATCH(request, context) {
       return Response.json({ error: "Manager profile email is missing." }, { status: 400 });
     }
 
-    const attendees = [employee.email, manager.email];
+    const attendeeEmails = users
+      .map((item) => String(item?.email || "").trim())
+      .filter(Boolean);
+    const attendees = Array.from(new Set([employee.email, manager.email, ...attendeeEmails]));
 
     const event = await createMeetCalendarEvent(databases, profile.$id, {
       title,
@@ -183,9 +248,26 @@ export async function PATCH(request, context) {
       timezone: timeZone,
       meetLink: event.meetLink,
       eventId: event.eventId,
+      meetingType,
+      linkedGoalIds: JSON.stringify(linkedGoalIds),
+      participantIds: JSON.stringify(allParticipantIds),
+      participantEmails: JSON.stringify(attendees),
     });
 
-    return Response.json({ data: { meetingRequest: scheduled, event } });
+    await upsertMeetingMetadata(databases, requestId, {
+      linkedGoalIds,
+      participantIds: allParticipantIds,
+      participantEmails: attendees,
+    });
+
+    const withMetadata = {
+      ...scheduled,
+      linkedGoalIds,
+      participantIds: allParticipantIds,
+      participantEmails: attendees,
+    };
+
+    return Response.json({ data: { meetingRequest: withMetadata, event } });
   } catch (error) {
     return errorResponse(error);
   }

@@ -2,7 +2,7 @@ import { appwriteConfig } from "@/lib/appwrite";
 import { GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertProfileRegion, mapUserSummary } from "@/lib/teamAccess";
+import { mapUserSummary } from "@/lib/teamAccess";
 
 const PAGE_LIMIT = 100;
 
@@ -42,9 +42,7 @@ async function listAllDocuments(databases, collectionId, queries = []) {
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["region-admin"]);
-
-    const region = assertProfileRegion(profile);
+    requireRole(profile, ["leadership"]);
 
     const [users, goalsAll, updatesAll, checkInsAll] = await Promise.all([
       listAllDocuments(databases, appwriteConfig.usersCollectionId, [
@@ -61,7 +59,7 @@ export async function GET(request) {
       ]),
     ]);
 
-    const members = users.filter((item) => String(item.region || "").trim() === region);
+    const members = users;
     const managers = members.filter((item) => item.role === "manager");
     const employees = members.filter((item) => item.role === "employee");
 
@@ -143,13 +141,15 @@ export async function GET(request) {
 
     return Response.json({
       data: {
-        region,
+        region: "all",
         managers: rows,
         goals,
         progressUpdates,
         members: members.map(mapUserSummary),
         checkIns,
         cycles: uniqueSorted(goals.map((goal) => String(goal.cycleId || "").trim())),
+        deprecated: true,
+        redirectTo: "/api/leadership/overview",
       },
     });
   } catch (error) {

@@ -3,7 +3,7 @@ import { CHECKIN_STATUSES, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { buildCheckInCode } from "@/lib/cycle";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { assertManagerCanAccessEmployee, getManagerTeamEmployeeIds } from "@/lib/teamAccess";
 
 const VALID_STATUSES = Object.values(CHECKIN_STATUSES);
 
@@ -82,7 +82,7 @@ async function listManagerCycleRatingsSafe(databases) {
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee", "manager", "hr"]);
+    requireRole(profile, ["employee", "manager", "leadership", "hr"]);
 
     const { searchParams } = new URL(request.url);
     const goalId = searchParams.get("goalId");
@@ -107,8 +107,11 @@ export async function GET(request) {
         ]
       );
       documents = result.documents;
-    } else if (profile.role === "manager") {
+    } else if (profile.role === "manager" || profile.role === "leadership") {
       await assertManagerCanAccessEmployee(databases, profile.$id, employeeId);
+      const teamEmployeeIds = await getManagerTeamEmployeeIds(databases, profile.$id, {
+        includeFallback: true,
+      });
 
       if (scope === "self") {
         const selfResult = await databases.listDocuments(
@@ -128,11 +131,13 @@ export async function GET(request) {
             Query.orderDesc("scheduledAt"),
             Query.limit(100),
           ]),
-          databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
-            Query.equal("managerId", profile.$id),
-            Query.orderDesc("scheduledAt"),
-            Query.limit(100),
-          ]),
+          teamEmployeeIds.length > 0
+            ? databases.listDocuments(databaseId, appwriteConfig.checkInsCollectionId, [
+                Query.equal("employeeId", teamEmployeeIds),
+                Query.orderDesc("scheduledAt"),
+                Query.limit(100),
+              ])
+            : Promise.resolve({ documents: [] }),
         ]);
 
         const merged = [...selfResult.documents];
@@ -147,16 +152,20 @@ export async function GET(request) {
 
         documents = merged;
       } else {
+        if (teamEmployeeIds.length === 0) {
+          documents = [];
+        } else {
         const teamResult = await databases.listDocuments(
           databaseId,
           appwriteConfig.checkInsCollectionId,
           [
-            Query.equal("managerId", profile.$id),
+            Query.equal("employeeId", teamEmployeeIds),
             Query.orderDesc("scheduledAt"),
             Query.limit(100),
           ]
         );
         documents = teamResult.documents;
+        }
       }
     } else {
       const result = await databases.listDocuments(
@@ -264,7 +273,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee", "manager"]);
+    requireRole(profile, ["employee", "manager", "leadership"]);
 
     const body = await request.json();
     const goalId = (body.goalId || "").trim();
@@ -298,7 +307,7 @@ export async function POST(request) {
     const goalOwnerId = String(goal.employeeId || "").trim();
     const goalManagerId = String(goal.managerId || "").trim();
     const isManagerSelfGoal =
-      profile.role === "manager" && goalOwnerId === String(profile.$id || "").trim();
+      (profile.role === "manager" || profile.role === "leadership") && goalOwnerId === String(profile.$id || "").trim();
 
     const managerId = managerIdInput || (isManagerSelfGoal ? String(profile.$id || "").trim() : goalManagerId);
 
@@ -316,8 +325,10 @@ export async function POST(request) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }
 
-    if (profile.role === "manager" && !isGoalManager && !isGoalOwner) {
-      return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
+    if (profile.role === "manager" || profile.role === "leadership") {
+      if (!isGoalManager && !isGoalOwner) {
+        await assertManagerCanAccessEmployee(databases, profile.$id, goalOwnerId);
+      }
     }
 
     if (employeeId !== goalOwnerId) {

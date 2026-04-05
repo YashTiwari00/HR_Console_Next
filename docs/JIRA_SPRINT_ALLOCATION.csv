@@ -1,0 +1,58 @@
+Summary,Sprint
+Create timeline aggregate API,Sprint 1
+Implement timeline state resolver,Sprint 1
+Add timeline telemetry events,Sprint 1
+Introduce framework policy schema,Sprint 1
+Expand framework support,Sprint 1
+Add HR framework policy API,Sprint 1
+Build employee timeline page v1,Sprint 2
+Build manager and HR timeline pages v1,Sprint 2
+Add deep-link compatibility for existing pages,Sprint 2
+Update goal validation to policy-driven checks,Sprint 2
+Add migration-safe handling for existing goals,Sprint 2
+Create notification entities,Sprint 2
+Build notification scheduler,Sprint 2
+Implement email dispatcher abstraction,Sprint 2
+Build in-app pending action feed,Sprint 2
+Add HR notification policy UI,Sprint 2
+Create lineage edge schema,Sprint 2
+Implement lineage read API,Sprint 2
+Add contribution validation guardrails,Sprint 2
+Build lineage UI panel,Sprint 2
+Add legacy fallback rendering for lineage,Sprint 2
+Define shared explainable AI response contract,Sprint 3
+Apply explainable contract to goal suggestion API,Sprint 3
+Apply explainable contract to check-in summary API,Sprint 3
+Add explainability drawer component,Sprint 3
+Create calibration session entities,Sprint 3
+Build calibration API surface,Sprint 3
+Add calibration audit timeline,Sprint 3
+Build pre-check-in AI agenda service,Sprint 4
+Add commitments extractor after meeting,Sprint 4
+Implement manager coaching quality score,Sprint 4
+Add tone guidance suggestions,Sprint 4
+Add AI usage counters in user flows,Sprint 4
+Build HR AI governance panel,Sprint 4
+Add AI budget warning thresholds,Sprint 4
+Create calibration distribution views,Sprint 4
+Introduce leadership role and route protection,Sprint 5
+Build leadership overview API,Sprint 5
+Create leadership dashboard v1,Sprint 5
+Add metric definition registry,Sprint 5
+Define matrix reviewer data model,Sprint 5
+Build matrix feedback capture flow,Sprint 5
+Blend matrix feedback into manager summary,Sprint 5
+Define goal import template and parser,Sprint 6
+Implement import preview endpoint,Sprint 6
+Implement idempotent commit endpoint,Sprint 6
+Add import audit and rollback report,Sprint 6
+Create 9-box model and readiness schema,Sprint 6
+Build HR 9-box dashboard,Sprint 6
+Build leadership succession snapshot,Sprint 6
+Run authorization regression matrix,Sprint 6
+Add audit trail coverage checks,Sprint 6
+Complete data minimization review,Sprint 6
+Define SLO dashboards and alerts,Sprint 6
+Create incident runbooks,Sprint 6
+Execute backup restore drill,Sprint 6
+Define rollback triggers and ownership,Sprint 6

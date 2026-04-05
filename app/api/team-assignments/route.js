@@ -21,8 +21,8 @@ async function validateAssignmentSubjects(databases, employeeId, managerId) {
     return { error: "target employeeId must belong to an employee profile.", status: 400 };
   }
 
-  if (manager.role !== "manager") {
-    return { error: "target managerId must belong to a manager profile.", status: 400 };
+  if (!["manager", "leadership"].includes(String(manager.role || "").trim())) {
+    return { error: "target managerId must belong to a manager or leadership profile.", status: 400 };
   }
 
   return { employee, manager };
@@ -60,7 +60,7 @@ async function patchEmployeeManager(databases, employeeId, managerId, hrUserId, 
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const { searchParams } = new URL(request.url);
     const managerId = (searchParams.get("managerId") || "").trim();
@@ -85,7 +85,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const body = await request.json();
     const employeeId = (body.employeeId || "").trim();

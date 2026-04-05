@@ -24,6 +24,36 @@ export interface GoalItem {
   managerFinalRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
   managerFinalRatedAt?: string | null;
   ratingVisibleToEmployee?: boolean;
+  parentGoalId?: string;
+  cascadeSourceGoalId?: string;
+  goalConversationId?: string;
+  goalLevel?: "business" | "manager" | "employee" | number;
+  contributionPercent?: number;
+  lineageRef?: string;
+}
+
+export interface GoalCascadePreviewItem {
+  employeeId: string;
+  contributionPercent: number;
+}
+
+export interface GoalCascadeResponse {
+  data: GoalItem[];
+  meta?: {
+    parentGoalId?: string;
+    splitStrategy?: string;
+    totalContributionPercent?: number;
+  };
+}
+
+export interface GoalLineageNode extends GoalItem {
+  children?: GoalLineageNode[];
+}
+
+export interface GoalLineageData {
+  ancestors: GoalLineageNode[];
+  currentGoal: GoalLineageNode;
+  descendants: GoalLineageNode[];
 }
 
 export interface CheckInItem {
@@ -97,6 +127,14 @@ export interface ManagerAssignmentItem {
   managerName: string;
   managerEmail: string;
   department?: string;
+  parentManagerId?: string;
+  parentManagerName?: string;
+  parentManagerEmail?: string;
+  managerAssignedAt?: string | null;
+  managerAssignedBy?: string;
+  assignmentVersion?: number;
+  assignedByName?: string;
+  assignedByEmail?: string;
   hrId?: string;
   hrName?: string;
   hrEmail?: string;
@@ -107,6 +145,7 @@ export interface ManagerAssignmentItem {
 
 export interface ManagerAssignmentsMeta {
   hrUsers: TeamMemberItem[];
+  managerUsers?: TeamMemberItem[];
   totalManagers: number;
   unassignedManagers: number;
 }
@@ -165,7 +204,7 @@ export interface HrManagerDetail {
   employees: HrEmployeeDrilldown[];
 }
 
-export type AppRole = "employee" | "manager" | "hr" | "region-admin";
+export type AppRole = "employee" | "manager" | "hr" | "leadership" | "region-admin";
 
 export type CheckInApprovalDecision = "approved" | "rejected" | "needs_changes";
 
@@ -229,6 +268,113 @@ export interface RegionAdminOverview {
   cycles: string[];
 }
 
+export interface LeadershipMetricDefinition {
+  key: string;
+  label: string;
+  description: string;
+  category: "coverage" | "quality" | "risk";
+}
+
+export interface LeadershipOverview {
+  summary: {
+    employees: number;
+    managers: number;
+    departments: number;
+    activeGoals: number;
+    avgProgressPercent: number;
+    checkInCompletionRate: number;
+    atRiskGoals: number;
+    activeCycles: number;
+  };
+  trendsByCycle: Array<{
+    cycleId: string;
+    goals: number;
+    avgProgressPercent: number;
+    checkInCompletionRate: number;
+    atRiskGoals: number;
+  }>;
+  departmentRows: Array<{
+    department: string;
+    employees: number;
+    managers: number;
+    goals: number;
+    avgProgressPercent: number;
+    checkInCompletionRate: number;
+    atRiskGoals: number;
+  }>;
+  managerQualityBands: Array<{
+    band: "strong" | "watch" | "critical";
+    managers: number;
+  }>;
+  metricDefinitions: LeadershipMetricDefinition[];
+  asOf: string;
+}
+
+export interface HrNineBoxEmployeeItem {
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  managerId?: string | null;
+  cycleId?: string | null;
+  scoreX100: number;
+  scoreLabel?: string | null;
+  trendLabel: "new" | "stable" | "improving" | "declining";
+  trendDeltaPercent: number;
+  performanceBand: "high" | "medium" | "low";
+  potentialBand: "high" | "medium" | "low";
+  readinessBand: "ready_now" | "ready_1_2_years" | "emerging";
+  computedAt?: string | null;
+}
+
+export interface HrNineBoxSnapshot {
+  cycleId?: string | null;
+  department?: string | null;
+  totalEmployees: number;
+  readinessCounts: {
+    ready_now: number;
+    ready_1_2_years: number;
+    emerging: number;
+  };
+  matrixRows: Array<{
+    boxKey: string;
+    potentialBand: "high" | "medium" | "low";
+    performanceBand: "high" | "medium" | "low";
+    count: number;
+  }>;
+  employees: HrNineBoxEmployeeItem[];
+}
+
+export interface LeadershipSuccessionSnapshot {
+  cycleId?: string | null;
+  totalEmployees: number;
+  readinessCounts: {
+    ready_now: number;
+    ready_1_2_years: number;
+    emerging: number;
+  };
+  matrixRows: Array<{
+    boxKey: string;
+    potentialBand: "high" | "medium" | "low";
+    performanceBand: "high" | "medium" | "low";
+    count: number;
+  }>;
+  departmentBenchStrength: Array<{
+    department: string;
+    totalEmployees: number;
+    readyNow: number;
+    readySoon: number;
+    readyPct: number;
+  }>;
+  riskDepartments: Array<{
+    department: string;
+    totalEmployees: number;
+    readyNow: number;
+    readySoon: number;
+    readyPct: number;
+  }>;
+  asOf: string;
+}
+
 async function getJwtHeader() {
   try {
     const jwt = await account.createJWT();
@@ -251,6 +397,46 @@ export interface GoalFeedbackItem {
   managerId: string;
 }
 
+export interface MatrixAssignmentItem {
+  id: string;
+  employeeId: string;
+  primaryManagerId: string;
+  reviewerId: string;
+  goalId?: string | null;
+  cycleId: string;
+  influenceWeight: number;
+  status: "active" | "inactive";
+  assignedBy: string;
+  assignedAt: string;
+  notes?: string;
+}
+
+export interface MatrixFeedbackItem {
+  id: string;
+  assignmentId: string;
+  employeeId: string;
+  reviewerId: string;
+  goalId?: string | null;
+  cycleId: string;
+  feedbackText: string;
+  suggestedRating?: number | null;
+  confidence?: "low" | "medium" | "high";
+  createdAt: string;
+}
+
+export interface MatrixSummaryItem {
+  employeeId: string;
+  cycleId?: string;
+  goalId?: string;
+  reviewerCount: number;
+  responseCount: number;
+  influenceWeightTotal: number;
+  weightedRating: number | null;
+  keySignals: string[];
+  assignmentCount: number;
+  pendingCount: number;
+}
+
 export interface GoalSuggestion {
   title: string;
   description: string;
@@ -259,7 +445,33 @@ export interface GoalSuggestion {
   explainability?: {
     source: string;
     confidence: string;
+    whyFactors?: string[];
+    timeWindow?: string;
   };
+}
+
+export interface BulkGoalInput {
+  title: string;
+  description: string;
+  weight: number;
+}
+
+export interface GoalAllocationSuggestion {
+  suggestedUsers: number;
+  split: number[];
+}
+
+export interface BulkGoalAnalysisItem {
+  originalTitle: string;
+  improvedTitle: string;
+  improvedDescription: string;
+  suggestedMetrics: string;
+  allocationSuggestions: GoalAllocationSuggestion[];
+}
+
+export interface BulkGoalAnalysisResponse {
+  goals: BulkGoalAnalysisItem[];
+  fallbackUsed: boolean;
 }
 
 export interface CheckInSummarySuggestion {
@@ -270,11 +482,330 @@ export interface CheckInSummarySuggestion {
   explainability?: {
     source: string;
     confidence: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
+}
+
+export interface CheckInAgendaSuggestion {
+  agenda: string[];
+  focusQuestions: string[];
+  riskSignals: string[];
+  explainability?: {
+    source: string;
+    confidence: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
+  usage?: {
+    cap: number;
+    used: number;
+    remaining: number;
+    featureType: string;
+    cycleId: string;
+  };
+}
+
+export interface CheckInIntelligenceSuggestion {
+  summary: string;
+  commitments: Array<{
+    owner: string;
+    action: string;
+    dueDate?: string | null;
+  }>;
+  coachingScore: {
+    score: number;
+    reasoning: string[];
+  };
+  toneGuidance: string[];
+  revisedManagerFeedback: string;
+  explainability?: {
+    source: string;
+    confidence: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
+  usage?: {
+    cap: number;
+    used: number;
+    remaining: number;
+    featureType: string;
+    cycleId: string;
+  };
+}
+
+export interface AiUsageFeature {
+  featureType: string;
+  cap: number;
+  used: number;
+  remaining: number;
+  warning: boolean;
+}
+
+export interface AiUsageSnapshot {
+  cycleId?: string | null;
+  features: AiUsageFeature[];
+}
+
+export interface HrAiGovernanceOverview {
+  cycleId?: string | null;
+  totalsByFeature: Array<{
+    featureType: string;
+    capPerUser: number;
+    totalUsed: number;
+    nearCapUsers: number;
+    rows: number;
+  }>;
+  topUsers: Array<{
+    userId: string;
+    featureType: string;
+    cycleId?: string;
+    used: number;
+    cap: number;
+    remaining: number;
+    nearCap: boolean;
+    warning: boolean;
+    lastUsedAt?: string | null;
+  }>;
+}
+
+export interface LifecycleTimelineEvent {
+  id: string;
+  type:
+    | "goal_created"
+    | "goal_updated"
+    | "progress_updated"
+    | "checkin_planned"
+    | "checkin_completed"
+    | "meeting_scheduled"
+    | "meeting_intelligence_ready";
+  at: string;
+  goalId?: string;
+  employeeId?: string;
+  managerId?: string;
+  cycleId?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ConversationalGoalEngineResponse {
+  assistantReply: string;
+  questions: string[];
+  suggestedGoals: Array<
+    GoalSuggestion & {
+      cascadeHint?: string;
+    }
+  >;
+  goalPatch: Record<string, unknown>;
+  nextActions: string[];
+  contextWindow?: {
+    goals: number;
+    recentProgress: number;
+    checkIns: number;
+  };
+  usage?: {
+    cap: number;
+    used: number;
+    remaining: number;
+    featureType: string;
+    cycleId: string;
+  };
+  conversation?: {
+    conversationId: string | null;
+    parentGoalId: string | null;
+    targetEmployeeId: string;
+  };
+}
+
+export type TrajectoryTrendLabel = "new" | "stable" | "improving" | "declining";
+
+export interface EmployeeTrajectoryCyclePoint {
+  cycleId: string;
+  cycleName: string;
+  closedAt: string | null;
+  computedAt: string | null;
+  scoreX100: number | null;
+  scoreLabel: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+}
+
+export interface EmployeeTrajectoryData {
+  employeeId: string;
+  cycles: EmployeeTrajectoryCyclePoint[];
+  trendLabel: TrajectoryTrendLabel;
+  trendDeltaPercent: number;
+}
+
+export interface NotificationFeedItem {
+  id: string;
+  triggerType: string;
+  channel: string;
+  deliveryStatus: string;
+  title: string;
+  message: string;
+  actionUrl?: string;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface NotificationTemplateItem {
+  id: string;
+  name: string;
+  triggerType: string;
+  channel: string;
+  subject?: string;
+  body: string;
+  isEnabled: boolean;
+  suppressWindowMinutes: number;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export interface NotificationJobItem {
+  id: string;
+  userId: string;
+  templateId?: string | null;
+  triggerType: string;
+  channel: string;
+  status: string;
+  scheduledAt: string;
+  attemptCount: number;
+  maxAttempts: number;
+  dedupeKey?: string;
+  payload?: Record<string, unknown>;
+  lastError?: string;
+}
+
+export interface CalibrationSessionItem {
+  id: string;
+  name: string;
+  cycleId: string;
+  status: "draft" | "active" | "closed";
+  scope?: string;
+  notes?: string;
+  version: number;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalibrationDecisionItem {
+  id: string;
+  sessionId: string;
+  employeeId: string;
+  managerId?: string | null;
+  previousRating?: number | null;
+  proposedRating?: number | null;
+  finalRating?: number | null;
+  rationale: string;
+  changed: boolean;
+  version: number;
+  decidedBy?: string | null;
+  decidedAt: string;
+}
+
+export interface CalibrationTimelineItem {
+  id: string;
+  eventType: string;
+  at: string;
+  actorId?: string | null;
+  employeeId?: string | null;
+  summary: string;
+  payload?: {
+    previousRating?: number | null;
+    proposedRating?: number | null;
+    finalRating?: number | null;
+    changed?: boolean;
+    rationale?: string;
+    version?: number;
+  };
+}
+
+function toTrajectoryTrendLabel(value: unknown): TrajectoryTrendLabel {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "improving") return "improving";
+  if (text === "declining") return "declining";
+  if (text === "stable") return "stable";
+  return "new";
+}
+
+function toNumberOrNull(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function toTrajectoryScoreLabel(
+  value: unknown
+): EmployeeTrajectoryCyclePoint["scoreLabel"] {
+  const text = String(value || "").trim().toUpperCase();
+  if (text === "EE") return "EE";
+  if (text === "DE") return "DE";
+  if (text === "ME") return "ME";
+  if (text === "SME") return "SME";
+  if (text === "NI") return "NI";
+  return null;
+}
+
+function normalizeTrajectoryData(payload: unknown, requestedEmployeeId?: string): EmployeeTrajectoryData {
+  const raw = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const rawCycles = Array.isArray(raw.cycles) ? raw.cycles : [];
+
+  const cycles: EmployeeTrajectoryCyclePoint[] = rawCycles
+    .map((item) => {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const scoreRaw = toNumberOrNull(row.scoreX100);
+
+      return {
+        cycleId: String(row.cycleId || "").trim(),
+        cycleName: String(row.cycleName || row.cycleId || "").trim(),
+        closedAt: typeof row.closedAt === "string" ? row.closedAt : null,
+        computedAt: typeof row.computedAt === "string" ? row.computedAt : null,
+        scoreX100: scoreRaw === null ? null : Math.max(0, Math.round(scoreRaw)),
+        scoreLabel: toTrajectoryScoreLabel(row.scoreLabel),
+      };
+    })
+    .filter((row) => Boolean(row.cycleId) || Boolean(row.computedAt) || row.scoreX100 !== null);
+
+  const delta = toNumberOrNull(raw.trendDeltaPercent);
+
+  return {
+    employeeId: String(raw.employeeId || requestedEmployeeId || "").trim(),
+    cycles,
+    trendLabel: toTrajectoryTrendLabel(raw.trendLabel),
+    trendDeltaPercent: delta === null ? 0 : Number(delta.toFixed(2)),
   };
 }
 
 export type MeetRequestStatus = "pending" | "scheduled" | "rejected" | "canceled";
 export type MeetRequestSource = "employee_request" | "manager_direct";
+export type MeetingType = "individual" | "group";
+
+export interface MeetingActionItem {
+  owner: string;
+  action: string;
+  dueDate?: string | null;
+}
+
+export interface MeetingGoalInsight {
+  goalId: string;
+  insight: string;
+  impact?: "positive" | "neutral" | "risk";
+}
+
+export interface MeetingIntelligenceReport {
+  transcriptText: string;
+  summary: string;
+  keyTakeaways: string[];
+  actionItems: MeetingActionItem[];
+  goalInsights: MeetingGoalInsight[];
+  generatedAt: string;
+}
+
+export interface MeetingChatAnswer {
+  answer: string;
+  citations: string[];
+}
 
 export interface GoogleTokenStatus {
   connected: boolean;
@@ -327,6 +858,100 @@ export interface MeetRequestItem {
   meetLink?: string;
   eventId?: string;
   timezone: string;
+  linkedGoalIds?: string[];
+  participantIds?: string[];
+  participantEmails?: string[];
+  meetingType?: MeetingType;
+  transcriptText?: string;
+  transcriptSource?: string;
+  intelligenceGeneratedAt?: string;
+  intelligenceSummary?: string;
+  intelligenceKeyTakeaways?: string[];
+  intelligenceActionItems?: MeetingActionItem[];
+  intelligenceGoalInsights?: MeetingGoalInsight[];
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  if (text.startsWith("[") || text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item || "").trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // Fall through to comma-separated parsing.
+    }
+  }
+
+  return text
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseMeetingActionItems(value: unknown): MeetingActionItem[] {
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item) => ({
+        owner: String(item?.owner || "").trim(),
+        action: String(item?.action || "").trim(),
+        dueDate: item?.dueDate ? String(item.dueDate) : null,
+      }))
+      .filter((item) => item.owner && item.action);
+  } catch {
+    return [];
+  }
+}
+
+function parseMeetingGoalInsights(value: unknown): MeetingGoalInsight[] {
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item) => ({
+        goalId: String(item?.goalId || "").trim(),
+        insight: String(item?.insight || "").trim(),
+        impact: String(item?.impact || "").trim() as MeetingGoalInsight["impact"],
+      }))
+      .filter((item) => item.goalId && item.insight);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeMeetRequestItem(input: unknown): MeetRequestItem {
+  const row = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  return {
+    ...(row as unknown as MeetRequestItem),
+    linkedGoalIds: parseStringArray(row.linkedGoalIds),
+    participantIds: parseStringArray(row.participantIds),
+    participantEmails: parseStringArray(row.participantEmails),
+    meetingType: String(row.meetingType || "").trim() === "group" ? "group" : "individual",
+    intelligenceKeyTakeaways: parseStringArray(row.intelligenceKeyTakeaways),
+    intelligenceActionItems: parseMeetingActionItems(row.intelligenceActionItems),
+    intelligenceGoalInsights: parseMeetingGoalInsights(row.intelligenceGoalInsights),
+  };
 }
 
 export async function requestJson(url: string, init?: RequestInit) {
@@ -489,7 +1114,7 @@ export async function fetchCheckIns(scope?: ManagerScope, employeeId?: string) {
 export async function fetchMeetRequests(employeeId?: string) {
   const query = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
   const payload = await requestJson(`/api/meet-requests${query}`);
-  return (payload?.data || []) as MeetRequestItem[];
+  return ((payload?.data || []) as unknown[]).map((item) => normalizeMeetRequestItem(item));
 }
 
 export async function createMeetRequest(input: {
@@ -498,13 +1123,16 @@ export async function createMeetRequest(input: {
   proposedStartTime?: string;
   proposedEndTime?: string;
   timeZone?: string;
+  linkedGoalIds?: string[];
+  meetingType?: MeetingType;
+  participantIds?: string[];
 }) {
   const payload = await requestJson("/api/meet-requests", {
     method: "POST",
     body: JSON.stringify(input),
   });
 
-  return payload?.data as MeetRequestItem;
+  return normalizeMeetRequestItem(payload?.data);
 }
 
 export async function updateMeetRequestAction(
@@ -519,6 +1147,9 @@ export async function updateMeetRequestAction(
         description?: string;
         managerNotes?: string;
         timeZone?: string;
+        linkedGoalIds?: string[];
+        meetingType?: MeetingType;
+        participantIds?: string[];
       }
 ) {
   const payload = await requestJson(`/api/meet-requests/${encodeURIComponent(requestId)}`, {
@@ -585,13 +1216,19 @@ export async function createManagerDirectMeeting(input: {
   description?: string;
   managerNotes?: string;
   timeZone?: string;
+  linkedGoalIds?: string[];
+  meetingType?: MeetingType;
+  participantIds?: string[];
 }) {
   const payload = await requestJson("/api/calendar/create-meeting", {
     method: "POST",
     body: JSON.stringify(input),
   });
 
-  return payload?.data as {
+  return {
+    ...(payload?.data || {}),
+    meeting: normalizeMeetRequestItem(payload?.data?.meeting),
+  } as {
     meeting: MeetRequestItem;
     event: {
       eventId: string;
@@ -600,6 +1237,74 @@ export async function createManagerDirectMeeting(input: {
       status: string;
     };
   };
+}
+
+export async function generateMeetingIntelligence(
+  meetingId: string,
+  input: {
+    transcriptText: string;
+    transcriptSource?: string;
+  }
+) {
+  const payload = await requestJson(
+    `/api/meet-requests/${encodeURIComponent(meetingId)}/intelligence`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    }
+  );
+
+  return {
+    meeting: normalizeMeetRequestItem(payload?.data?.meeting),
+    report: (payload?.data?.report || null) as MeetingIntelligenceReport,
+  };
+}
+
+export async function fetchMeetingIntelligence(meetingId: string) {
+  const payload = await requestJson(
+    `/api/meet-requests/${encodeURIComponent(meetingId)}/intelligence`
+  );
+  return {
+    meeting: normalizeMeetRequestItem(payload?.data?.meeting),
+    report: (payload?.data?.report || null) as MeetingIntelligenceReport | null,
+  };
+}
+
+export async function askMeetingQuestion(meetingId: string, question: string) {
+  const payload = await requestJson(`/api/meet-requests/${encodeURIComponent(meetingId)}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+  return (payload?.data || {}) as MeetingChatAnswer;
+}
+
+export async function downloadMeetingReport(meetingId: string) {
+  const jwtHeader = await getJwtHeader();
+  const headers = new Headers();
+
+  Object.entries(jwtHeader).forEach(([key, value]) => {
+    headers.set(key, value);
+  });
+
+  const response = await fetch(`/api/meet-requests/${encodeURIComponent(meetingId)}/download`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload?.error || "Unable to download meeting report.");
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `meeting-report-${meetingId}.txt`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fetchProgressUpdates(
@@ -620,6 +1325,92 @@ export async function fetchGoalFeedback(
   const query = withListQuery({ goalId, scope, employeeId });
   const payload = await requestJson(`/api/goals/feedback${query}`);
   return (payload.data || []) as GoalFeedbackItem[];
+}
+
+export async function fetchMatrixAssignments(input: {
+  employeeId?: string;
+  reviewerId?: string;
+  cycleId?: string;
+  goalId?: string;
+} = {}) {
+  const params = new URLSearchParams();
+
+  if (input.employeeId) params.set("employeeId", input.employeeId);
+  if (input.reviewerId) params.set("reviewerId", input.reviewerId);
+  if (input.cycleId) params.set("cycleId", input.cycleId);
+  if (input.goalId) params.set("goalId", input.goalId);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/matrix-reviewers/assignments${query}`);
+  return (payload?.data || []) as MatrixAssignmentItem[];
+}
+
+export async function createMatrixAssignment(input: {
+  employeeId: string;
+  reviewerId: string;
+  cycleId: string;
+  influenceWeight: number;
+  goalId?: string;
+  notes?: string;
+  status?: "active" | "inactive";
+}) {
+  const payload = await requestJson("/api/matrix-reviewers/assignments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as MatrixAssignmentItem;
+}
+
+export async function fetchMatrixFeedback(input: {
+  assignmentId?: string;
+  employeeId?: string;
+  reviewerId?: string;
+  cycleId?: string;
+  goalId?: string;
+} = {}) {
+  const params = new URLSearchParams();
+
+  if (input.assignmentId) params.set("assignmentId", input.assignmentId);
+  if (input.employeeId) params.set("employeeId", input.employeeId);
+  if (input.reviewerId) params.set("reviewerId", input.reviewerId);
+  if (input.cycleId) params.set("cycleId", input.cycleId);
+  if (input.goalId) params.set("goalId", input.goalId);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/matrix-reviewers/feedback${query}`);
+  return (payload?.data || []) as MatrixFeedbackItem[];
+}
+
+export async function submitMatrixFeedback(input: {
+  assignmentId: string;
+  employeeId: string;
+  cycleId: string;
+  feedbackText: string;
+  suggestedRating?: number;
+  confidence?: "low" | "medium" | "high";
+  goalId?: string;
+}) {
+  const payload = await requestJson("/api/matrix-reviewers/feedback", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as MatrixFeedbackItem;
+}
+
+export async function fetchMatrixSummary(input: {
+  employeeId: string;
+  cycleId?: string;
+  goalId?: string;
+}) {
+  const params = new URLSearchParams();
+  params.set("employeeId", input.employeeId);
+  if (input.cycleId) params.set("cycleId", input.cycleId);
+  if (input.goalId) params.set("goalId", input.goalId);
+
+  const payload = await requestJson(`/api/matrix-reviewers/summary?${params.toString()}`);
+  return (payload?.data || null) as MatrixSummaryItem | null;
 }
 
 export async function fetchTeamMembers(
@@ -676,11 +1467,17 @@ export async function removeEmployeeManagerAssignment(employeeId: string) {
   return payload?.data as TeamMemberItem;
 }
 
-export async function fetchManagerAssignments(input?: { hrId?: string; unassigned?: boolean }) {
+export async function fetchManagerAssignments(input?: {
+  parentManagerId?: string;
+  hrId?: string;
+  unassigned?: boolean;
+}) {
   const params = new URLSearchParams();
 
-  if (input?.hrId) {
-    params.set("hrId", input.hrId);
+  const parentManagerId = input?.parentManagerId || input?.hrId;
+
+  if (parentManagerId) {
+    params.set("parentManagerId", parentManagerId);
   }
 
   if (typeof input?.unassigned === "boolean") {
@@ -693,14 +1490,18 @@ export async function fetchManagerAssignments(input?: { hrId?: string; unassigne
   return {
     data: (payload?.data || []) as ManagerAssignmentItem[],
     meta: {
-      hrUsers: (payload?.meta?.hrUsers || []) as TeamMemberItem[],
+      hrUsers: ((payload?.meta?.managerUsers || payload?.meta?.hrUsers || []) as TeamMemberItem[]),
+      managerUsers: ((payload?.meta?.managerUsers || payload?.meta?.hrUsers || []) as TeamMemberItem[]),
       totalManagers: Number(payload?.meta?.totalManagers || 0),
       unassignedManagers: Number(payload?.meta?.unassignedManagers || 0),
     },
   } as ManagerAssignmentsResponse;
 }
 
-export async function assignManagerToHr(input: { managerId: string; hrId: string }) {
+export async function assignManagerToParentManager(input: {
+  managerId: string;
+  parentManagerId: string;
+}) {
   const payload = await requestJson("/api/manager-assignments", {
     method: "POST",
     body: JSON.stringify(input),
@@ -709,21 +1510,37 @@ export async function assignManagerToHr(input: { managerId: string; hrId: string
   return payload?.data as ManagerAssignmentItem;
 }
 
-export async function updateManagerHrAssignment(managerId: string, hrId: string) {
+export async function updateManagerParentAssignment(managerId: string, parentManagerId: string) {
   const payload = await requestJson(`/api/manager-assignments/${encodeURIComponent(managerId)}`, {
     method: "PUT",
-    body: JSON.stringify({ hrId }),
+    body: JSON.stringify({ parentManagerId }),
   });
 
   return payload?.data as ManagerAssignmentItem;
 }
 
-export async function removeManagerHrAssignment(managerId: string) {
+export async function removeManagerParentAssignment(managerId: string) {
   const payload = await requestJson(`/api/manager-assignments/${encodeURIComponent(managerId)}`, {
     method: "DELETE",
   });
 
   return payload?.data as ManagerAssignmentItem;
+}
+
+// Backward-compatible aliases for older call sites.
+export async function assignManagerToHr(input: { managerId: string; hrId: string }) {
+  return assignManagerToParentManager({
+    managerId: input.managerId,
+    parentManagerId: input.hrId,
+  });
+}
+
+export async function updateManagerHrAssignment(managerId: string, hrId: string) {
+  return updateManagerParentAssignment(managerId, hrId);
+}
+
+export async function removeManagerHrAssignment(managerId: string) {
+  return removeManagerParentAssignment(managerId);
 }
 
 export async function fetchMe() {
@@ -739,6 +1556,42 @@ export async function fetchHrManagers() {
 export async function fetchRegionAdminOverview() {
   const payload = await requestJson("/api/region-admin/overview");
   return (payload?.data || {}) as RegionAdminOverview;
+}
+
+export async function fetchLeadershipOverview() {
+  const payload = await requestJson("/api/leadership/overview");
+  return (payload?.data || {}) as LeadershipOverview;
+}
+
+export async function fetchHrNineBoxSnapshot(input?: {
+  cycleId?: string;
+  department?: string;
+}) {
+  const params = new URLSearchParams();
+  if (input?.cycleId) params.set("cycleId", input.cycleId);
+  if (input?.department) params.set("department", input.department);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/hr/9-box${query}`);
+  return (payload?.data || {
+    totalEmployees: 0,
+    readinessCounts: { ready_now: 0, ready_1_2_years: 0, emerging: 0 },
+    matrixRows: [],
+    employees: [],
+  }) as HrNineBoxSnapshot;
+}
+
+export async function fetchLeadershipSuccessionSnapshot(cycleId?: string) {
+  const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : "";
+  const payload = await requestJson(`/api/leadership/succession${query}`);
+  return (payload?.data || {
+    totalEmployees: 0,
+    readinessCounts: { ready_now: 0, ready_1_2_years: 0, emerging: 0 },
+    matrixRows: [],
+    departmentBenchStrength: [],
+    riskDepartments: [],
+    asOf: new Date().toISOString(),
+  }) as LeadershipSuccessionSnapshot;
 }
 
 export async function fetchHrManagerDetail(managerId: string) {
@@ -886,6 +1739,49 @@ export async function getGoalSuggestions(input: {
   return (payload?.data?.suggestions || []) as GoalSuggestion[];
 }
 
+export async function getBulkGoalAnalysis(input: {
+  goals: BulkGoalInput[];
+  role: "manager" | "employee";
+  cycleId?: string;
+}) {
+  const payload = await requestJson("/api/ai/analyze-goals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  const goals = Array.isArray(payload?.goals)
+    ? payload.goals.map((goal: unknown) => {
+        const item = (goal || {}) as Record<string, unknown>;
+
+        return {
+          originalTitle: String(item.originalTitle || "").trim(),
+          improvedTitle: String(item.improvedTitle || "").trim(),
+          improvedDescription: String(item.improvedDescription || "").trim(),
+          suggestedMetrics: String(item.suggestedMetrics || "").trim(),
+          allocationSuggestions: Array.isArray(item.allocationSuggestions)
+            ? item.allocationSuggestions.map((allocation: unknown) => {
+                const normalized = (allocation || {}) as Record<string, unknown>;
+
+                return {
+                  suggestedUsers: Number.parseInt(String(normalized.suggestedUsers || "1"), 10) || 1,
+                  split: Array.isArray(normalized.split)
+                    ? normalized.split
+                        .map((value: unknown) => Number.parseInt(String(value), 10))
+                        .filter((value: number) => Number.isInteger(value) && value >= 0)
+                    : [],
+                };
+              })
+            : [],
+        };
+      })
+    : [];
+
+  return {
+    goals,
+    fallbackUsed: Boolean(payload?.fallbackUsed),
+  } as BulkGoalAnalysisResponse;
+}
+
 export async function getCheckInSummarySuggestion(input: {
   cycleId: string;
   notes: string;
@@ -897,6 +1793,350 @@ export async function getCheckInSummarySuggestion(input: {
   });
 
   return payload?.data as CheckInSummarySuggestion;
+}
+
+export async function getCheckInAgendaSuggestion(input: {
+  cycleId: string;
+  goalTitle: string;
+  employeeNotes?: string;
+  scheduledAt?: string;
+}) {
+  const payload = await requestJson("/api/ai/checkin-agenda", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as CheckInAgendaSuggestion;
+}
+
+export async function getCheckInIntelligenceSuggestion(input: {
+  cycleId: string;
+  notes: string;
+  goalTitle?: string;
+}) {
+  const payload = await requestJson("/api/ai/checkin-intelligence", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as CheckInIntelligenceSuggestion;
+}
+
+export async function fetchAiUsageSnapshot(cycleId?: string) {
+  const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : "";
+  const payload = await requestJson(`/api/ai/usage${query}`);
+  return (payload?.data || { features: [] }) as AiUsageSnapshot;
+}
+
+export async function fetchHrAiGovernanceOverview(cycleId?: string) {
+  const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : "";
+  const payload = await requestJson(`/api/hr/ai-governance/overview${query}`);
+  return (payload?.data || { totalsByFeature: [], topUsers: [] }) as HrAiGovernanceOverview;
+}
+
+export async function getConversationalGoalSuggestions(input: {
+  cycleId: string;
+  frameworkType: string;
+  message: string;
+  conversationId?: string;
+  parentGoalId?: string;
+  targetEmployeeId?: string;
+}) {
+  const payload = await requestJson("/api/ai/conversational-goals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return (payload?.data || {}) as ConversationalGoalEngineResponse;
+}
+
+export async function fetchGoalChildren(goalId: string) {
+  const payload = await requestJson(`/api/goals/${encodeURIComponent(goalId)}/children`);
+  return (payload?.data || []) as GoalItem[];
+}
+
+function normalizeLineageNode(node: unknown): GoalLineageNode {
+  const value = (node || {}) as Record<string, unknown>;
+
+  return {
+    ...value,
+    progressPercent: value.progressPercent ?? value.processPercent ?? 0,
+    children: Array.isArray(value.children)
+      ? value.children.map((child: unknown) => normalizeLineageNode(child))
+      : [],
+  } as GoalLineageNode;
+}
+
+export async function fetchGoalLineage(goalId: string) {
+  const payload = await requestJson(`/api/goals/${encodeURIComponent(goalId)}/lineage`);
+  const data = payload?.data || {};
+
+  return {
+    ancestors: Array.isArray(data?.ancestors)
+      ? data.ancestors.map((row: unknown) => normalizeLineageNode(row))
+      : [],
+    currentGoal: normalizeLineageNode(data?.currentGoal || {}),
+    descendants: Array.isArray(data?.descendants)
+      ? data.descendants.map((row: unknown) => normalizeLineageNode(row))
+      : [],
+  } as GoalLineageData;
+}
+
+export async function createCascadedGoal(
+  goalId: string,
+  input: {
+    title: string;
+    description: string;
+    weightage: number;
+    employeeId?: string;
+    cycleId?: string;
+    frameworkType?: string;
+    dueDate?: string | null;
+    aiSuggested?: boolean;
+    lineageRef?: string;
+    goalLevel?: number;
+    goalConversationId?: string;
+    conversationId?: string;
+  }
+) {
+  const payload = await requestJson(`/api/goals/${encodeURIComponent(goalId)}/cascade`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as GoalItem;
+}
+
+export async function createGoalCascade(input: {
+  parentGoalId: string;
+  employeeIds: string[];
+  splitStrategy:
+    | "equal"
+    | {
+        type: "custom";
+        contributions:
+          | Record<string, number>
+          | GoalCascadePreviewItem[];
+      };
+}) {
+  const payload = await requestJson("/api/goals/cascade", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return {
+    data: (payload?.data || []) as GoalItem[],
+    meta: payload?.meta || {},
+  } as GoalCascadeResponse;
+}
+
+export async function fetchLifecycleTimeline(input?: {
+  cycleId?: string;
+  goalId?: string;
+  employeeId?: string;
+  scope?: ManagerScope;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+
+  if (input?.cycleId) params.set("cycleId", input.cycleId);
+  if (input?.goalId) params.set("goalId", input.goalId);
+  if (input?.employeeId) params.set("employeeId", input.employeeId);
+  if (input?.scope) params.set("scope", input.scope);
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/timeline/lifecycle${query}`);
+
+  return {
+    data: (payload?.data || []) as LifecycleTimelineEvent[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function fetchEmployeeTrajectory(employeeId?: string) {
+  const query = employeeId
+    ? `?employeeId=${encodeURIComponent(employeeId)}`
+    : "";
+
+  const payload = await requestJson(`/api/analytics/employee-trajectory${query}`);
+  return normalizeTrajectoryData(payload?.data, employeeId);
+}
+
+export async function fetchNotificationFeed(input?: { limit?: number; includeRead?: boolean }) {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+  if (typeof input?.includeRead === "boolean") params.set("includeRead", String(input.includeRead));
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/notifications/feed${query}`);
+
+  return {
+    data: (payload?.data || []) as NotificationFeedItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function markNotificationRead(eventId: string) {
+  const payload = await requestJson(
+    `/api/notifications/events/${encodeURIComponent(eventId)}/read`,
+    {
+      method: "PATCH",
+    }
+  );
+
+  return payload?.data as { id: string; isRead: boolean; readAt?: string | null };
+}
+
+export async function fetchNotificationTemplates(input?: {
+  limit?: number;
+  includeDisabled?: boolean;
+}) {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+  if (typeof input?.includeDisabled === "boolean") {
+    params.set("includeDisabled", String(input.includeDisabled));
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/notifications/templates${query}`);
+
+  return {
+    data: (payload?.data || []) as NotificationTemplateItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function createNotificationTemplate(input: {
+  name: string;
+  triggerType: string;
+  channel: string;
+  subject?: string;
+  body: string;
+  isEnabled?: boolean;
+  suppressWindowMinutes?: number;
+}) {
+  const payload = await requestJson("/api/notifications/templates", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as NotificationTemplateItem;
+}
+
+export async function fetchNotificationJobs(input?: {
+  limit?: number;
+  status?: string;
+  userId?: string;
+}) {
+  const params = new URLSearchParams();
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+  if (input?.status) params.set("status", input.status);
+  if (input?.userId) params.set("userId", input.userId);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/notifications/jobs${query}`);
+
+  return {
+    data: (payload?.data || []) as NotificationJobItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function enqueueNotificationJob(input: {
+  userId: string;
+  templateId?: string;
+  triggerType: string;
+  channel: string;
+  scheduledAt?: string;
+  dedupeKey?: string;
+  payload?: Record<string, unknown>;
+  maxAttempts?: number;
+}) {
+  const payload = await requestJson("/api/notifications/jobs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as NotificationJobItem;
+}
+
+export async function fetchCalibrationSessions(input?: {
+  cycleId?: string;
+  status?: "draft" | "active" | "closed";
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (input?.cycleId) params.set("cycleId", input.cycleId);
+  if (input?.status) params.set("status", input.status);
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/hr/calibration-sessions${query}`);
+
+  return {
+    data: (payload?.data || []) as CalibrationSessionItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function createCalibrationSession(input: {
+  name: string;
+  cycleId: string;
+  status?: "draft" | "active" | "closed";
+  scope?: string;
+  notes?: string;
+}) {
+  const payload = await requestJson("/api/hr/calibration-sessions", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as CalibrationSessionItem;
+}
+
+export async function fetchCalibrationDecisions(sessionId: string) {
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/decisions`
+  );
+
+  return {
+    data: (payload?.data || []) as CalibrationDecisionItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function createCalibrationDecision(
+  sessionId: string,
+  input: {
+    employeeId: string;
+    managerId?: string;
+    previousRating?: number | null;
+    proposedRating: number;
+    finalRating?: number | null;
+    rationale: string;
+  }
+) {
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/decisions`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    }
+  );
+
+  return payload?.data as CalibrationDecisionItem;
+}
+
+export async function fetchCalibrationTimeline(sessionId: string) {
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/timeline`
+  );
+
+  return {
+    data: (payload?.data || []) as CalibrationTimelineItem[],
+    meta: payload?.meta || {},
+  };
 }
 
 export function goalStatusVariant(status: GoalStatus) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { BulkGoalDashboardImportCard, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
@@ -78,6 +78,12 @@ export default function ManagerEmployeeDashboardPage() {
           <p className="heading-xl">{loading ? "..." : `${averageProgress}%`}</p>
         </Card>
       </Grid>
+
+      <BulkGoalDashboardImportCard
+        title="Bulk Goal Upload"
+        description="Upload goals in Excel, review AI improvements, and save directly from dashboard."
+        onSaved={loadData}
+      />
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Employee Workspaces" description="Use focused pages for your personal workflow.">

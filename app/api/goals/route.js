@@ -1,15 +1,20 @@
 import { appwriteConfig } from "@/lib/appwrite";
-import { FRAMEWORK_TYPES, GOAL_STATUSES } from "@/lib/appwriteSchema";
+import { GOAL_LEVELS, GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { normalizeCycleId } from "@/lib/cycle";
+import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
-
-const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
+import { assertManagerCanAccessEmployee, getManagerTeamEmployeeIds } from "@/lib/teamAccess";
 
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function normalizeGoalLevel(value, fallback = GOAL_LEVELS.EMPLOYEE) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const allowed = new Set(Object.values(GOAL_LEVELS));
+  return allowed.has(normalized) ? normalized : fallback;
 }
 
 function dedupeById(documents) {
@@ -56,6 +61,10 @@ async function listManagerGoalsByScope(databases, profile, scope) {
     return result.documents;
   }
 
+  const teamEmployeeIds = await getManagerTeamEmployeeIds(databases, profile.$id, {
+    includeFallback: true,
+  });
+
   if (scope === "all") {
     const [selfResult, teamResult] = await Promise.all([
       databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
@@ -63,55 +72,41 @@ async function listManagerGoalsByScope(databases, profile, scope) {
         Query.orderDesc("$createdAt"),
         Query.limit(100),
       ]),
-      databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
-        Query.equal("managerId", profile.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(100),
-      ]),
+      teamEmployeeIds.length > 0
+        ? databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+            Query.equal("employeeId", teamEmployeeIds),
+            Query.orderDesc("$createdAt"),
+            Query.limit(100),
+          ])
+        : Promise.resolve({ documents: [] }),
     ]);
 
     return dedupeById([...selfResult.documents, ...teamResult.documents]);
   }
 
-  const teamResult = await databases.listDocuments(
-    databaseId,
-    appwriteConfig.goalsCollectionId,
-    [
-      Query.equal("managerId", profile.$id),
-      Query.orderDesc("$createdAt"),
-      Query.limit(100),
-    ]
-  );
+  if (teamEmployeeIds.length === 0) return [];
+
+  const teamResult = await databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+    Query.equal("employeeId", teamEmployeeIds),
+    Query.orderDesc("$createdAt"),
+    Query.limit(100),
+  ]);
 
   return teamResult.documents;
 }
 
 async function resolveManagerApprover(databases, profile) {
-  if (profile.hrId) {
-    return { id: String(profile.hrId).trim(), source: "profile.hrId" };
-  }
-
   if (profile.managerId) {
     return { id: String(profile.managerId).trim(), source: "profile.managerId" };
   }
 
-  const hrProfiles = await databases.listDocuments(
-    databaseId,
-    appwriteConfig.usersCollectionId,
-    [Query.equal("role", "hr"), Query.orderAsc("$createdAt"), Query.limit(1)]
-  );
-
-  const firstHrId = hrProfiles.documents[0]?.$id || "";
-  return {
-    id: firstHrId,
-    source: firstHrId ? "firstHrFallback" : "missing",
-  };
+  return { id: "", source: "missing" };
 }
 
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee", "manager", "hr"]);
+    requireRole(profile, ["employee", "manager", "leadership", "hr"]);
 
     const { searchParams } = new URL(request.url);
     const cycleId = searchParams.get("cycleId");
@@ -137,7 +132,7 @@ export async function GET(request) {
         ]
       );
       documents = result.documents;
-    } else if (profile.role === "manager") {
+    } else if (profile.role === "manager" || profile.role === "leadership") {
       await assertManagerCanAccessEmployee(databases, profile.$id, employeeId);
       documents = await listManagerGoalsByScope(databases, profile, scope);
     } else {
@@ -188,27 +183,31 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["employee", "manager"]);
+    requireRole(profile, ["employee", "manager", "leadership"]);
 
     const body = await request.json();
     const title = (body.title || "").trim();
     const description = (body.description || "").trim();
     const cycleIdInput = (body.cycleId || "").trim();
     const cycleId = normalizeCycleId(cycleIdInput);
-    const frameworkType = (body.frameworkType || "").trim();
+    const frameworkTypeInput = (body.frameworkType || "").trim();
     const managerIdInput = (body.managerId || "").trim();
-    const managerApproverResolution = profile.role === "manager" && !managerIdInput
+    const managerApproverResolution = (profile.role === "manager" || profile.role === "leadership") && !managerIdInput
       ? await resolveManagerApprover(databases, profile)
       : null;
-    const managerId = profile.role === "manager"
+    const managerId = (profile.role === "manager" || profile.role === "leadership")
       ? managerIdInput || String(managerApproverResolution?.id || "").trim()
       : managerIdInput || String(profile.managerId || "").trim();
     const dueDate = body.dueDate || null;
     const lineageRef = body.lineageRef || "";
     const aiSuggested = Boolean(body.aiSuggested);
     const weightage = toInt(body.weightage, 0);
+    const parentGoalId = String(body.parentGoalId || "").trim() || null;
+    const goalLevelInput = body.goalLevel;
+    const contributionPercent = toInt(body.contributionPercent, 100);
+    const goalLevel = normalizeGoalLevel(goalLevelInput);
 
-    if (!title || !description || !frameworkType) {
+    if (!title || !description || !frameworkTypeInput) {
       return Response.json(
         { error: "title, description and frameworkType are required." },
         { status: 400 }
@@ -219,20 +218,33 @@ export async function POST(request) {
       return Response.json(
         {
           error:
-            profile.role === "manager"
-              ? "managerId is missing. Provide HR approver ID or configure manager profile approver mapping."
+            profile.role === "manager" || profile.role === "leadership"
+              ? "managerId is missing. Assign an upper manager before creating manager goals."
               : "managerId is missing. Set it in profile or provide it in request.",
         },
         { status: 400 }
       );
     }
 
-    if (!VALID_FRAMEWORKS.includes(frameworkType)) {
-      return Response.json({ error: "Invalid frameworkType." }, { status: 400 });
-    }
+    const frameworkPolicy = await getFrameworkPolicy(databases);
+    const frameworkType = assertFrameworkAllowed(frameworkTypeInput, frameworkPolicy);
 
     if (weightage < 1 || weightage > 100) {
       return Response.json({ error: "weightage must be between 1 and 100." }, { status: 400 });
+    }
+
+    if (typeof goalLevelInput !== "undefined" && !normalizeGoalLevel(goalLevelInput, "")) {
+      return Response.json(
+        { error: "goalLevel must be one of: business, manager, employee." },
+        { status: 400 }
+      );
+    }
+
+    if (contributionPercent < 0 || contributionPercent > 100) {
+      return Response.json(
+        { error: "contributionPercent must be between 0 and 100." },
+        { status: 400 }
+      );
     }
 
     const existingGoals = await databases.listDocuments(
@@ -263,6 +275,9 @@ export async function POST(request) {
     const baseGoalPayload = {
       employeeId: profile.$id,
       managerId,
+      parentGoalId,
+      goalLevel,
+      contributionPercent,
       cycleId,
       frameworkType,
       title,
@@ -327,14 +342,12 @@ export async function POST(request) {
     }
 
     const warning =
-      profile.role === "manager" &&
+      (profile.role === "manager" || profile.role === "leadership") &&
       managerApproverResolution &&
-      managerApproverResolution.source !== "profile.hrId"
-        ? managerApproverResolution.source === "profile.managerId"
-          ? "Using legacy managerId field for manager-to-HR mapping. Configure users.hrId for manager profile."
-          : managerApproverResolution.source === "firstHrFallback"
-            ? "No explicit manager-to-HR mapping found. Using first HR profile as fallback."
-            : "Manager-to-HR mapping is missing."
+      managerApproverResolution.source !== "profile.managerId"
+        ? managerApproverResolution.source === "missing"
+          ? "No upper manager mapping found for manager goal approval."
+          : "Using non-standard manager approver mapping source."
         : "";
 
     return Response.json(

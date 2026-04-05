@@ -3,20 +3,46 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { BulkGoalDashboardImportCard, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
+  EmployeeTrajectoryData,
   fetchCheckIns,
+  fetchEmployeeTrajectory,
   fetchGoals,
   formatDate,
   GoalItem,
   goalStatusVariant,
 } from "@/app/employee/_lib/pmsClient";
 
+const TRAJECTORY_CARD_ENABLED =
+  String(process.env.NEXT_PUBLIC_ENABLE_EMPLOYEE_TRAJECTORY || "").trim().toLowerCase() === "true";
+
+function trajectoryVariant(trend: EmployeeTrajectoryData["trendLabel"]) {
+  if (trend === "improving") return "success" as const;
+  if (trend === "declining") return "danger" as const;
+  if (trend === "stable") return "info" as const;
+  return "default" as const;
+}
+
+function trajectoryLabel(trend: EmployeeTrajectoryData["trendLabel"]) {
+  if (trend === "improving") return "Improving";
+  if (trend === "declining") return "Declining";
+  if (trend === "stable") return "Stable";
+  return "New";
+}
+
+function toSafeDeltaPercent(value: number) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(2));
+}
+
 export default function EmployeePage() {
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
+  const [trajectory, setTrajectory] = useState<EmployeeTrajectoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -25,9 +51,14 @@ export default function EmployeePage() {
     setError("");
 
     try {
-      const [nextGoals, nextCheckIns] = await Promise.all([fetchGoals(), fetchCheckIns()]);
+      const [nextGoals, nextCheckIns, nextTrajectory] = await Promise.all([
+        fetchGoals(),
+        fetchCheckIns(),
+        TRAJECTORY_CARD_ENABLED ? fetchEmployeeTrajectory() : Promise.resolve(null),
+      ]);
       setGoals(nextGoals);
       setCheckIns(nextCheckIns);
+      setTrajectory(nextTrajectory);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load employee overview.");
     } finally {
@@ -49,6 +80,11 @@ export default function EmployeePage() {
     const total = goals.reduce((sum, goal) => sum + (goal.progressPercent || 0), 0);
     return Math.round(total / goals.length);
   }, [goals]);
+
+  const safeTrajectoryDelta = useMemo(
+    () => toSafeDeltaPercent(trajectory?.trendDeltaPercent ?? 0),
+    [trajectory]
+  );
 
   return (
     <Stack gap="4">
@@ -75,6 +111,58 @@ export default function EmployeePage() {
           <p className="heading-xl">{loading ? "..." : `${averageProgress}%`}</p>
         </Card>
       </Grid>
+
+      {TRAJECTORY_CARD_ENABLED && (
+        <Card
+          title="Performance Trajectory"
+          description="Last 3 cycle scores and direction."
+        >
+          {loading && <p className="caption">Loading trajectory...</p>}
+
+          {!loading && !trajectory && <p className="caption">Trajectory unavailable right now.</p>}
+
+          {!loading && trajectory && (
+            <Stack gap="2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={trajectoryVariant(trajectory.trendLabel)}>
+                  {trajectoryLabel(trajectory.trendLabel)}
+                </Badge>
+                <p className="caption">
+                  Delta: {safeTrajectoryDelta > 0 ? "+" : ""}
+                  {safeTrajectoryDelta.toFixed(2)}%
+                </p>
+              </div>
+
+              {trajectory.cycles.length === 0 && (
+                <p className="caption">No closed cycle score history yet.</p>
+              )}
+
+              {trajectory.cycles.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {trajectory.cycles.map((point) => (
+                    <div
+                      key={`${point.cycleId}-${point.computedAt || "na"}`}
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
+                    >
+                      <p className="caption">{point.cycleName || point.cycleId}</p>
+                      <p className="body-sm font-medium text-[var(--color-text)]">
+                        {point.scoreX100 === null ? "NA" : `${(point.scoreX100 / 100).toFixed(2)} / 5.00`}
+                      </p>
+                      <p className="caption">{point.scoreLabel || "No label"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Stack>
+          )}
+        </Card>
+      )}
+
+      <BulkGoalDashboardImportCard
+        title="Bulk Goal Upload"
+        description="Upload goals in Excel, review AI improvements, and save directly from dashboard."
+        onSaved={loadData}
+      />
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Feature Pages" description="Use focused pages for each workflow.">

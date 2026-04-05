@@ -1,7 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { mapManagerAssignmentSummary } from "@/lib/teamAccess";
+import { listDescendantManagerIds, mapManagerAssignmentSummary } from "@/lib/teamAccess";
 
 async function validateManager(databases, managerId) {
   if (!managerId) {
@@ -14,35 +14,35 @@ async function validateManager(databases, managerId) {
     managerId
   );
 
-  if (manager.role !== "manager") {
+  if (!["manager", "leadership"].includes(String(manager.role || "").trim())) {
     return { error: "target managerId must belong to a manager profile.", status: 400 };
   }
 
   return { manager };
 }
 
-async function validateHr(databases, hrId) {
-  if (!hrId) {
-    return { error: "hrId is required.", status: 400 };
+async function validateParentManager(databases, parentManagerId) {
+  if (!parentManagerId) {
+    return { error: "parentManagerId is required.", status: 400 };
   }
 
-  const hr = await databases.getDocument(databaseId, appwriteConfig.usersCollectionId, hrId);
+  const parentManager = await databases.getDocument(databaseId, appwriteConfig.usersCollectionId, parentManagerId);
 
-  if (hr.role !== "hr") {
-    return { error: "target hrId must belong to an hr profile.", status: 400 };
+  if (!["manager", "leadership"].includes(String(parentManager.role || "").trim())) {
+    return { error: "target parentManagerId must belong to a manager or leadership profile.", status: 400 };
   }
 
-  return { hr };
+  return { parentManager };
 }
 
-async function applyHrAssignmentPatch(databases, manager, hrId, actorId) {
-  const nextVersion = Number(manager.hrAssignmentVersion || 0) + 1;
+async function applyParentAssignmentPatch(databases, manager, parentManagerId, actorId) {
+  const nextVersion = Number(manager.assignmentVersion || 0) + 1;
 
   const fullPatch = {
-    hrId,
-    hrAssignedAt: hrId ? new Date().toISOString() : null,
-    hrAssignedBy: actorId,
-    hrAssignmentVersion: nextVersion,
+    managerId: parentManagerId,
+    managerAssignedAt: parentManagerId ? new Date().toISOString() : null,
+    managerAssignedBy: actorId,
+    assignmentVersion: nextVersion,
   };
 
   try {
@@ -58,7 +58,7 @@ async function applyHrAssignmentPatch(databases, manager, hrId, actorId) {
         databaseId,
         appwriteConfig.usersCollectionId,
         manager.$id,
-        { hrId }
+        { managerId: parentManagerId }
       );
     }
 
@@ -69,7 +69,7 @@ async function applyHrAssignmentPatch(databases, manager, hrId, actorId) {
 export async function PUT(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const params = await context.params;
     const managerId = String(params.managerId || "").trim();
@@ -80,22 +80,35 @@ export async function PUT(request, context) {
     }
 
     const body = await request.json();
-    const hrId = String(body.hrId || "").trim();
+    const parentManagerId = String(body.parentManagerId || body.hrId || "").trim();
 
-    if (hrId === managerId) {
-      return Response.json({ error: "manager and hr cannot be the same user." }, { status: 400 });
+    if (parentManagerId === managerId) {
+      return Response.json({ error: "manager cannot report to self." }, { status: 400 });
     }
 
-    const hrValidation = await validateHr(databases, hrId);
-    if (hrValidation.error) {
-      return Response.json({ error: hrValidation.error }, { status: hrValidation.status });
+    const parentValidation = await validateParentManager(databases, parentManagerId);
+    if (parentValidation.error) {
+      return Response.json({ error: parentValidation.error }, { status: parentValidation.status });
     }
 
-    const updated = await applyHrAssignmentPatch(databases, managerValidation.manager, hrId, profile.$id);
+    const descendantIds = await listDescendantManagerIds(databases, managerId);
+    if (descendantIds.includes(parentManagerId)) {
+      return Response.json(
+        { error: "Invalid hierarchy: parent manager cannot be a descendant of manager." },
+        { status: 400 }
+      );
+    }
+
+    const updated = await applyParentAssignmentPatch(
+      databases,
+      managerValidation.manager,
+      parentManagerId,
+      profile.$id
+    );
 
     return Response.json({
       data: mapManagerAssignmentSummary(updated, {
-        hrProfile: hrValidation.hr,
+        parentManagerProfile: parentValidation.parentManager,
       }),
     });
   } catch (error) {
@@ -106,7 +119,7 @@ export async function PUT(request, context) {
 export async function DELETE(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["hr"]);
+    requireRole(profile, ["leadership"]);
 
     const params = await context.params;
     const managerId = String(params.managerId || "").trim();
@@ -116,7 +129,7 @@ export async function DELETE(request, context) {
       return Response.json({ error: managerValidation.error }, { status: managerValidation.status });
     }
 
-    const updated = await applyHrAssignmentPatch(databases, managerValidation.manager, "", profile.$id);
+    const updated = await applyParentAssignmentPatch(databases, managerValidation.manager, "", profile.$id);
 
     return Response.json({
       data: mapManagerAssignmentSummary(updated),

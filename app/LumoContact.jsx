@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import Link from 'next/link';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
@@ -500,7 +501,7 @@ export default function LumoContact() {
 
       <div className="lumo-ui">
         <header className="lumo-header">
-          <a href="/" className="lumo-nav-text lumo-brand">LUMO studios</a>
+          <Link href="/" className="lumo-nav-text lumo-brand">LUMO studios</Link>
           <div style={{ display: 'flex', gap: '3rem' }}>
             <a href="#" className="lumo-nav-text">Projects</a>
             <a href="#" className="lumo-nav-text">Capabilities</a>
@@ -511,7 +512,7 @@ export default function LumoContact() {
         <div className="lumo-content">
           <div className="lumo-contact-header">
             <h1 className="lumo-title">Initiate Inquiry</h1>
-            <p className="lumo-subtitle">Let's craft the future of your vision</p>
+            <p className="lumo-subtitle">Let&apos;s craft the future of your vision</p>
           </div>
 
           <form className="lumo-form">

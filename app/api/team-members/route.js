@@ -6,7 +6,7 @@ import { getManagerTeamEmployeeIds, listUsersByIds, mapUserSummary } from "@/lib
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
-    requireRole(profile, ["manager", "hr"]);
+    requireRole(profile, ["manager", "hr", "leadership"]);
 
     const { searchParams } = new URL(request.url);
     const managerIdFromQuery = (searchParams.get("managerId") || "").trim();

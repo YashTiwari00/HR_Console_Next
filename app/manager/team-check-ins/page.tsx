@@ -39,10 +39,22 @@ export default function ManagerCheckInsPage() {
     Record<string, "EE" | "DE" | "ME" | "SME" | "NI">
   >({});
   const [aiMeta, setAiMeta] = useState<
-    Record<string, { source: string; confidence: string; remaining?: number }>
+    Record<
+      string,
+      {
+        source: string;
+        confidence: string;
+        remaining?: number;
+        coachingScore?: number;
+        toneTips?: string[];
+        matrixWeightedRating?: number;
+        matrixResponses?: number;
+      }
+    >
   >({});
   const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
   const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
+  const [aiBudgetWarning, setAiBudgetWarning] = useState("");
 
   async function requestJson(url: string, init?: RequestInit) {
     let jwtHeader: Record<string, string> = {};
@@ -79,10 +91,11 @@ export default function ManagerCheckInsPage() {
     setError("");
 
     try {
-      const [checkInsPayload, goalsPayload, teamMembersPayload] = await Promise.all([
+      const [checkInsPayload, goalsPayload, teamMembersPayload, usagePayload] = await Promise.all([
         requestJson("/api/check-ins?scope=team"),
         requestJson("/api/goals"),
         requestJson("/api/team-members"),
+        requestJson("/api/ai/usage"),
       ]);
 
       const data = (checkInsPayload.data || []) as ManagerCheckIn[];
@@ -112,6 +125,19 @@ export default function ManagerCheckInsPage() {
       setRows(filteredData);
       setGoalCycleById(cycleMap);
       setGoalTitleById(titleMap);
+
+      const features = Array.isArray(usagePayload?.data?.features)
+        ? usagePayload.data.features
+        : [];
+      const checkInFeature = features.find((item: { featureType?: string }) => item?.featureType === "checkin_summary");
+
+      if (checkInFeature && Number(checkInFeature.remaining || 0) <= 1) {
+        setAiBudgetWarning(
+          `AI check-in budget is low (${checkInFeature.remaining} remaining this cycle). Use AI only for high-impact reviews.`
+        );
+      } else {
+        setAiBudgetWarning("");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load check-ins.");
     } finally {
@@ -163,17 +189,11 @@ export default function ManagerCheckInsPage() {
     }
   }
 
-  async function handleGenerateSummary(row: ManagerCheckIn) {
+  async function handleGenerateAgenda(row: ManagerCheckIn) {
     const cycleId = goalCycleById[row.goalId];
-    const notesSource = (managerNotes[row.$id] || row.employeeNotes || "").trim();
 
     if (!cycleId) {
       setError("Cycle context not found for this goal. Refresh and try again.");
-      return;
-    }
-
-    if (!notesSource) {
-      setError("Add manager notes or ensure employee notes exist before generating summary.");
       return;
     }
 
@@ -181,32 +201,32 @@ export default function ManagerCheckInsPage() {
     setAiWorking((prev) => ({ ...prev, [row.$id]: true }));
 
     try {
-      const payload = await requestJson("/api/ai/checkin-summary", {
+      const payload = await requestJson("/api/ai/checkin-agenda", {
         method: "POST",
         body: JSON.stringify({
           cycleId,
-          notes: notesSource,
           goalTitle: goalTitleById[row.goalId] || row.goalId,
+          employeeNotes: row.employeeNotes || "",
+          scheduledAt: row.scheduledAt,
         }),
       });
 
-      const summary = payload?.data?.summary || "";
-      const highlights = Array.isArray(payload?.data?.highlights) ? payload.data.highlights : [];
-      const blockers = Array.isArray(payload?.data?.blockers) ? payload.data.blockers : [];
-      const nextActions = Array.isArray(payload?.data?.nextActions) ? payload.data.nextActions : [];
+      const agenda = Array.isArray(payload?.data?.agenda) ? payload.data.agenda : [];
+      const focusQuestions = Array.isArray(payload?.data?.focusQuestions) ? payload.data.focusQuestions : [];
+      const riskSignals = Array.isArray(payload?.data?.riskSignals) ? payload.data.riskSignals : [];
 
       const composed = [
-        summary,
-        highlights.length ? `Highlights: ${highlights.join("; ")}` : "",
-        blockers.length ? `Blockers: ${blockers.join("; ")}` : "",
-        nextActions.length ? `Next actions: ${nextActions.join("; ")}` : "",
+        "Pre-check-in agenda:",
+        ...agenda.map((item: string, index: number) => `${index + 1}. ${item}`),
+        focusQuestions.length ? `Focus questions: ${focusQuestions.join("; ")}` : "",
+        riskSignals.length ? `Risk signals: ${riskSignals.join("; ")}` : "",
       ]
         .filter(Boolean)
         .join("\n");
 
-      setTranscriptText((prev) => ({
+      setManagerNotes((prev) => ({
         ...prev,
-        [row.$id]: composed,
+        [row.$id]: prev[row.$id] ? `${prev[row.$id]}\n\n${composed}` : composed,
       }));
 
       const usage = payload?.data?.usage;
@@ -221,9 +241,105 @@ export default function ManagerCheckInsPage() {
         },
       }));
 
-      setSuccess("AI check-in summary generated. Review before marking completed.");
+      setSuccess("AI agenda generated. Review and edit before completing check-in.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate AI summary.");
+      setError(err instanceof Error ? err.message : "Failed to generate AI agenda.");
+    } finally {
+      setAiWorking((prev) => ({ ...prev, [row.$id]: false }));
+    }
+  }
+
+  async function handleAnalyzeIntelligence(row: ManagerCheckIn) {
+    const cycleId = goalCycleById[row.goalId];
+    const notesSource = (managerNotes[row.$id] || row.employeeNotes || "").trim();
+
+    if (!cycleId) {
+      setError("Cycle context not found for this goal. Refresh and try again.");
+      return;
+    }
+
+    if (!notesSource) {
+      setError("Add notes before running check-in intelligence.");
+      return;
+    }
+
+    setError("");
+    setAiWorking((prev) => ({ ...prev, [row.$id]: true }));
+
+    try {
+      const payload = await requestJson("/api/ai/checkin-intelligence", {
+        method: "POST",
+        body: JSON.stringify({
+          cycleId,
+          notes: notesSource,
+          goalTitle: goalTitleById[row.goalId] || row.goalId,
+          goalId: row.goalId,
+          employeeId: row.employeeId,
+        }),
+      });
+
+      const summary = String(payload?.data?.summary || "").trim();
+      const commitments = Array.isArray(payload?.data?.commitments) ? payload.data.commitments : [];
+      const coachingScore = Number(payload?.data?.coachingScore?.score || 0);
+      const toneGuidance = Array.isArray(payload?.data?.toneGuidance) ? payload.data.toneGuidance : [];
+      const revisedManagerFeedback = String(payload?.data?.revisedManagerFeedback || "").trim();
+      const matrixBlend = payload?.data?.matrixBlend || null;
+
+      const commitmentLines = commitments
+        .map((item: { owner?: string; action?: string; dueDate?: string }) => {
+          const owner = String(item?.owner || "manager").trim();
+          const action = String(item?.action || "").trim();
+          const dueDate = String(item?.dueDate || "").trim();
+          if (!action) return "";
+          return dueDate ? `${owner}: ${action} (due ${dueDate})` : `${owner}: ${action}`;
+        })
+        .filter(Boolean);
+
+      const intelligenceText = [
+        summary,
+        commitmentLines.length ? `Commitments: ${commitmentLines.join("; ")}` : "",
+        matrixBlend && Number.isFinite(Number(matrixBlend.weightedRating))
+          ? `Matrix signal rating: ${Number(matrixBlend.weightedRating).toFixed(2)} / 5 from ${Number(matrixBlend.responseCount || 0)} reviewer responses.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      setTranscriptText((prev) => ({
+        ...prev,
+        [row.$id]: intelligenceText || prev[row.$id] || "",
+      }));
+
+      if (revisedManagerFeedback) {
+        setManagerNotes((prev) => ({
+          ...prev,
+          [row.$id]: revisedManagerFeedback,
+        }));
+      }
+
+      const usage = payload?.data?.usage;
+      const explainability = payload?.data?.explainability;
+
+      setAiMeta((prev) => ({
+        ...prev,
+        [row.$id]: {
+          source: explainability?.source || "openrouter_llm",
+          confidence: explainability?.confidence || "medium",
+          remaining: typeof usage?.remaining === "number" ? usage.remaining : undefined,
+          coachingScore: Number.isFinite(coachingScore) ? coachingScore : undefined,
+          toneTips: toneGuidance.map((item: unknown) => String(item || "").trim()).filter(Boolean),
+          matrixWeightedRating: Number.isFinite(Number(matrixBlend?.weightedRating))
+            ? Number(matrixBlend.weightedRating)
+            : undefined,
+          matrixResponses: Number.isFinite(Number(matrixBlend?.responseCount))
+            ? Number(matrixBlend.responseCount)
+            : undefined,
+        },
+      }));
+
+      setSuccess("AI check-in intelligence generated with commitments and coaching guidance.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run check-in intelligence.");
     } finally {
       setAiWorking((prev) => ({ ...prev, [row.$id]: false }));
     }
@@ -244,6 +360,9 @@ export default function ManagerCheckInsPage() {
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && (
         <Alert variant="success" title="Saved" description={success} onDismiss={() => setSuccess("")} />
+      )}
+      {aiBudgetWarning && (
+        <Alert variant="warning" title="AI Budget Warning" description={aiBudgetWarning} onDismiss={() => setAiBudgetWarning("")} />
       )}
 
       <Card title="Team Check-ins" description="Mark planned check-ins as completed with manager notes.">
@@ -337,19 +456,38 @@ export default function ManagerCheckInsPage() {
                       type="button"
                       size="sm"
                       variant="secondary"
-                      onClick={() => handleGenerateSummary(row)}
+                      onClick={() => handleGenerateAgenda(row)}
                       loading={Boolean(aiWorking[row.$id])}
                     >
-                      Generate AI Summary
+                      Generate Agenda
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleAnalyzeIntelligence(row)}
+                      loading={Boolean(aiWorking[row.$id])}
+                    >
+                      Analyze Commitments & Tone
                     </Button>
 
                     {aiMeta[row.$id] && (
-                      <span className="caption">
+                      <div className="caption">
                         Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
                         {typeof aiMeta[row.$id].remaining === "number"
                           ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
                           : ""}
-                      </span>
+                        {typeof aiMeta[row.$id].coachingScore === "number"
+                          ? `, coaching quality: ${aiMeta[row.$id].coachingScore}/10`
+                          : ""}
+                        {Array.isArray(aiMeta[row.$id]?.toneTips) && (aiMeta[row.$id]?.toneTips?.length || 0) > 0
+                          ? `, tone tips: ${aiMeta[row.$id]?.toneTips?.join("; ")}`
+                          : ""}
+                        {typeof aiMeta[row.$id]?.matrixWeightedRating === "number"
+                          ? `, matrix signal: ${aiMeta[row.$id]?.matrixWeightedRating?.toFixed(2)}/5 (${aiMeta[row.$id]?.matrixResponses || 0} responses)`
+                          : ""}
+                      </div>
                     )}
                   </div>
 

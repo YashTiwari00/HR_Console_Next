@@ -15,14 +15,14 @@ const ROLES = [
   { value: "employee", label: "Employee" },
   { value: "manager", label: "Manager" },
   { value: "hr", label: "HR" },
-  { value: "region-admin", label: "Region Admin" },
+  { value: "leadership", label: "Leadership" },
 ];
 
 const ROLE_DESCRIPTIONS = {
   employee: "Track your own goals, updates, and check-ins.",
   manager: "Review team goals, progress, and check-ins.",
-  hr: "Manage governance, assignments, and approvals.",
-  "region-admin": "View region-scoped manager and employee progress analytics.",
+  hr: "Monitor governance, process health, and fairness across the organization.",
+  leadership: "View organization-level strategic dashboards with decision-safe aggregates.",
 };
 
 export default function OnboardingPage() {
@@ -33,8 +33,6 @@ export default function OnboardingPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
-  const [region, setRegion] = useState("");
-  const [missingRegionFixMode, setMissingRegionFixMode] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -63,17 +61,11 @@ export default function OnboardingPage() {
         const mePayload = await meResponse?.json().catch(() => ({}));
         const profile = mePayload?.data?.profile || null;
         const profileRole = String(profile?.role || "").trim();
-        const profileRegion = String(profile?.region || "").trim();
-
-        if (profileRole === "region-admin" && !profileRegion) {
-          setRole("region-admin");
-          setMissingRegionFixMode(true);
-        }
 
         const redirectTo = await getRoleRedirectFromServer();
         if (!active) return;
 
-        if (redirectTo && redirectTo !== "/onboarding" && !(profileRole === "region-admin" && !profileRegion)) {
+        if (redirectTo && redirectTo !== "/onboarding") {
           router.replace(redirectTo);
           return;
         }
@@ -114,37 +106,14 @@ export default function OnboardingPage() {
       return;
     }
 
-    const trimmedRegion = String(region || "").trim();
-    if (role === "region-admin" && !trimmedRegion) {
-      setError("Please enter your region before continuing.");
-      return;
-    }
-
     setLoading(true);
     try {
-      await completeGoogleOnboarding(role, {
-        region: role === "region-admin" ? trimmedRegion : "",
-      });
+      await completeGoogleOnboarding(role);
       const redirectTo = await getRoleRedirectFromServer();
       router.replace(redirectTo || "/employee");
     } catch (submitError) {
       const message = String(submitError?.message || "").trim();
-      const normalized = message.toLowerCase();
-
-      const roleEnumError =
-        normalized.includes("schema") ||
-        normalized.includes("enum") ||
-        normalized.includes("invalid document structure") ||
-        normalized.includes("value must be one of") ||
-        (normalized.includes("role") && normalized.includes("invalid format"));
-
-      if (role === "region-admin" && roleEnumError) {
-        setError(
-          "Region Admin is not enabled in backend schema yet. Ask admin to run schema sync with --apply, then retry onboarding."
-        );
-      } else {
-        setError(message || "Failed to finish onboarding. Please try again.");
-      }
+      setError(message || "Failed to finish onboarding. Please try again.");
 
       setLoading(false);
     }
@@ -191,41 +160,15 @@ export default function OnboardingPage() {
                   onChange={(nextRole) => {
                     setRole(nextRole);
                     setConfirmed(false);
-                    if (nextRole !== "region-admin") {
-                      setRegion("");
-                    }
                   }}
                   options={ROLES.map((item) => ({
                     value: item.value,
                     label: item.label,
                     description: ROLE_DESCRIPTIONS[item.value],
                   }))}
-                  disabled={loading || missingRegionFixMode}
+                  disabled={loading}
                 />
                 <p className="role-description">{ROLE_DESCRIPTIONS[role]}</p>
-
-                {role === "region-admin" && (
-                  <div className="field-group">
-                    <label className="field-label" htmlFor="region">
-                      Region
-                    </label>
-                    <input
-                      id="region"
-                      type="text"
-                      value={region}
-                      onChange={(event) => setRegion(event.target.value)}
-                      placeholder="e.g. APAC, EMEA, North America"
-                      autoComplete="organization"
-                      disabled={loading}
-                      className="field-input"
-                    />
-                    {missingRegionFixMode && (
-                      <p className="role-description">
-                        Your profile is missing region. Add it once to unlock region dashboard access.
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
 
               <label className="confirm-row">
@@ -236,7 +179,7 @@ export default function OnboardingPage() {
                   disabled={loading}
                 />
                 <span>
-                  I confirm this role and understand changes require HR support.
+                  I confirm this role and understand changes require leadership or HR support.
                 </span>
               </label>
 

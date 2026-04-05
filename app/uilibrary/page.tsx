@@ -27,7 +27,11 @@ import Stack from '@/src/components/layout/Stack';
 // Patterns
 import DataTable from '@/src/components/patterns/DataTable';
 import type { DataTableColumn } from '@/src/components/patterns/DataTable';
+import CascadeGoalComposer from '@/src/components/patterns/CascadeGoalComposer';
+import ExplainabilityDrawer from '@/src/components/patterns/ExplainabilityDrawer';
 import FormSection from '@/src/components/patterns/FormSection';
+import type { GoalLineageData } from '@/app/employee/_lib/pmsClient';
+import GoalLineageView from '@/src/components/patterns/GoalLineageView';
 import PageHeader from '@/src/components/patterns/PageHeader';
 
 // ─── Sample data ──────────────────────────────────────────────────────────────
@@ -82,6 +86,77 @@ const EMPLOYEE_COLUMNS: DataTableColumn<EmployeeRow>[] = [
   { key: 'joined', header: 'Joined', align: 'right' },
 ];
 
+const SAMPLE_LINEAGE: GoalLineageData = {
+  ancestors: [
+    {
+      $id: 'goal-business-1',
+      title: 'Expand APAC enterprise revenue by 20%',
+      description: 'Business-level growth objective for FY26.',
+      goalLevel: 'business',
+      status: 'active',
+      progressPercent: 58,
+      contributionPercent: 100,
+      cycleId: 'FY26',
+      children: [],
+    },
+    {
+      $id: 'goal-manager-1',
+      title: 'Reduce hiring cycle time to 21 days',
+      description: 'Manager-level hiring efficiency objective.',
+      goalLevel: 'manager',
+      status: 'active',
+      progressPercent: 62,
+      contributionPercent: 40,
+      cycleId: 'FY26',
+      children: [],
+    },
+  ],
+  currentGoal: {
+    $id: 'goal-employee-1',
+    title: 'Automate candidate screening scorecards',
+    description: 'Build scorecard automation and reduce manual review steps.',
+    goalLevel: 'employee',
+    status: 'in_progress',
+    progressPercent: 47,
+    contributionPercent: 55,
+    cycleId: 'FY26-Q2',
+    children: [],
+  },
+  descendants: [
+    {
+      $id: 'goal-employee-2',
+      title: 'Integrate ATS webhook validation checks',
+      goalLevel: 'employee',
+      status: 'active',
+      progressPercent: 52,
+      contributionPercent: 25,
+      cycleId: 'FY26-Q2',
+      children: [],
+    },
+    {
+      $id: 'goal-employee-3',
+      title: 'Launch recruiter dashboard for funnel bottlenecks',
+      goalLevel: 'employee',
+      status: 'active',
+      progressPercent: 39,
+      contributionPercent: 30,
+      cycleId: 'FY26-Q2',
+      children: [
+        {
+          $id: 'goal-employee-4',
+          title: 'Add weekly alerting for stalled candidates',
+          goalLevel: 'employee',
+          status: 'active',
+          progressPercent: 72,
+          contributionPercent: 15,
+          cycleId: 'FY26-Q2',
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
 // ─── Nav config ───────────────────────────────────────────────────────────────
 
 const NAV_GROUPS = [
@@ -128,6 +203,9 @@ const NAV_GROUPS = [
     items: [
       { id: 'pageheader', label: 'Page Header' },
       { id: 'formsection', label: 'Form Section' },
+      { id: 'explainability', label: 'Explainability Drawer' },
+      { id: 'cascading-goals', label: 'Cascading Goals' },
+      { id: 'goal-lineage', label: 'Goal Lineage' },
       { id: 'datatable', label: 'Data Table' },
     ],
   },
@@ -247,6 +325,7 @@ function Sidebar() {
 
 export default function ComponentShowcase() {
   const [modalOpen, setModalOpen] = useState(false);
+  const [explainabilityOpen, setExplainabilityOpen] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableEmpty, setTableEmpty] = useState(false);
   const [infoDismissed, setInfoDismissed] = useState(false);
@@ -719,6 +798,40 @@ export default function ComponentShowcase() {
                 </div>
               </Stack>
             </Card>
+          </Section>
+
+          {/* ── Explainability Drawer ──────────────────────────────── */}
+          <Section id="explainability" title="Explainability Drawer">
+            <Card>
+              <Button onClick={() => setExplainabilityOpen(true)}>
+                Open Explainability Drawer
+              </Button>
+            </Card>
+
+            <ExplainabilityDrawer
+              open={explainabilityOpen}
+              onClose={() => setExplainabilityOpen(false)}
+              payload={{
+                source: 'openrouter_llm',
+                confidence: 'high',
+                whyFactors: [
+                  'Role and cycle context fit',
+                  'Framework alignment for measurable outcomes',
+                  'Recent progress and blocker signals',
+                ],
+                timeWindow: 'Q2-2026',
+              }}
+            />
+          </Section>
+
+          {/* ── Cascade Goal Composer ─────────────────────────────── */}
+          <Section id="cascading-goals" title="Cascade Goal Composer">
+            <CascadeGoalComposer />
+          </Section>
+
+          {/* ── Goal Lineage View ─────────────────────────────── */}
+          <Section id="goal-lineage" title="Goal Lineage View">
+            <GoalLineageView lineage={SAMPLE_LINEAGE} />
           </Section>
 
           {/* ── DataTable ─────────────────────────────────────────────── */}
