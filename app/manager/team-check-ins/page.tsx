@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 import { formatDate } from "@/app/employee/_lib/pmsClient";
 
@@ -55,6 +55,9 @@ export default function ManagerCheckInsPage() {
   const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
   const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
   const [aiBudgetWarning, setAiBudgetWarning] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"pending" | "all">("pending");
+  const [lastFailedIds, setLastFailedIds] = useState<string[]>([]);
 
   async function requestJson(url: string, init?: RequestInit) {
     let jwtHeader: Record<string, string> = {};
@@ -151,42 +154,93 @@ export default function ManagerCheckInsPage() {
 
   async function handleComplete(event: FormEvent, row: ManagerCheckIn) {
     event.preventDefault();
+    await approveRows([row.$id]);
+  }
+
+  async function approveRows(checkInIds: string[]) {
+    if (checkInIds.length === 0) return;
+
     setWorking(true);
     setError("");
     setSuccess("");
 
-    const rawRating = (managerRatings[row.$id] || "").trim();
-    const parsedRating = rawRating === "" ? NaN : Number(rawRating);
-    const ratingLabel = managerRatingLabels[row.$id] || "ME";
-
-    if (row.isFinalCheckIn) {
-      if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
-        setError("Final check-in requires a manager rating from 1 to 5.");
-        setWorking(false);
-        return;
-      }
-    }
-
     try {
-      await requestJson(`/api/check-ins/${row.$id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "completed",
-          managerNotes: managerNotes[row.$id] || "",
-          transcriptText: transcriptText[row.$id] || "",
-          isFinalCheckIn: Boolean(row.isFinalCheckIn),
-          managerRating: row.isFinalCheckIn ? parsedRating : null,
-          managerGoalRatingLabel: row.isFinalCheckIn ? ratingLabel : null,
-        }),
+      const items = checkInIds.map((checkInId) => {
+        const row = rows.find((candidate) => candidate.$id === checkInId);
+        const rawRating = (managerRatings[checkInId] || "").trim();
+        const parsedRating = rawRating === "" ? null : Number(rawRating);
+        const ratingLabel = managerRatingLabels[checkInId] || "ME";
+
+        if (row?.isFinalCheckIn) {
+          if (!Number.isInteger(parsedRating) || (parsedRating || 0) < 1 || (parsedRating || 0) > 5) {
+            throw new Error(`Final check-in requires a manager rating from 1 to 5 (check-in ${checkInId}).`);
+          }
+        }
+
+        return {
+          checkInId,
+          managerNotes: managerNotes[checkInId] || "",
+          transcriptText: transcriptText[checkInId] || "",
+          isFinalCheckIn: Boolean(row?.isFinalCheckIn),
+          managerRating: row?.isFinalCheckIn ? parsedRating : null,
+          managerGoalRatingLabel: row?.isFinalCheckIn ? ratingLabel : null,
+        };
       });
 
-      setSuccess("Check-in marked as completed.");
+      const payload = await requestJson("/api/check-ins/manager-approvals", {
+        method: "POST",
+        body: JSON.stringify({ items }),
+      });
+
+      const summary = payload?.summary;
+      const approved = Number(summary?.approved || 0);
+      const failed = Number(summary?.failed || 0);
+      const failedIds = Array.isArray(summary?.failures)
+        ? summary.failures.map((item: { checkInId?: string }) => String(item?.checkInId || "").trim()).filter(Boolean)
+        : [];
+      setSuccess(`Approved ${approved} check-ins. Failed: ${failed}.`);
+      setLastFailedIds(failedIds);
+      setSelectedIds(new Set());
       await loadCheckIns();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update check-in.");
+      setError(err instanceof Error ? err.message : "Failed to update check-ins.");
     } finally {
       setWorking(false);
     }
+  }
+
+  function toggleSelected(checkInId: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(checkInId);
+      } else {
+        next.delete(checkInId);
+      }
+      return next;
+    });
+  }
+
+  const visibleRows = viewMode === "pending" ? rows.filter((row) => row.status === "planned") : rows;
+  const visiblePlannedIds = visibleRows
+    .filter((row) => row.status === "planned")
+    .map((row) => row.$id);
+  const selectedVisibleCount = visiblePlannedIds.filter((id) => selectedIds.has(id)).length;
+
+  function selectAllVisiblePlanned() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      visiblePlannedIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function clearVisibleSelection() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      visiblePlannedIds.forEach((id) => next.delete(id));
+      return next;
+    });
   }
 
   async function handleGenerateAgenda(row: ManagerCheckIn) {
@@ -367,18 +421,96 @@ export default function ManagerCheckInsPage() {
 
       <Card title="Team Check-ins" description="Mark planned check-ins as completed with manager notes.">
         <Stack gap="3">
-          {loading && <p className="caption">Loading check-ins...</p>}
-          {!loading && rows.length === 0 && <p className="caption">No check-ins available.</p>}
+          <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+            <span className="caption">View:</span>
+            <Button
+              size="sm"
+              variant={viewMode === "pending" ? "primary" : "secondary"}
+              onClick={() => setViewMode("pending")}
+              disabled={working}
+            >
+              Pending Only
+            </Button>
+            <Button
+              size="sm"
+              variant={viewMode === "all" ? "primary" : "secondary"}
+              onClick={() => setViewMode("all")}
+              disabled={working}
+            >
+              All
+            </Button>
+            <span className="caption">Showing: {visibleRows.length}</span>
+          </div>
 
-          {rows.map((row) => (
+          {visiblePlannedIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+              <span className="caption">Visible pending: {visiblePlannedIds.length}</span>
+              <span className="caption">Selected in view: {selectedVisibleCount}</span>
+              <Button size="sm" variant="secondary" onClick={selectAllVisiblePlanned} disabled={working}>
+                Select All Visible
+              </Button>
+              <Button size="sm" variant="secondary" onClick={clearVisibleSelection} disabled={working}>
+                Clear Visible
+              </Button>
+            </div>
+          )}
+
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+              <span className="caption">Selected: {selectedIds.size}</span>
+              <Button
+                size="sm"
+                onClick={() => approveRows(Array.from(selectedIds.values()))}
+                loading={working}
+              >
+                Approve Selected
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setSelectedIds(new Set())} disabled={working}>
+                Clear
+              </Button>
+            </div>
+          )}
+
+          {lastFailedIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-warning)] bg-[var(--color-surface)] px-3 py-2">
+              <span className="caption">Last bulk action failed for {lastFailedIds.length} check-ins.</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => approveRows(lastFailedIds)}
+                loading={working}
+              >
+                Retry Failed
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setLastFailedIds([])} disabled={working}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {loading && <p className="caption">Loading check-ins...</p>}
+          {!loading && visibleRows.length === 0 && <p className="caption">No check-ins available.</p>}
+
+          {visibleRows.map((row) => (
             <form
               key={row.$id}
               onSubmit={(event) => handleComplete(event, row)}
               className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="body-sm text-[var(--color-text)]">{formatDate(row.scheduledAt)}</p>
-                <Badge variant={row.status === "completed" ? "success" : "info"}>{row.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {row.status === "planned" && (
+                    <Checkbox
+                      label=""
+                      checked={selectedIds.has(row.$id)}
+                      onChange={(event) => toggleSelected(row.$id, event.target.checked)}
+                    />
+                  )}
+                  <p className="body-sm text-[var(--color-text)]">{formatDate(row.scheduledAt)}</p>
+                </div>
+                <Badge variant={row.status === "completed" ? "success" : "info"}>
+                  {row.status === "completed" ? "approved" : "pending approval"}
+                </Badge>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-3">
@@ -491,7 +623,7 @@ export default function ManagerCheckInsPage() {
                     )}
                   </div>
 
-                  <Button type="submit" loading={working}>Mark Completed</Button>
+                  <Button type="submit" loading={working}>Approve Check-in</Button>
                 </div>
               ) : (
                 <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">

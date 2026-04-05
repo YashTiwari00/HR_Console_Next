@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -37,6 +37,8 @@ export default function ManagerPage() {
   const [decision, setDecision] = useState<Record<string, ApprovalDecision>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [employeeApprovalQuery, setEmployeeApprovalQuery] = useState("");
+  const [selectedGoalIds, setSelectedGoalIds] = useState<Set<string>>(new Set());
+  const [lastFailedGoalIds, setLastFailedGoalIds] = useState<string[]>([]);
 
   const normalizedEmployeeApprovalQuery = employeeApprovalQuery.trim().toLowerCase();
 
@@ -103,6 +105,7 @@ export default function ManagerPage() {
         nextDecision[goal.$id] = "approved";
       });
       setDecision(nextDecision);
+      setSelectedGoalIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load approvals.");
     } finally {
@@ -137,6 +140,73 @@ export default function ManagerPage() {
       await loadQueue();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save decision.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function toggleSelected(goalId: string, checked: boolean) {
+    setSelectedGoalIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(goalId);
+      } else {
+        next.delete(goalId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelectedGoalIds((prev) => {
+      const next = new Set(prev);
+      filteredRows.forEach((goal) => next.add(goal.$id));
+      return next;
+    });
+  }
+
+  function clearAllFiltered() {
+    setSelectedGoalIds((prev) => {
+      const next = new Set(prev);
+      filteredRows.forEach((goal) => next.delete(goal.$id));
+      return next;
+    });
+  }
+
+  async function handleBulkDecision(goalIds: string[]) {
+    if (goalIds.length === 0) {
+      return;
+    }
+
+    setWorking(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const items = goalIds.map((goalId) => ({
+        goalId,
+        decision: decision[goalId] || "approved",
+        comments: comments[goalId] || "",
+      }));
+
+      const payload = await requestJson("/api/approvals", {
+        method: "POST",
+        body: JSON.stringify({ items }),
+      });
+
+      const approved = Number(payload?.summary?.approved || 0);
+      const failed = Number(payload?.summary?.failed || 0);
+      const failedGoalIds = Array.isArray(payload?.summary?.failures)
+        ? payload.summary.failures
+            .map((item: { goalId?: string }) => String(item?.goalId || "").trim())
+            .filter(Boolean)
+        : [];
+
+      setLastFailedGoalIds(failedGoalIds);
+      setSuccess(`Saved ${approved} decisions. Failed: ${failed}.`);
+      await loadQueue();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save bulk decisions.");
     } finally {
       setWorking(false);
     }
@@ -178,6 +248,39 @@ export default function ManagerPage() {
             </p>
           )}
 
+          {filteredRows.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+              <span className="caption">Filtered goals: {filteredRows.length}</span>
+              <span className="caption">Selected: {selectedGoalIds.size}</span>
+              <Button size="sm" variant="secondary" onClick={selectAllFiltered} disabled={working}>
+                Select All Filtered
+              </Button>
+              <Button size="sm" variant="secondary" onClick={clearAllFiltered} disabled={working}>
+                Clear Filtered
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleBulkDecision(Array.from(selectedGoalIds.values()))}
+                loading={working}
+                disabled={selectedGoalIds.size === 0}
+              >
+                Save Selected Decisions
+              </Button>
+            </div>
+          )}
+
+          {lastFailedGoalIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-warning)] bg-[var(--color-surface)] px-3 py-2">
+              <span className="caption">Last bulk action failed for {lastFailedGoalIds.length} goals.</span>
+              <Button size="sm" variant="secondary" onClick={() => handleBulkDecision(lastFailedGoalIds)} loading={working}>
+                Retry Failed
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setLastFailedGoalIds([])} disabled={working}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+
           <div className="max-h-[420px] overflow-y-auto pr-1">
             <Stack gap="3">
               {filteredRows.map((goal) => {
@@ -190,11 +293,20 @@ export default function ManagerPage() {
                     className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3 shadow-[var(--shadow-sm)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
-                        <p className="caption mt-1">{goal.description}</p>
+                      <div className="flex items-start gap-2">
+                        <Checkbox
+                          label=""
+                          checked={selectedGoalIds.has(goal.$id)}
+                          onChange={(event) => toggleSelected(goal.$id, event.target.checked)}
+                        />
+                        <div>
+                          <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
+                          <p className="caption mt-1">{goal.description}</p>
+                        </div>
                       </div>
-                      <Badge variant="info">{goal.status}</Badge>
+                      <div>
+                        <Badge variant="info">{goal.status}</Badge>
+                      </div>
                     </div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">

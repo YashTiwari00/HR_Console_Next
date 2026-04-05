@@ -474,6 +474,55 @@ export interface BulkGoalAnalysisResponse {
   fallbackUsed: boolean;
 }
 
+export interface BulkCheckInRowInput {
+  goalId: string;
+  scheduledAt: string;
+  employeeNotes: string;
+  isFinalCheckIn?: boolean;
+  managerRating?: number | null;
+  attachmentFileIds?: string[];
+}
+
+export interface BulkCheckInPreviewRow {
+  rowNumber: number;
+  valid: boolean;
+  errors: string[];
+  normalized: {
+    goalId: string;
+    scheduledAt: string | null;
+    employeeNotes: string;
+    isFinalCheckIn: boolean;
+    managerRating: number | null;
+    attachmentIds: string[];
+    attachmentFileNames?: string[];
+  };
+}
+
+export interface BulkCheckInPreviewResponse {
+  ok: boolean;
+  role: string;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: BulkCheckInPreviewRow[];
+}
+
+export interface BulkCheckInCommitSummary {
+  successes: Array<{ rowNumber: number; checkInId: string }>;
+  failures: Array<{ rowNumber: number; reason: string }>;
+  successRows: number;
+  failedRows: number;
+}
+
+export interface ManagerCheckInApprovalItemInput {
+  checkInId: string;
+  managerNotes?: string;
+  transcriptText?: string;
+  isFinalCheckIn?: boolean;
+  managerRating?: number | null;
+  managerGoalRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+}
+
 export interface CheckInSummarySuggestion {
   summary: string;
   highlights: string[];
@@ -1724,6 +1773,57 @@ export async function createCheckIn(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function previewBulkCheckIns(input: { rows: BulkCheckInRowInput[] }) {
+  const payload = await requestJson("/api/check-ins/import/preview", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload as BulkCheckInPreviewResponse;
+}
+
+export async function commitBulkCheckIns(input: {
+  rows: BulkCheckInRowInput[];
+  idempotencyKey: string;
+  templateVersion?: string;
+}) {
+  const payload = await requestJson("/api/check-ins/import/commit", {
+    method: "POST",
+    headers: {
+      "x-idempotency-key": input.idempotencyKey,
+    },
+    body: JSON.stringify(input),
+  });
+
+  return payload as {
+    ok: boolean;
+    replayed: boolean;
+    importJobId: string;
+    status: string;
+    summary: BulkCheckInCommitSummary;
+  };
+}
+
+export async function submitManagerCheckInApprovals(input: {
+  items: ManagerCheckInApprovalItemInput[];
+}) {
+  const payload = await requestJson("/api/check-ins/manager-approvals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload as {
+    ok: boolean;
+    summary: {
+      total: number;
+      approved: number;
+      failed: number;
+      successes: Array<{ checkInId: string; status: string }>;
+      failures: Array<{ checkInId: string; reason: string }>;
+    };
+  };
 }
 
 export async function getGoalSuggestions(input: {

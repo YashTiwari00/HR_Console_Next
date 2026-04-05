@@ -466,50 +466,120 @@ async function main() {
 
   const scheduledAt = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString();
 
-  const createCheckIn = await apiCall({
-    name: "Create check-in",
-    path: "/api/check-ins",
-    method: "POST",
-    userId: draftOwner.$id,
-    expectedStatus: 201,
-    body: {
-      goalId: draftGoal.$id,
-      employeeId: draftOwner.$id,
-      scheduledAt,
-      status: "planned",
-      employeeNotes: "smoke check-in",
-    },
-  });
+  results.push(
+    await apiCall({
+      name: "Employee single check-in create deprecated",
+      path: "/api/check-ins",
+      method: "POST",
+      userId: draftOwner.$id,
+      expectedStatus: 410,
+      body: {
+        goalId: draftGoal.$id,
+        employeeId: draftOwner.$id,
+        scheduledAt,
+        status: "planned",
+        employeeNotes: "deprecated single-create path should be blocked",
+      },
+    })
+  );
 
-  results.push(createCheckIn);
+  const bulkRows = [
+    {
+      goalId: draftGoal.$id,
+      scheduledAt,
+      employeeNotes: "smoke bulk check-in row",
+      isFinalCheckIn: false,
+      managerRating: null,
+      attachmentFileIds: [],
+    },
+  ];
+
+  results.push(
+    await apiCall({
+      name: "Check-ins import preview",
+      path: "/api/check-ins/import/preview",
+      method: "POST",
+      userId: draftOwner.$id,
+      expectedStatus: 200,
+      body: { rows: bulkRows },
+    })
+  );
 
   let createdCheckInId = null;
-  if (createCheckIn.pass) {
-    const checkIns = await listAllDocuments(databases, collectionIds.checkIns, [
-      Query.equal("goalId", draftGoal.$id),
-      Query.equal("scheduledAt", scheduledAt),
-      Query.limit(1),
-    ]);
-    createdCheckInId = checkIns[0]?.$id || null;
+  const bulkIdempotencyKey = `smoke-checkins-import-${Date.now()}`;
+
+  {
+    const sessionToken = await sessionForUser(draftOwner.$id);
+    const response = await fetch(`${baseUrl}/api/check-ins/import/commit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-idempotency-key": bulkIdempotencyKey,
+        cookie: `a_session_${projectId}=${encodeURIComponent(sessionToken)}`,
+      },
+      body: JSON.stringify({ rows: bulkRows, templateVersion: "checkin-v1" }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    const successRows = Number(payload?.summary?.successRows || 0);
+    createdCheckInId = String(payload?.summary?.successes?.[0]?.checkInId || "").trim() || null;
+    const pass = response.status === 200 && successRows >= 1 && Boolean(createdCheckInId);
+
+    results.push(
+      toResult("Check-ins import commit", pass, {
+        status: response.status,
+        expectedStatus: 200,
+        successRows,
+      })
+    );
+  }
+
+  {
+    const sessionToken = await sessionForUser(draftOwner.$id);
+    const response = await fetch(`${baseUrl}/api/check-ins/import/commit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-idempotency-key": bulkIdempotencyKey,
+        cookie: `a_session_${projectId}=${encodeURIComponent(sessionToken)}`,
+      },
+      body: JSON.stringify({ rows: bulkRows, templateVersion: "checkin-v1" }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    const replayed = Boolean(payload?.replayed);
+
+    results.push(
+      toResult("Check-ins import commit idempotent replay", response.status === 200 && replayed, {
+        status: response.status,
+        expectedStatus: 200,
+        replayed,
+      })
+    );
   }
 
   if (createdCheckInId) {
     results.push(
       await apiCall({
-        name: "Manager complete check-in",
-        path: `/api/check-ins/${createdCheckInId}`,
-        method: "PATCH",
+        name: "Manager bulk approve check-in",
+        path: "/api/check-ins/manager-approvals",
+        method: "POST",
         userId: draftManager.$id,
         expectedStatus: 200,
         body: {
-          status: "completed",
-          managerNotes: "smoke complete",
-          isFinalCheckIn: false,
+          items: [
+            {
+              checkInId: createdCheckInId,
+              managerNotes: "smoke bulk approval",
+              transcriptText: "smoke transcript",
+              isFinalCheckIn: false,
+            },
+          ],
         },
       })
     );
   } else {
-    results.push(toResult("Manager complete check-in", false, { error: "No check-in created" }));
+    results.push(toResult("Manager bulk approve check-in", false, { error: "No check-in created" }));
   }
 
   results.push(
@@ -1066,6 +1136,7 @@ async function main() {
   console.log(`\nSummary: ${passed}/${results.length} passed, ${failed} failed.`);
 
   await deleteDocumentSafe(databases, collectionIds.goals, createdDraftGoalId);
+  await deleteDocumentSafe(databases, collectionIds.checkIns, createdCheckInId);
   await deleteDocumentSafe(databases, collectionIds.matrixReviewerFeedback, matrixFeedbackId);
   await deleteDocumentSafe(databases, collectionIds.matrixReviewerAssignments, matrixAssignmentId);
 

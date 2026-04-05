@@ -275,6 +275,16 @@ export async function POST(request) {
     const { profile, databases } = await requireAuth(request);
     requireRole(profile, ["employee", "manager", "leadership"]);
 
+    if (profile.role === "employee") {
+      return Response.json(
+        {
+          error:
+            "Single check-in creation is deprecated for employees. Use /api/check-ins/import/preview and /api/check-ins/import/commit.",
+        },
+        { status: 410 }
+      );
+    }
+
     const body = await request.json();
     const goalId = (body.goalId || "").trim();
     const employeeId = (body.employeeId || profile.$id).trim();

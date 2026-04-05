@@ -6,6 +6,74 @@ import { listUsersByIds } from "@/lib/teamAccess";
 
 const VALID_DECISIONS = ["approved", "rejected", "needs_changes"];
 
+function normalizeDecisionItem(item) {
+  return {
+    goalId: String(item?.goalId || "").trim(),
+    decision: String(item?.decision || "").trim(),
+    comments: String(item?.comments || "").trim(),
+  };
+}
+
+async function applyGoalDecision({ databases, profile, goalId, decision, comments }) {
+  if (!goalId || !decision) {
+    throw new Error("goalId and decision are required.");
+  }
+
+  if (!VALID_DECISIONS.includes(decision)) {
+    throw new Error("Invalid decision.");
+  }
+
+  const goal = await databases.getDocument(
+    databaseId,
+    appwriteConfig.goalsCollectionId,
+    goalId
+  );
+
+  if ((profile.role === "manager" || profile.role === "leadership") && goal.managerId !== profile.$id) {
+    const error = new Error("Forbidden for this goal.");
+    error.status = 403;
+    throw error;
+  }
+
+  if ((profile.role === "manager" || profile.role === "leadership") && goal.employeeId === profile.$id) {
+    const error = new Error(
+      "Managers cannot approve their own goals. Immediate upper manager approval is required."
+    );
+    error.status = 403;
+    throw error;
+  }
+
+  if (goal.status !== GOAL_STATUSES.SUBMITTED) {
+    throw new Error("Only submitted goals can be decided.");
+  }
+
+  const nextStatus = decision === "approved" ? GOAL_STATUSES.APPROVED : GOAL_STATUSES.NEEDS_CHANGES;
+
+  const updatedGoal = await databases.updateDocument(
+    databaseId,
+    appwriteConfig.goalsCollectionId,
+    goalId,
+    {
+      status: nextStatus,
+    }
+  );
+
+  const approval = await databases.createDocument(
+    databaseId,
+    appwriteConfig.goalApprovalsCollectionId,
+    ID.unique(),
+    {
+      goalId,
+      managerId: profile.$id,
+      decision,
+      comments,
+      decidedAt: new Date().toISOString(),
+    }
+  );
+
+  return { goal: updatedGoal, approval };
+}
+
 export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -76,70 +144,74 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const goalId = (body.goalId || "").trim();
-    const decision = (body.decision || "").trim();
-    const comments = (body.comments || "").trim();
+    const items = Array.isArray(body?.items)
+      ? body.items.map((item) => normalizeDecisionItem(item)).filter((item) => item.goalId)
+      : [];
 
-    if (!goalId || !decision) {
+    if (items.length > 0) {
+      if (items.length > 100) {
+        return Response.json({ error: "Bulk approvals support up to 100 goals per request." }, { status: 400 });
+      }
+
+      const successes = [];
+      const failures = [];
+
+      for (const item of items) {
+        try {
+          const result = await applyGoalDecision({
+            databases,
+            profile,
+            goalId: item.goalId,
+            decision: item.decision,
+            comments: item.comments,
+          });
+
+          successes.push({
+            goalId: item.goalId,
+            decision: item.decision,
+            goalStatus: result.goal?.status || null,
+          });
+        } catch (error) {
+          failures.push({
+            goalId: item.goalId,
+            reason: String(error?.message || "Failed to apply decision."),
+          });
+        }
+      }
+
+      return Response.json(
+        {
+          ok: true,
+          summary: {
+            total: items.length,
+            approved: successes.length,
+            failed: failures.length,
+            successes,
+            failures,
+          },
+        },
+        { status: failures.length === items.length ? 422 : 200 }
+      );
+    }
+
+    const single = normalizeDecisionItem(body || {});
+
+    if (!single.goalId || !single.decision) {
       return Response.json(
         { error: "goalId and decision are required." },
         { status: 400 }
       );
     }
 
-    if (!VALID_DECISIONS.includes(decision)) {
-      return Response.json({ error: "Invalid decision." }, { status: 400 });
-    }
+    const result = await applyGoalDecision({
+      databases,
+      profile,
+      goalId: single.goalId,
+      decision: single.decision,
+      comments: single.comments,
+    });
 
-    const goal = await databases.getDocument(
-      databaseId,
-      appwriteConfig.goalsCollectionId,
-      goalId
-    );
-
-    if ((profile.role === "manager" || profile.role === "leadership") && goal.managerId !== profile.$id) {
-      return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
-    }
-
-    if ((profile.role === "manager" || profile.role === "leadership") && goal.employeeId === profile.$id) {
-      return Response.json(
-        { error: "Managers cannot approve their own goals. Immediate upper manager approval is required." },
-        { status: 403 }
-      );
-    }
-
-    if (goal.status !== GOAL_STATUSES.SUBMITTED) {
-      return Response.json(
-        { error: "Only submitted goals can be decided." },
-        { status: 400 }
-      );
-    }
-
-    const nextStatus = decision === "approved" ? GOAL_STATUSES.APPROVED : GOAL_STATUSES.NEEDS_CHANGES;
-
-    const updatedGoal = await databases.updateDocument(
-      databaseId,
-      appwriteConfig.goalsCollectionId,
-      goalId,
-      {
-        status: nextStatus,
-      }
-    );
-
-    const approval = await databases.createDocument(
-      databaseId,
-      appwriteConfig.goalApprovalsCollectionId,
-      ID.unique(),
-      {
-        goalId,
-        managerId: profile.$id,
-        decision,
-        comments,
-        decidedAt: new Date().toISOString(),
-      }
-    );
-
-    return Response.json({ data: { goal: updatedGoal, approval } });
+    return Response.json({ data: result });
   } catch (error) {
     return errorResponse(error);
   }

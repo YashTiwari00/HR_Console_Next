@@ -1,5 +1,46 @@
 # MASTER PRODUCT REQUIREMENT
 
+## Bulk Check-Ins Upload Guide (Employee + Manager)
+
+### Employee flow
+
+1. Open Employee Check-ins page.
+2. Download template from `/api/check-ins/import/template`.
+3. Fill one row per check-in and upload the sheet (`.xlsx`, `.xls`, or `.csv`).
+4. Run Preview first to validate rows.
+5. Fix invalid rows and commit upload.
+
+### Required columns
+
+- `goalId`
+- `scheduledAt` (ISO datetime recommended)
+- `employeeNotes` (minimum 10 characters)
+- `isFinalCheckIn` (`true/false`)
+- `managerRating` (optional unless final check-in; 1-5)
+
+### Attachment columns
+
+- `attachmentFileIds`: comma-separated file IDs if files already exist in attachments storage.
+- `attachmentFileNames`: comma-separated local file names that you select in the UI before commit.
+
+### Validation rules
+
+- Employee can upload only for their own goals.
+- Goal must be approved.
+- Max 5 check-ins per goal is enforced.
+- Final check-in manager rating must be between 1 and 5.
+
+### Manager approval modes
+
+- One-by-one: use `Approve Check-in` on each row.
+- Bulk: select multiple pending rows and use `Approve Selected`.
+- Retry failed: if a bulk action partially fails, use `Retry Failed` from the warning strip.
+
+### Deprecation note
+
+- Employee single check-in create endpoint is deprecated.
+- Employees should use bulk import preview and commit endpoints.
+
 # DOCUMENT (PRD)
 
 ## AI-Native, Seamless, Decision-Intelligent Performance

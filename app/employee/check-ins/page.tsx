@@ -1,13 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
+import Link from "next/link";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
+  BulkCheckInPreviewRow,
   CheckInItem,
   checkInStatusVariant,
-  createCheckIn,
+  commitBulkCheckIns,
   fetchCheckIns,
   fetchGoals,
   fetchMeetRequests,
@@ -15,8 +18,20 @@ import {
   getAttachmentDownloadPath,
   GoalItem,
   MeetRequestItem,
+  previewBulkCheckIns,
   uploadAttachments,
 } from "@/app/employee/_lib/pmsClient";
+
+type ParsedBulkRow = {
+  rowNumber: number;
+  goalId: string;
+  scheduledAt: string;
+  employeeNotes: string;
+  isFinalCheckIn: boolean;
+  managerRating: number | null;
+  attachmentFileIds: string[];
+  attachmentFileNames: string[];
+};
 
 export default function EmployeeCheckInsPage() {
   const [goals, setGoals] = useState<GoalItem[]>([]);
@@ -26,17 +41,221 @@ export default function EmployeeCheckInsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [fileInputKey, setFileInputKey] = useState(0);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkRows, setBulkRows] = useState<ParsedBulkRow[]>([]);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const [previewRows, setPreviewRows] = useState<BulkCheckInPreviewRow[]>([]);
+  const [previewCounts, setPreviewCounts] = useState({ total: 0, valid: 0, invalid: 0 });
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
 
-  const [form, setForm] = useState({
-    goalId: "",
-    scheduledAt: "",
-    employeeNotes: "",
-    isFinalCheckIn: false,
-  });
+  const approvedGoals = useMemo(
+    () => new Set(goals.filter((goal) => goal.status === "approved").map((goal) => goal.$id)),
+    [goals]
+  );
 
-  const approvedGoals = goals.filter((goal) => goal.status === "approved");
+  function readCell(row: Record<string, unknown>, keys: string[]) {
+    const entries = Object.entries(row);
+    for (const key of keys) {
+      const found = entries.find(([rowKey]) => rowKey.trim().toLowerCase() === key.trim().toLowerCase());
+      if (found && String(found[1] ?? "").trim()) {
+        return String(found[1]).trim();
+      }
+    }
+    return "";
+  }
+
+  function splitCsv(value: string) {
+    return String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function parseWorkbookRows(rows: Record<string, unknown>[]) {
+    return rows
+      .map((row, index) => {
+        const goalId = readCell(row, ["goalId", "goal id"]);
+        const scheduledAt = readCell(row, ["scheduledAt", "scheduled at", "date", "when"]);
+        const employeeNotes = readCell(row, ["employeeNotes", "employee notes", "notes"]);
+        const isFinalRaw = readCell(row, ["isFinalCheckIn", "is final check in", "is final"]);
+        const managerRatingRaw = readCell(row, ["managerRating", "manager rating", "rating"]);
+        const attachmentFileIds = splitCsv(
+          readCell(row, ["attachmentFileIds", "attachmentIds", "attachment file ids"])
+        );
+        const attachmentFileNames = splitCsv(
+          readCell(row, ["attachmentFileNames", "attachment files", "attachment names"])
+        );
+
+        const managerRating = Number.parseInt(managerRatingRaw || "", 10);
+
+        return {
+          rowNumber: index + 1,
+          goalId,
+          scheduledAt,
+          employeeNotes,
+          isFinalCheckIn: ["true", "1", "yes"].includes(isFinalRaw.trim().toLowerCase()),
+          managerRating: Number.isInteger(managerRating) ? managerRating : null,
+          attachmentFileIds,
+          attachmentFileNames,
+        } as ParsedBulkRow;
+      })
+      .filter((item) => item.goalId || item.scheduledAt || item.employeeNotes);
+  }
+
+  async function readBulkWorkbook(file: File) {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const firstSheet = workbook.SheetNames?.[0];
+    if (!firstSheet) {
+      throw new Error("Workbook has no sheets.");
+    }
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], {
+      defval: "",
+    });
+
+    return parseWorkbookRows(rows);
+  }
+
+  async function handleBulkFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+
+    setBulkLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const parsed = await readBulkWorkbook(file);
+      if (parsed.length === 0) {
+        throw new Error("No usable rows found. Use the check-in import template and try again.");
+      }
+
+      setBulkRows(parsed);
+      setBulkFileName(file.name);
+      setPreviewRows([]);
+      setPreviewCounts({ total: 0, valid: 0, invalid: 0 });
+      setSuccess(`Parsed ${parsed.length} rows from ${file.name}. Run preview before commit.`);
+    } catch (err) {
+      setBulkRows([]);
+      setBulkFileName("");
+      setError(err instanceof Error ? err.message : "Failed to parse workbook.");
+    } finally {
+      setBulkLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  function validateAttachmentReferences(rows: ParsedBulkRow[]) {
+    const available = new Set(attachmentFiles.map((file) => file.name.trim().toLowerCase()));
+
+    for (const row of rows) {
+      for (const name of row.attachmentFileNames) {
+        if (!available.has(name.trim().toLowerCase())) {
+          return `Attachment file '${name}' (row ${row.rowNumber}) is not selected. Upload that file or remove it from sheet.`;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  async function uploadAttachmentNameMap() {
+    if (attachmentFiles.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const uploaded = await uploadAttachments(attachmentFiles);
+    const map = new Map<string, string>();
+
+    for (let index = 0; index < uploaded.length; index += 1) {
+      const source = attachmentFiles[index];
+      const target = uploaded[index];
+      if (source?.name && target?.fileId) {
+        map.set(source.name.trim().toLowerCase(), target.fileId);
+      }
+    }
+
+    return map;
+  }
+
+  function toApiRows(rows: ParsedBulkRow[], attachmentMap?: Map<string, string>) {
+    return rows.map((row) => {
+      const mappedIds = row.attachmentFileNames
+        .map((name) => attachmentMap?.get(name.trim().toLowerCase()) || "")
+        .filter(Boolean);
+
+      return {
+        goalId: row.goalId,
+        scheduledAt: row.scheduledAt,
+        employeeNotes: row.employeeNotes,
+        isFinalCheckIn: row.isFinalCheckIn,
+        managerRating: row.managerRating,
+        attachmentFileIds: Array.from(new Set([...row.attachmentFileIds, ...mappedIds])),
+      };
+    });
+  }
+
+  async function handlePreview() {
+    if (bulkRows.length === 0) return;
+
+    setSubmitting(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const attachmentValidationError = validateAttachmentReferences(bulkRows);
+      if (attachmentValidationError) {
+        throw new Error(attachmentValidationError);
+      }
+
+      const payload = await previewBulkCheckIns({ rows: toApiRows(bulkRows) });
+      setPreviewRows(payload.rows || []);
+      setPreviewCounts({
+        total: Number(payload.totalRows || 0),
+        valid: Number(payload.validRows || 0),
+        invalid: Number(payload.invalidRows || 0),
+      });
+      setSuccess(`Preview complete: ${payload.validRows} valid, ${payload.invalidRows} invalid.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Preview failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCommit() {
+    if (bulkRows.length === 0) return;
+
+    setSubmitting(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const attachmentValidationError = validateAttachmentReferences(bulkRows);
+      if (attachmentValidationError) {
+        throw new Error(attachmentValidationError);
+      }
+
+      const attachmentMap = await uploadAttachmentNameMap();
+      const commitPayload = await commitBulkCheckIns({
+        rows: toApiRows(bulkRows, attachmentMap),
+        idempotencyKey:
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        templateVersion: "checkin-v1",
+      });
+
+      const summary = commitPayload.summary;
+      setSuccess(`Imported ${summary.successRows} check-ins. Failed rows: ${summary.failedRows}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Commit failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -81,12 +300,6 @@ export default function EmployeeCheckInsPage() {
 
       setMeetingsByGoal(groupedMeetings);
 
-      if (nextGoals.length > 0) {
-        const eligible = nextGoals.filter((goal) => goal.status === "approved");
-        if (eligible.length > 0) {
-          setForm((prev) => ({ ...prev, goalId: prev.goalId || eligible[0].$id }));
-        }
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load check-ins.");
     } finally {
@@ -97,36 +310,6 @@ export default function EmployeeCheckInsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      const uploaded = selectedFiles.length > 0 ? await uploadAttachments(selectedFiles) : [];
-
-      await createCheckIn({
-        goalId: form.goalId,
-        scheduledAt: form.scheduledAt,
-        employeeNotes: form.employeeNotes,
-        status: "planned",
-        isFinalCheckIn: form.isFinalCheckIn,
-        attachmentIds: uploaded.map((item) => item.fileId),
-      });
-
-      setForm((prev) => ({ ...prev, employeeNotes: "", isFinalCheckIn: false }));
-      setSelectedFiles([]);
-      setFileInputKey((prev) => prev + 1);
-      setSuccess("Check-in created and sent to manager for review.");
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create check-in.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   return (
     <Stack gap="4">
@@ -144,68 +327,85 @@ export default function EmployeeCheckInsPage() {
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
 
       <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Plan Check-in" description="Book the next touchpoint on one of your goals.">
-          <form className="space-y-3" onSubmit={handleSubmit}>
-            <Dropdown
-              label="Goal"
-              value={form.goalId}
-              onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
-              options={approvedGoals.map((goal) => ({ value: goal.$id, label: goal.title }))}
-              placeholder={approvedGoals.length ? undefined : "No approved goals available"}
-              disabled={approvedGoals.length === 0}
-            />
-            {approvedGoals.length === 0 && (
-              <p className="caption">
-                Check-ins open only after manager approves at least one goal.
-              </p>
-            )}
-            <Input
-              label="When"
-              type="datetime-local"
-              value={form.scheduledAt}
-              onChange={(event) => setForm((prev) => ({ ...prev, scheduledAt: event.target.value }))}
-              required
-            />
-            <Textarea
-              label="Notes"
-              value={form.employeeNotes}
-              onChange={(event) => setForm((prev) => ({ ...prev, employeeNotes: event.target.value }))}
-            />
+        <Card title="Bulk Check-in Upload" description="Upload one Excel sheet to create check-ins for multiple goals.">
+          <Stack gap="3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/api/check-ins/import/template"
+                className="caption text-[var(--color-primary)] hover:underline"
+              >
+                Download template
+              </Link>
+              <span className="caption">Only approved goals are accepted.</span>
+            </div>
 
-            <Checkbox
-              label="Mark this as my final check-in for this goal"
-              description="Manager will be asked to provide a final rating when completing this check-in."
-              checked={form.isFinalCheckIn}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, isFinalCheckIn: event.target.checked }))
-              }
-            />
-
-            <div className="flex flex-col gap-2">
-              <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="checkin-files">
-                Proof Attachments (optional)
+            <div className="space-y-2">
+              <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="bulk-checkin-sheet">
+                Upload check-in sheet (.xlsx/.csv)
               </label>
               <input
-                key={fileInputKey}
-                id="checkin-files"
+                id="bulk-checkin-sheet"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="body-sm"
+                onChange={handleBulkFileUpload}
+              />
+              {bulkFileName && <p className="caption">Loaded file: {bulkFileName}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="bulk-checkin-attachments">
+                Attachment files for attachmentFileNames column (optional)
+              </label>
+              <input
+                id="bulk-checkin-attachments"
                 type="file"
                 multiple
                 accept=".png,.jpg,.jpeg,.pdf,.eml"
                 className="body-sm"
                 onChange={(event) => {
                   const files = event.target.files ? Array.from(event.target.files) : [];
-                  setSelectedFiles(files);
+                  setAttachmentFiles(files);
                 }}
               />
-              {selectedFiles.length > 0 && (
-                <p className="caption">Selected files: {selectedFiles.map((file) => file.name).join(", ")}</p>
+              {attachmentFiles.length > 0 && (
+                <p className="caption">Selected attachments: {attachmentFiles.map((file) => file.name).join(", ")}</p>
               )}
             </div>
 
-            <Button type="submit" loading={submitting} disabled={!form.goalId || approvedGoals.length === 0}>
-              Create And Send To Manager
-            </Button>
-          </form>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={handlePreview} loading={submitting || bulkLoading} disabled={bulkRows.length === 0}>
+                Preview Upload
+              </Button>
+              <Button onClick={handleCommit} loading={submitting} disabled={bulkRows.length === 0 || bulkLoading}>
+                Commit Upload
+              </Button>
+            </div>
+
+            {bulkRows.length > 0 && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+                <p className="caption">Rows parsed: {bulkRows.length}</p>
+                <p className="caption">Approved-goal rows in sheet: {bulkRows.filter((row) => approvedGoals.has(row.goalId)).length}</p>
+                <p className="caption">Preview valid rows: {previewCounts.valid} / {previewCounts.total}</p>
+              </div>
+            )}
+
+            {previewRows.length > 0 && (
+              <div className="space-y-2">
+                <p className="caption font-medium">Preview details</p>
+                {previewRows.slice(0, 12).map((row) => (
+                  <div key={`preview-${row.rowNumber}`} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="caption">Row {row.rowNumber}</p>
+                      <Badge variant={row.valid ? "success" : "danger"}>{row.valid ? "valid" : "invalid"}</Badge>
+                    </div>
+                    {!row.valid && <p className="caption mt-1">{row.errors.join("; ")}</p>}
+                  </div>
+                ))}
+                {previewRows.length > 12 && <p className="caption">Showing first 12 rows only.</p>}
+              </div>
+            )}
+          </Stack>
         </Card>
 
         <Card title="Check-in Activity" description="Planned and completed sessions.">
