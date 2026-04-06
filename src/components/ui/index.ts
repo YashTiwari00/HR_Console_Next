@@ -49,3 +49,5 @@ export type { ChatBotProps } from './ChatBot';
 
 export { default as Companion } from './Companion';
 export type { CompanionProps } from './Companion';
+
+export { default as NotificationBell } from './NotificationBell';

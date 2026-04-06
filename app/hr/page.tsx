@@ -309,6 +309,21 @@ export default function HrDashboardPage() {
 
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
 
+      <Card
+        title="Policy Management"
+        description="Cycle auto-approval and related policy controls are now in the dedicated HR Settings page."
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/hr/settings"
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 body-sm font-medium text-[var(--color-text)] transition-colors duration-150 hover:bg-[var(--color-surface-muted)]"
+          >
+            Open HR Settings
+          </Link>
+          <Badge variant="info">Auto-Approval Policies</Badge>
+        </div>
+      </Card>
+
       <Grid cols={1} colsMd={4} gap="3">
         <Card title="Managers Tracked" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : totals.managers}</p>

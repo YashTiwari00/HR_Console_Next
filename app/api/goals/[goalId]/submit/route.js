@@ -3,6 +3,11 @@ import { GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 
+function isUnknownAttributeError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("unknown attribute") || message.includes("attribute not found in schema");
+}
+
 export async function POST(request, context) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -30,14 +35,33 @@ export async function POST(request, context) {
       );
     }
 
-    const updated = await databases.updateDocument(
-      databaseId,
-      appwriteConfig.goalsCollectionId,
-      goalId,
-      {
-        status: GOAL_STATUSES.SUBMITTED,
+    const nowIso = new Date().toISOString();
+
+    let updated;
+    try {
+      updated = await databases.updateDocument(
+        databaseId,
+        appwriteConfig.goalsCollectionId,
+        goalId,
+        {
+          status: GOAL_STATUSES.SUBMITTED,
+          submittedAt: nowIso,
+        }
+      );
+    } catch (error) {
+      if (!isUnknownAttributeError(error)) {
+        throw error;
       }
-    );
+
+      updated = await databases.updateDocument(
+        databaseId,
+        appwriteConfig.goalsCollectionId,
+        goalId,
+        {
+          status: GOAL_STATUSES.SUBMITTED,
+        }
+      );
+    }
 
     return Response.json({ data: updated });
   } catch (error) {

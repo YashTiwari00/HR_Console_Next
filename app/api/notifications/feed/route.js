@@ -6,6 +6,7 @@ import {
   isUnknownAttributeError,
   parsePayload,
 } from "@/app/api/notifications/_lib/engine";
+import { encodeNotificationId, listNotificationsForUser } from "@/app/api/notifications/_lib/store";
 
 function toPositiveLimit(value, fallback = 25) {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -22,71 +23,60 @@ export async function GET(request) {
     const includeRead = String(searchParams.get("includeRead") || "false").toLowerCase() === "true";
     const limit = toPositiveLimit(searchParams.get("limit"), 25);
 
-    const baseQueries = [
-      Query.equal("userId", String(profile.$id || "").trim()),
-      Query.limit(limit),
-    ];
-
-    const queries = [...baseQueries, Query.orderDesc("createdAt")];
-
-    if (!includeRead) {
-      queries.push(Query.equal("isRead", false));
-    }
-
     let rows;
     try {
-      const result = await databases.listDocuments(
-        databaseId,
-        appwriteConfig.notificationEventsCollectionId,
-        queries
-      );
-      rows = result.documents;
+      rows = await listNotificationsForUser(databases, {
+        userId: String(profile.$id || "").trim(),
+        limit,
+        includeRead,
+      });
     } catch (error) {
-      if (isMissingCollectionError(error, appwriteConfig.notificationEventsCollectionId)) {
+      if (isMissingCollectionError(error, appwriteConfig.notificationsCollectionId)) {
         return Response.json({
           data: [],
           meta: {
             skipped: true,
-            reason: "notification_events collection is not available.",
+            reason: "notifications collection is not available.",
           },
         });
       }
 
-      if (!includeRead && isUnknownAttributeError(error)) {
-        const fallbackResult = await databases.listDocuments(
-          databaseId,
-          appwriteConfig.notificationEventsCollectionId,
-          [
-            Query.equal("userId", String(profile.$id || "").trim()),
-            Query.orderDesc("$createdAt"),
-            Query.limit(limit),
-          ]
-        );
-        rows = fallbackResult.documents;
-      } else if (isUnknownAttributeError(error)) {
-        const fallbackResult = await databases.listDocuments(
-          databaseId,
-          appwriteConfig.notificationEventsCollectionId,
-          [...baseQueries, Query.orderDesc("$createdAt")]
-        );
-        rows = fallbackResult.documents;
-      } else {
+      if (!isUnknownAttributeError(error)) {
         throw error;
       }
+
+      const fallbackResult = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.notificationEventsCollectionId,
+        [
+          Query.equal("userId", String(profile.$id || "").trim()),
+          Query.orderDesc("$createdAt"),
+          Query.limit(limit),
+        ]
+      );
+      rows = fallbackResult.documents.map((row) => ({
+        ...row,
+        __collectionId: appwriteConfig.notificationEventsCollectionId,
+      }));
     }
 
     const data = rows.map((row) => ({
-      id: row.$id,
-      triggerType: row.triggerType,
-      channel: row.channel,
-      deliveryStatus: row.deliveryStatus,
+      id: encodeNotificationId(String(row.__collectionId || appwriteConfig.notificationsCollectionId), row.$id),
+      triggerType: row.triggerType || row.type || "manual",
+      channel: row.channel || "in_app",
+      deliveryStatus: row.deliveryStatus || "delivered",
       title: row.title,
       message: row.message,
       actionUrl: row.actionUrl || "",
       isRead: Boolean(row.isRead),
       readAt: row.readAt || null,
       createdAt: row.createdAt || row.$createdAt,
-      metadata: parsePayload(row.metadata),
+      metadata:
+        typeof row.metadata === "string"
+          ? parsePayload(row.metadata)
+          : row.metadata && typeof row.metadata === "object"
+          ? row.metadata
+          : {},
     }));
 
     return Response.json({

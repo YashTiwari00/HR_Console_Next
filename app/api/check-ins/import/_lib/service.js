@@ -1,6 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { CHECKIN_STATUSES, GOAL_STATUSES, IMPORT_JOB_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
 
 const TEMPLATE_COLUMNS = [
   "goalId",
@@ -242,6 +243,47 @@ export async function commitImportRows({ databases, profile, previewResult }) {
           ? { attachmentIds: row.attachmentIds }
           : {}),
       });
+
+      try {
+        const employeeUserId = String(profile.$id || "").trim();
+        const managerUserId = String(managerId || "").trim();
+        const checkInId = String(created.$id || "").trim();
+        const goalTitle = String(goal.title || row.goalId).trim() || "Goal";
+        const dateKey = new Date().toISOString().slice(0, 10);
+
+        const tasks = [
+          sendInAppAndQueueEmail(databases, {
+            userId: employeeUserId,
+            triggerType: "checkin_submitted",
+            title: "Check-in submitted",
+            message: `Your check-in for \"${goalTitle}\" has been submitted.`,
+            actionUrl: "/employee/check-ins",
+            dedupeKey: `checkin-submitted-employee-${checkInId}-${dateKey}`,
+            metadata: {
+              checkInId,
+              goalId: row.goalId,
+              recipientRole: "employee",
+            },
+          }),
+          sendInAppAndQueueEmail(databases, {
+            userId: managerUserId,
+            triggerType: "checkin_submitted",
+            title: "New check-in submitted",
+            message: `A check-in was submitted for \"${goalTitle}\" and is ready for review.`,
+            actionUrl: "/manager/team-check-ins",
+            dedupeKey: `checkin-submitted-manager-${checkInId}-${dateKey}`,
+            metadata: {
+              checkInId,
+              goalId: row.goalId,
+              recipientRole: "manager",
+            },
+          }),
+        ];
+
+        await Promise.allSettled(tasks);
+      } catch {
+        // Notification failures should not block check-in uploads.
+      }
 
       successes.push({ rowNumber: rowResult.rowNumber, checkInId: created.$id });
     } catch (error) {

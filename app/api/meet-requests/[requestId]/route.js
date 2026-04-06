@@ -9,6 +9,7 @@ import { parseStringList, toMeetingType } from "@/lib/meetingIntelligence";
 import { getMeetingWithMetadata, upsertMeetingMetadata } from "@/lib/meetingMetadataStore";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { listUsersByIds } from "@/lib/teamAccess";
+import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
 
 function isValidRange(startTime, endTime) {
   const start = new Date(startTime).valueOf();
@@ -266,6 +267,36 @@ export async function PATCH(request, context) {
       participantIds: allParticipantIds,
       participantEmails: attendees,
     };
+
+    const notifyAt = new Date().toISOString().slice(0, 10);
+    await Promise.allSettled([
+      sendInAppAndQueueEmail(databases, {
+        userId: String(existing.employeeId || "").trim(),
+        triggerType: "meeting_scheduled",
+        title: "Meeting scheduled",
+        message: `${title} has been scheduled for ${new Date(normalizedStartTime).toLocaleString()}.`,
+        actionUrl: "/employee/meetings",
+        dedupeKey: `meeting-scheduled-employee-${requestId}-${notifyAt}`,
+        metadata: {
+          requestId,
+          eventId: event.eventId,
+          role: "employee",
+        },
+      }),
+      sendInAppAndQueueEmail(databases, {
+        userId: String(profile.$id || "").trim(),
+        triggerType: "meeting_scheduled",
+        title: "Meeting scheduled",
+        message: `${title} has been successfully scheduled.`,
+        actionUrl: "/manager/meeting-calendar",
+        dedupeKey: `meeting-scheduled-manager-${requestId}-${notifyAt}`,
+        metadata: {
+          requestId,
+          eventId: event.eventId,
+          role: "manager",
+        },
+      }),
+    ]);
 
     return Response.json({ data: { meetingRequest: withMetadata, event } });
   } catch (error) {

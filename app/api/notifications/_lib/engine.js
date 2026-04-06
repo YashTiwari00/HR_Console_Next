@@ -5,6 +5,7 @@ import {
   NOTIFICATION_JOB_STATUSES,
   NOTIFICATION_TRIGGER_TYPES,
 } from "@/lib/appwriteSchema";
+import { sendNotificationEmail } from "@/lib/emailProvider";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 
 function toStringSafe(value, fallback = "") {
@@ -49,36 +50,50 @@ export function parsePayload(payloadText) {
 }
 
 export async function createNotificationEventCompat(databases, payload) {
-  let nextPayload = { ...payload };
+  const collectionIds = Array.from(
+    new Set(
+      [
+        String(appwriteConfig.notificationsCollectionId || "").trim(),
+        String(appwriteConfig.notificationEventsCollectionId || "").trim(),
+      ].filter(Boolean)
+    )
+  );
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    try {
-      return await databases.createDocument(
-        databaseId,
-        appwriteConfig.notificationEventsCollectionId,
-        ID.unique(),
-        nextPayload
-      );
-    } catch (error) {
-      if (!isUnknownAttributeError(error)) {
-        throw error;
+  for (const collectionId of collectionIds) {
+    let nextPayload = {
+      ...payload,
+      type: String(payload?.type || payload?.triggerType || "manual").trim().toLowerCase(),
+      dedupeKey: String(parsePayload(payload?.metadata).dedupeKey || "").trim(),
+    };
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        return await databases.createDocument(databaseId, collectionId, ID.unique(), nextPayload);
+      } catch (error) {
+        if (isMissingCollectionError(error, collectionId)) {
+          break;
+        }
+
+        if (!isUnknownAttributeError(error)) {
+          throw error;
+        }
+
+        const unknownAttr = extractUnknownAttributeName(error);
+        if (!unknownAttr || !(unknownAttr in nextPayload)) {
+          throw error;
+        }
+
+        const rest = { ...nextPayload };
+        delete rest[unknownAttr];
+        nextPayload = rest;
       }
-
-      const unknownAttr = extractUnknownAttributeName(error);
-      if (!unknownAttr || !(unknownAttr in nextPayload)) {
-        throw error;
-      }
-
-      const rest = { ...nextPayload };
-      delete rest[unknownAttr];
-      nextPayload = rest;
     }
   }
 
   throw new Error("Unable to create notification event with compatible schema fallback.");
 }
 
-export async function dispatchNotification({ job, template }) {
+export async function dispatchNotification({ databases, job, template }) {
   const payload = parsePayload(job.payload);
   const title =
     toStringSafe(payload.title).trim() ||
@@ -91,13 +106,36 @@ export async function dispatchNotification({ job, template }) {
   const actionUrl = toStringSafe(payload.actionUrl).trim() || "";
 
   if (job.channel === NOTIFICATION_CHANNELS.EMAIL) {
+    const userId = String(job.userId || "").trim();
+    if (!userId) {
+      throw new Error("Notification job is missing userId.");
+    }
+
+    const profile = await databases.getDocument(
+      databaseId,
+      appwriteConfig.usersCollectionId,
+      userId
+    );
+
+    const recipientEmail = toStringSafe(profile?.email).trim();
+    if (!recipientEmail) {
+      throw new Error(`User ${userId} has no email configured.`);
+    }
+
+    const emailResult = await sendNotificationEmail({
+      to: recipientEmail,
+      subject: title,
+      message,
+      actionUrl,
+    });
+
     return {
       ok: true,
       deliveryStatus: NOTIFICATION_DELIVERY_STATUSES.DELIVERED,
       title,
       message,
       actionUrl,
-      provider: "noop_email",
+      provider: emailResult.provider || "resend",
       reason: null,
     };
   }
@@ -130,21 +168,40 @@ export async function shouldSuppressByDedupe(databases, job, template) {
 
   const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
 
-  const result = await databases.listDocuments(
-    databaseId,
-    appwriteConfig.notificationEventsCollectionId,
-    [
-      Query.equal("userId", String(job.userId || "").trim()),
-      Query.equal("triggerType", String(job.triggerType || "").trim()),
-      Query.greaterThanEqual("createdAt", since),
-      Query.limit(100),
-    ]
+  const collectionIds = Array.from(
+    new Set(
+      [
+        String(appwriteConfig.notificationsCollectionId || "").trim(),
+        String(appwriteConfig.notificationEventsCollectionId || "").trim(),
+      ].filter(Boolean)
+    )
   );
 
-  return result.documents.some((item) => {
-    const metadata = parsePayload(item.metadata);
-    return String(metadata.dedupeKey || "").trim() === dedupeKey;
-  });
+  for (const collectionId of collectionIds) {
+    try {
+      const result = await databases.listDocuments(databaseId, collectionId, [
+        Query.equal("userId", String(job.userId || "").trim()),
+        Query.greaterThanEqual("createdAt", since),
+        Query.limit(100),
+      ]);
+
+      const suppressed = result.documents.some((item) => {
+        const metadata = parsePayload(item.metadata);
+        const itemDedupe = String(item.dedupeKey || metadata.dedupeKey || "").trim();
+        const itemTrigger = String(item.triggerType || item.type || "").trim();
+        return itemDedupe === dedupeKey && itemTrigger === String(job.triggerType || "").trim();
+      });
+
+      if (suppressed) return true;
+    } catch (error) {
+      if (isMissingCollectionError(error, collectionId) || isUnknownAttributeError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return false;
 }
 
 export async function listDueNotificationJobs(databases, limit = 25) {

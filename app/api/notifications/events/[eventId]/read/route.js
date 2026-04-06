@@ -1,7 +1,9 @@
-import { appwriteConfig } from "@/lib/appwrite";
-import { databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { isMissingCollectionError } from "@/app/api/notifications/_lib/engine";
+import {
+  decodeNotificationId,
+  findNotificationForUser,
+  markNotificationReadByCollection,
+} from "@/app/api/notifications/_lib/store";
 
 export async function PATCH(request, context) {
   try {
@@ -15,35 +17,26 @@ export async function PATCH(request, context) {
       return Response.json({ error: "eventId is required." }, { status: 400 });
     }
 
-    let event;
-    try {
-      event = await databases.getDocument(
-        databaseId,
-        appwriteConfig.notificationEventsCollectionId,
-        eventId
-      );
-    } catch (error) {
-      if (isMissingCollectionError(error, appwriteConfig.notificationEventsCollectionId)) {
-        return Response.json(
-          { error: "notification_events collection is not available." },
-          { status: 409 }
-        );
-      }
-      throw error;
+    const found = await findNotificationForUser(
+      databases,
+      eventId,
+      String(profile.$id || "").trim()
+    );
+
+    if (!found) {
+      return Response.json({ error: "Notification not found." }, { status: 404 });
     }
 
-    if (String(event.userId || "").trim() !== String(profile.$id || "").trim()) {
+    const { collectionId, doc } = found;
+    if (String(doc.userId || "").trim() !== String(profile.$id || "").trim()) {
       return Response.json({ error: "Forbidden for this notification event." }, { status: 403 });
     }
 
-    const updated = await databases.updateDocument(
-      databaseId,
-      appwriteConfig.notificationEventsCollectionId,
-      eventId,
-      {
-        isRead: true,
-        readAt: new Date().toISOString(),
-      }
+    const decoded = decodeNotificationId(eventId);
+    const updated = await markNotificationReadByCollection(
+      databases,
+      collectionId,
+      decoded.documentId || doc.$id
     );
 
     return Response.json({

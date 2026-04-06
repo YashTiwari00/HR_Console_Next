@@ -5,6 +5,7 @@ import { normalizeCycleId } from "@/lib/cycle";
 import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee, getManagerTeamEmployeeIds } from "@/lib/teamAccess";
+import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
 
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
@@ -349,6 +350,51 @@ export async function POST(request) {
           ? "No upper manager mapping found for manager goal approval."
           : "Using non-standard manager approver mapping source."
         : "";
+
+    try {
+      const goalId = String(goal.$id || "").trim();
+      const goalTitle = String(goal.title || title).trim() || "Untitled Goal";
+      const dateKey = new Date().toISOString().slice(0, 10);
+      const managerUserId = String(managerId || "").trim();
+
+      const tasks = [
+        sendInAppAndQueueEmail(databases, {
+          userId: String(profile.$id || "").trim(),
+          triggerType: "goal_added",
+          title: "Goal added",
+          message: `Your goal \"${goalTitle}\" was added successfully.`,
+          actionUrl: "/employee/goals",
+          dedupeKey: `goal-added-employee-${goalId}-${dateKey}`,
+          metadata: {
+            goalId,
+            cycleId,
+            recipientRole: "employee",
+          },
+        }),
+      ];
+
+      if (managerUserId) {
+        tasks.push(
+          sendInAppAndQueueEmail(databases, {
+            userId: managerUserId,
+            triggerType: "goal_added",
+            title: "New goal added",
+            message: `${String(profile.name || "An employee").trim()} added goal \"${goalTitle}\".`,
+            actionUrl: "/manager/goals",
+            dedupeKey: `goal-added-manager-${goalId}-${dateKey}`,
+            metadata: {
+              goalId,
+              cycleId,
+              recipientRole: "manager",
+            },
+          })
+        );
+      }
+
+      await Promise.allSettled(tasks);
+    } catch {
+      // Notification errors should not block goal creation.
+    }
 
     return Response.json(
       {

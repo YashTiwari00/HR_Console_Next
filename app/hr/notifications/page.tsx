@@ -17,7 +17,12 @@ import {
 
 const triggerOptions = [
   { label: "Manual", value: "manual" },
+  { label: "Goal Added", value: "goal_added" },
+  { label: "Check-in Submitted", value: "checkin_submitted" },
   { label: "Goal Pending Approval", value: "goal_pending_approval" },
+  { label: "Goal Approved", value: "goal_approved" },
+  { label: "Meeting Scheduled", value: "meeting_scheduled" },
+  { label: "Deadline Near", value: "deadline_near" },
   { label: "Check-in Overdue", value: "checkin_overdue" },
   { label: "Review Pending", value: "review_pending" },
   { label: "Cycle Deadline", value: "cycle_deadline" },

@@ -1,78 +1,9 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { GOAL_STATUSES } from "@/lib/appwriteSchema";
-import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { listUsersByIds } from "@/lib/teamAccess";
-
-const VALID_DECISIONS = ["approved", "rejected", "needs_changes"];
-
-function normalizeDecisionItem(item) {
-  return {
-    goalId: String(item?.goalId || "").trim(),
-    decision: String(item?.decision || "").trim(),
-    comments: String(item?.comments || "").trim(),
-  };
-}
-
-async function applyGoalDecision({ databases, profile, goalId, decision, comments }) {
-  if (!goalId || !decision) {
-    throw new Error("goalId and decision are required.");
-  }
-
-  if (!VALID_DECISIONS.includes(decision)) {
-    throw new Error("Invalid decision.");
-  }
-
-  const goal = await databases.getDocument(
-    databaseId,
-    appwriteConfig.goalsCollectionId,
-    goalId
-  );
-
-  if ((profile.role === "manager" || profile.role === "leadership") && goal.managerId !== profile.$id) {
-    const error = new Error("Forbidden for this goal.");
-    error.status = 403;
-    throw error;
-  }
-
-  if ((profile.role === "manager" || profile.role === "leadership") && goal.employeeId === profile.$id) {
-    const error = new Error(
-      "Managers cannot approve their own goals. Immediate upper manager approval is required."
-    );
-    error.status = 403;
-    throw error;
-  }
-
-  if (goal.status !== GOAL_STATUSES.SUBMITTED) {
-    throw new Error("Only submitted goals can be decided.");
-  }
-
-  const nextStatus = decision === "approved" ? GOAL_STATUSES.APPROVED : GOAL_STATUSES.NEEDS_CHANGES;
-
-  const updatedGoal = await databases.updateDocument(
-    databaseId,
-    appwriteConfig.goalsCollectionId,
-    goalId,
-    {
-      status: nextStatus,
-    }
-  );
-
-  const approval = await databases.createDocument(
-    databaseId,
-    appwriteConfig.goalApprovalsCollectionId,
-    ID.unique(),
-    {
-      goalId,
-      managerId: profile.$id,
-      decision,
-      comments,
-      decidedAt: new Date().toISOString(),
-    }
-  );
-
-  return { goal: updatedGoal, approval };
-}
+import { applyGoalDecision, normalizeDecisionItem } from "@/app/api/approvals/_lib/goalDecision";
 
 export async function GET(request) {
   try {

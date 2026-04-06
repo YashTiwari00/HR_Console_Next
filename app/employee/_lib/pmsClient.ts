@@ -1679,6 +1679,40 @@ export async function closeHrCycle(cycleId: string) {
   };
 }
 
+export async function fetchHrCycleAutoApprovalConfig(cycleId: string) {
+  const payload = await requestJson(
+    `/api/hr/cycles/${encodeURIComponent(cycleId)}/auto-approval`
+  );
+
+  return payload?.data as {
+    cycleId: string;
+    autoApprovalEnabled: boolean;
+    autoApprovalDays: number;
+  };
+}
+
+export async function updateHrCycleAutoApprovalConfig(
+  cycleId: string,
+  input: {
+    autoApprovalEnabled: boolean;
+    autoApprovalDays: number;
+  }
+) {
+  const payload = await requestJson(
+    `/api/hr/cycles/${encodeURIComponent(cycleId)}/auto-approval`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }
+  );
+
+  return payload?.data as {
+    cycleId: string;
+    autoApprovalEnabled: boolean;
+    autoApprovalDays: number;
+  };
+}
+
 export async function updateUserRoleAsHr(userId: string, role: AppRole) {
   const payload = await requestJson(`/api/hr/roles/${encodeURIComponent(userId)}`, {
     method: "PATCH",
@@ -2086,6 +2120,15 @@ export async function markNotificationRead(eventId: string) {
   );
 
   return payload?.data as { id: string; isRead: boolean; readAt?: string | null };
+}
+
+export async function markAllNotificationsRead(limit = 200) {
+  const payload = await requestJson("/api/notifications/read-all", {
+    method: "PATCH",
+    body: JSON.stringify({ limit }),
+  });
+
+  return payload?.data as { marked: number; failed: number };
 }
 
 export async function fetchNotificationTemplates(input?: {
