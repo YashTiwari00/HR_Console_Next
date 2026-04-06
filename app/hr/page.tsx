@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
@@ -295,15 +296,82 @@ export default function HrDashboardPage() {
     return state.replace("_", " ");
   }
 
+  function downloadOrgReport() {
+    const memberById = new Map<string, TeamMemberItem>();
+    orgMembers.forEach((m) => memberById.set(m.$id, m));
+
+    // Sheet 1: Managers summary
+    const managerRows = rows.map((m) => ({
+      "Manager Name": m.managerName || "",
+      "Manager Email": m.managerEmail || "",
+      "Team Size": m.teamSize ?? 0,
+      "Team Goals": m.teamGoals ?? 0,
+      "Team Avg Progress %": m.teamAverageProgress ?? 0,
+      "Pending Goal Approvals": m.pendingManagerGoalApprovals ?? 0,
+      "Pending Check-in Approvals": m.pendingCheckInApprovals ?? 0,
+      "Team Members": m.teamMembers.map((tm) => tm.name || tm.email || tm.$id).join(", "),
+    }));
+
+    // Sheet 2: All employees with their manager
+    const employeeRows = orgMembers
+      .filter((m) => m.role === "employee")
+      .map((m) => {
+        const manager = m.managerId ? memberById.get(m.managerId) : undefined;
+        return {
+          "Employee Name": m.name || "",
+          "Employee Email": m.email || "",
+          "Department": m.department || "",
+          "Region": m.region || "",
+          "Manager Name": manager?.name || m.managerId || "",
+          "Manager Email": manager?.email || "",
+        };
+      });
+
+    // Sheet 3: Goals with employee and manager info
+    const goalRows = orgGoals.map((goal) => {
+      const employee = goal.employeeId ? memberById.get(goal.employeeId) : undefined;
+      const manager = employee?.managerId ? memberById.get(employee.managerId) : undefined;
+      const latest = latestUpdateByGoalId.get(goal.$id);
+      return {
+        "Employee Name": employee?.name || goal.employeeId || "",
+        "Employee Email": employee?.email || "",
+        "Department": employee?.department || "",
+        "Manager Name": manager?.name || employee?.managerId || "",
+        "Manager Email": manager?.email || "",
+        "Goal Title": goal.title || "",
+        "Description": goal.description || "",
+        "Status": goal.status || "",
+        "Progress %": goal.progressPercent ?? 0,
+        "Framework": goal.frameworkType || "",
+        "Weightage": goal.weightage ?? "",
+        "RAG Status": latest?.ragStatus?.replace("_", " ") || "no update",
+        "Last Update": latest?.updateText || "",
+        "Last Updated At": latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "",
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(managerRows.length ? managerRows : [{}]), "Managers");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employeeRows.length ? employeeRows : [{}]), "Employees");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(goalRows.length ? goalRows : [{}]), "Goals");
+
+    XLSX.writeFile(wb, `org-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="HR Dashboard"
         subtitle="Supervise organization-wide progress and manager cadence across all departments."
         actions={
-          <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
-            Refresh
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button variant="secondary" onClick={downloadOrgReport} disabled={loading}>
+              Download Report
+            </Button>
+            <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
