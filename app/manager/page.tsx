@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
 import { GoalLineageView, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
@@ -221,15 +222,75 @@ export default function ManagerPage() {
     return state.replace("_", " ");
   }
 
+  function downloadTeamReport() {
+    const memberById = new Map<string, TeamMemberItem>();
+    teamMembers.forEach((m) => memberById.set(m.$id, m));
+
+    // Sheet 1: Employees
+    const employeeRows = teamMembers.map((m) => ({
+      "Name": m.name || "",
+      "Email": m.email || "",
+      "Role": m.role || "",
+      "Department": m.department || "",
+      "Region": m.region || "",
+    }));
+
+    // Sheet 2: Goals
+    const goalRows = teamGoals.map((goal) => {
+      const member = goal.employeeId ? memberById.get(goal.employeeId) : undefined;
+      const latest = latestUpdateByGoalId.get(goal.$id);
+      return {
+        "Employee Name": member?.name || goal.employeeId || "",
+        "Employee Email": member?.email || "",
+        "Department": member?.department || "",
+        "Goal Title": goal.title || "",
+        "Description": goal.description || "",
+        "Status": goal.status || "",
+        "Progress %": goal.progressPercent ?? 0,
+        "Framework": goal.frameworkType || "",
+        "Weightage": goal.weightage ?? "",
+        "RAG Status": latest?.ragStatus?.replace("_", " ") || "no update",
+        "Last Update": latest?.updateText || "",
+        "Last Updated At": latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "",
+      };
+    });
+
+    // Sheet 3: Check-ins
+    const checkInRows = teamCheckIns.map((ci) => {
+      const member = ci.employeeId ? memberById.get(ci.employeeId) : undefined;
+      return {
+        "Employee Name": member?.name || ci.employeeId || "",
+        "Employee Email": member?.email || "",
+        "Scheduled At": ci.scheduledAt ? new Date(ci.scheduledAt).toLocaleString() : "",
+        "Status": ci.status || "",
+        "Employee Notes": ci.employeeNotes || "",
+        "Manager Notes": ci.managerNotes || "",
+        "Is Final Check-in": ci.isFinalCheckIn ? "Yes" : "No",
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employeeRows.length ? employeeRows : [{}]), "Employees");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(goalRows.length ? goalRows : [{}]), "Goals");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(checkInRows.length ? checkInRows : [{}]), "Check-ins");
+
+    XLSX.writeFile(wb, `team-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="Manager Dashboard"
         subtitle="Monitor team performance, unblock progress, and complete approvals."
         actions={
-          <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
-            Refresh
-          </Button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <Button variant="secondary" onClick={downloadTeamReport} disabled={loading}>
+              Download Report
+            </Button>
+            <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
