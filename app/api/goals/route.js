@@ -6,6 +6,7 @@ import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolic
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee, getManagerTeamEmployeeIds } from "@/lib/teamAccess";
 import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
+import { postProcessGoalAop } from "@/app/api/goals/_lib/aopPostProcess";
 
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
@@ -394,6 +395,12 @@ export async function POST(request) {
       await Promise.allSettled(tasks);
     } catch {
       // Notification errors should not block goal creation.
+    }
+
+    try {
+      await postProcessGoalAop(databases, goal);
+    } catch {
+      // AOP linkage must never block goal creation.
     }
 
     return Response.json(

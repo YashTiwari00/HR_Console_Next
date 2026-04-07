@@ -20,6 +20,7 @@ const collections = {
   manager_cycle_ratings:
     process.env.NEXT_PUBLIC_MANAGER_CYCLE_RATINGS_COLLECTION_ID || "manager_cycle_ratings",
   ai_events: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
+  ai_policies: process.env.NEXT_PUBLIC_AI_POLICIES_COLLECTION_ID || "ai_policies",
   checkin_approvals:
     process.env.NEXT_PUBLIC_CHECK_IN_APPROVALS_COLLECTION_ID || "checkin_approvals",
   google_tokens:
@@ -54,6 +55,8 @@ const collections = {
     process.env.NEXT_PUBLIC_IMPORT_JOBS_COLLECTION_ID || "import_jobs",
   talent_snapshots:
     process.env.NEXT_PUBLIC_TALENT_SNAPSHOTS_COLLECTION_ID || "talent_snapshots",
+  aop_documents:
+    process.env.NEXT_PUBLIC_AOP_DOCUMENTS_COLLECTION_ID || "aop_documents",
 };
 
 const required = {
@@ -91,6 +94,8 @@ const required = {
     { key: "autoApprovedAt", type: "datetime", required: false },
     { key: "lineageRef", type: "string", size: 512, required: false },
     { key: "aiSuggested", type: "boolean", required: false, default: false },
+    { key: "aopAligned", type: "boolean", required: false, default: false },
+    { key: "aopReference", type: "string", size: 512, required: false },
     { key: "managerFinalRating", type: "integer", required: false, min: 1, max: 5 },
     { key: "managerFinalRatingLabel", type: "enum", required: false, elements: ["EE", "DE", "ME", "SME", "NI"] },
     { key: "managerFinalRatedAt", type: "datetime", required: false },
@@ -172,8 +177,34 @@ const required = {
     },
     { key: "cycleId", type: "string", size: 32, required: true },
     { key: "requestCount", type: "integer", required: true, min: 0, max: 9999 },
+    { key: "tokensUsed", type: "integer", required: false, min: 0, max: 1000000000 },
+    { key: "estimatedCost", type: "float", required: false, min: 0 },
     { key: "lastUsedAt", type: "datetime", required: true },
     { key: "metadata", type: "string", size: 8192, required: false },
+  ],
+  [collections.ai_policies]: [
+    {
+      key: "featureType",
+      type: "enum",
+      required: true,
+      elements: [
+        "goal_suggestion",
+        "checkin_summary",
+        "goal_analysis",
+        "meeting_intelligence",
+        "meeting_qa",
+      ],
+    },
+    {
+      key: "role",
+      type: "enum",
+      required: true,
+      elements: ["employee", "manager", "hr"],
+    },
+    { key: "limitPerCycle", type: "integer", required: true, min: 0, max: 1000000 },
+    { key: "costBudgetPerCycle", type: "float", required: false, min: 0 },
+    { key: "warningThreshold", type: "float", required: false, min: 0, max: 1, default: 0.8 },
+    { key: "isActive", type: "boolean", required: false, default: true },
   ],
   [collections.checkin_approvals]: [
     { key: "checkInId", type: "string", size: 64, required: true },
@@ -437,6 +468,14 @@ const required = {
     { key: "computedAt", type: "datetime", required: true },
     { key: "source", type: "string", size: 64, required: false },
   ],
+  [collections.aop_documents]: [
+    { key: "organizationId", type: "string", size: 128, required: true },
+    { key: "year", type: "string", size: 4, required: true },
+    { key: "content", type: "string", size: 65000, required: true },
+    { key: "createdBy", type: "string", size: 64, required: true },
+    { key: "createdAt", type: "datetime", required: true },
+    { key: "updatedAt", type: "datetime", required: true },
+  ],
 };
 
 function assertEnv() {
@@ -487,6 +526,20 @@ async function createAttribute(databases, collectionId, attr) {
 
   if (attr.type === "integer") {
     await databases.createIntegerAttribute(
+      databaseId,
+      collectionId,
+      key,
+      Boolean(attr.required),
+      attr.min ?? null,
+      attr.max ?? null,
+      attr.default ?? null,
+      Boolean(attr.array)
+    );
+    return;
+  }
+
+  if (attr.type === "float") {
+    await databases.createFloatAttribute(
       databaseId,
       collectionId,
       key,

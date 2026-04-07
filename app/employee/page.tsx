@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { ExplainabilityDrawer, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
+  DecisionInsightsData,
   EmployeeTrajectoryData,
   fetchCheckIns,
+  fetchDecisionInsights,
   fetchEmployeeTrajectory,
   fetchGoals,
+  fetchMe,
   formatDate,
   GoalItem,
   goalStatusVariant,
@@ -43,22 +46,45 @@ export default function EmployeePage() {
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
   const [trajectory, setTrajectory] = useState<EmployeeTrajectoryData | null>(null);
+  const [decisionInsights, setDecisionInsights] = useState<DecisionInsightsData | null>(null);
+  const [insightsExplainabilityOpen, setInsightsExplainabilityOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  function getPreferredCycleId(goalItems: GoalItem[]) {
+    return String(goalItems.find((item) => String(item.cycleId || "").trim())?.cycleId || "").trim();
+  }
+
+  function riskBadgeVariant(level: DecisionInsightsData["overallRiskLevel"]) {
+    if (level === "high") return "danger" as const;
+    if (level === "medium") return "warning" as const;
+    return "success" as const;
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [nextGoals, nextCheckIns, nextTrajectory] = await Promise.all([
+      const [nextGoals, nextCheckIns, nextTrajectory, me] = await Promise.all([
         fetchGoals(),
         fetchCheckIns(),
         TRAJECTORY_CARD_ENABLED ? fetchEmployeeTrajectory() : Promise.resolve(null),
+        fetchMe(),
       ]);
       setGoals(nextGoals);
       setCheckIns(nextCheckIns);
       setTrajectory(nextTrajectory);
+
+      const employeeId = String(me?.profile?.$id || me?.user?.$id || "").trim();
+      const cycleId = getPreferredCycleId(nextGoals);
+
+      if (employeeId && cycleId) {
+        const nextInsights = await fetchDecisionInsights({ employeeId, cycleId });
+        setDecisionInsights(nextInsights);
+      } else {
+        setDecisionInsights(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load employee overview.");
     } finally {
@@ -157,6 +183,43 @@ export default function EmployeePage() {
           )}
         </Card>
       )}
+
+      <Card title="AI Insights" description="Decision intelligence based on goals, progress, check-ins, and AOP alignment.">
+        {loading && <p className="caption">Loading AI insights...</p>}
+
+        {!loading && !decisionInsights && (
+          <p className="caption">AI insights are unavailable until enough cycle data is present.</p>
+        )}
+
+        {!loading && decisionInsights && (
+          <Stack gap="2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={riskBadgeVariant(decisionInsights.overallRiskLevel)}>
+                Risk: {String(decisionInsights.overallRiskLevel || "low").toUpperCase()}
+              </Badge>
+              <p className="caption">Cycle: {decisionInsights.cycleId}</p>
+              {decisionInsights.explainability && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setInsightsExplainabilityOpen(true)}
+                >
+                  Why this suggestion?
+                </Button>
+              )}
+            </div>
+            <p className="body-sm text-[var(--color-text)]">{decisionInsights.topRecommendation}</p>
+          </Stack>
+        )}
+      </Card>
+
+      <ExplainabilityDrawer
+        open={insightsExplainabilityOpen}
+        onClose={() => setInsightsExplainabilityOpen(false)}
+        payload={decisionInsights?.explainability || null}
+        title="Why this suggestion?"
+      />
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Feature Pages" description="Use focused pages for each workflow.">

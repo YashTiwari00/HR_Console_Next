@@ -16,6 +16,7 @@ const collectionIds = {
     process.env.NEXT_PUBLIC_PROGRESS_UPDATES_COLLECTION_ID || "progress_updates",
   goalCycles: process.env.NEXT_PUBLIC_GOAL_CYCLES_COLLECTION_ID || "goal_cycles",
   aiEvents: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
+  aiPolicies: process.env.NEXT_PUBLIC_AI_POLICIES_COLLECTION_ID || "ai_policies",
 };
 
 const seedTag = "SEED-M26";
@@ -25,6 +26,30 @@ const printUsersOnly = argv.has("--print-users");
 const skipAuthCheck = argv.has("--skip-auth-check");
 const createAuthUsers = argv.has("--create-auth-users");
 const seedAuthPassword = process.env.SEED_AUTH_PASSWORD || "SeedPass#2026";
+
+const aiPolicyDefaults = {
+  employee: {
+    goal_suggestion: { limitPerCycle: 3, costBudgetPerCycle: 1.5, warningThreshold: 0.8 },
+    checkin_summary: { limitPerCycle: 3, costBudgetPerCycle: 1.5, warningThreshold: 0.8 },
+    goal_analysis: { limitPerCycle: 3, costBudgetPerCycle: 1.5, warningThreshold: 0.8 },
+    meeting_intelligence: { limitPerCycle: 8, costBudgetPerCycle: 3, warningThreshold: 0.8 },
+    meeting_qa: { limitPerCycle: 20, costBudgetPerCycle: 4, warningThreshold: 0.8 },
+  },
+  manager: {
+    goal_suggestion: { limitPerCycle: 5, costBudgetPerCycle: 3, warningThreshold: 0.8 },
+    checkin_summary: { limitPerCycle: 5, costBudgetPerCycle: 3, warningThreshold: 0.8 },
+    goal_analysis: { limitPerCycle: 5, costBudgetPerCycle: 3, warningThreshold: 0.8 },
+    meeting_intelligence: { limitPerCycle: 12, costBudgetPerCycle: 6, warningThreshold: 0.8 },
+    meeting_qa: { limitPerCycle: 30, costBudgetPerCycle: 8, warningThreshold: 0.8 },
+  },
+  hr: {
+    goal_suggestion: { limitPerCycle: 8, costBudgetPerCycle: 6, warningThreshold: 0.8 },
+    checkin_summary: { limitPerCycle: 8, costBudgetPerCycle: 6, warningThreshold: 0.8 },
+    goal_analysis: { limitPerCycle: 8, costBudgetPerCycle: 6, warningThreshold: 0.8 },
+    meeting_intelligence: { limitPerCycle: 16, costBudgetPerCycle: 10, warningThreshold: 0.8 },
+    meeting_qa: { limitPerCycle: 40, costBudgetPerCycle: 12, warningThreshold: 0.8 },
+  },
+};
 
 function assertEnv() {
   const missing = [];
@@ -183,6 +208,32 @@ async function createAiEventIfMissing({ databases, queries, payload }) {
         requestCount: String(payload.requestCount),
       },
     });
+  }
+}
+
+async function seedAiPolicies(databases, counters) {
+  for (const [role, featureMap] of Object.entries(aiPolicyDefaults)) {
+    for (const [featureType, policy] of Object.entries(featureMap)) {
+      const result = await createIfMissing({
+        databases,
+        collectionId: collectionIds.aiPolicies,
+        queries: [
+          Query.equal("role", role),
+          Query.equal("featureType", featureType),
+        ],
+        payload: {
+          role,
+          featureType,
+          limitPerCycle: policy.limitPerCycle,
+          costBudgetPerCycle: policy.costBudgetPerCycle,
+          warningThreshold: policy.warningThreshold,
+          isActive: true,
+        },
+      });
+
+      if (result.created) counters.aiPoliciesCreated += 1;
+      else counters.aiPoliciesSkipped += 1;
+    }
   }
 }
 
@@ -377,7 +428,11 @@ async function main() {
     progressSkipped: 0,
     aiEventsCreated: 0,
     aiEventsSkipped: 0,
+    aiPoliciesCreated: 0,
+    aiPoliciesSkipped: 0,
   };
+
+  await seedAiPolicies(databases, counters);
 
   const authUsers = await listAllAuthUsers(usersApi);
   const authByEmail = new Map(authUsers.map((item) => [String(item.email || "").toLowerCase(), item]));

@@ -16,10 +16,31 @@ export function isMissingCollectionError(error, collectionId) {
   const message = String(error?.message || "").toLowerCase();
   const normalizedCollectionId = String(collectionId || "").trim().toLowerCase();
 
-  return (
+  // Appwrite messages are not always consistent about including the collection ID.
+  if (
     message.includes("collection") &&
-    (message.includes("could not be found") || message.includes("not found")) &&
-    (!normalizedCollectionId || message.includes(normalizedCollectionId))
+    (message.includes("could not be found") ||
+      message.includes("not found") ||
+      message.includes("does not exist") ||
+      message.includes("requested id"))
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    normalizedCollectionId &&
+      message.includes(normalizedCollectionId) &&
+      (message.includes("could not be found") || message.includes("not found") || message.includes("does not exist"))
+  );
+}
+
+export function isPermissionDeniedError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("not authorized") ||
+    message.includes("unauthorized") ||
+    message.includes("permission") ||
+    message.includes("missing scope")
   );
 }
 

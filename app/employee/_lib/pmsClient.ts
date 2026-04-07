@@ -30,6 +30,8 @@ export interface GoalItem {
   goalLevel?: "business" | "manager" | "employee" | number;
   contributionPercent?: number;
   lineageRef?: string;
+  aopAligned?: boolean;
+  aopReference?: string | null;
 }
 
 export interface GoalCascadePreviewItem {
@@ -54,6 +56,24 @@ export interface GoalLineageData {
   ancestors: GoalLineageNode[];
   currentGoal: GoalLineageNode;
   descendants: GoalLineageNode[];
+}
+
+export interface GoalLineageChainNode {
+  goalId: string;
+  title: string;
+  owner: string | null;
+  contributionPercent: number | null;
+  aopReference: string | null;
+  goalLevel: string | null;
+  status: string | null;
+}
+
+export interface GoalLineageChainData {
+  currentGoal: GoalItem | null;
+  parentGoal: GoalItem | null;
+  rootGoal: GoalItem | null;
+  aopReference: string | null;
+  chain: GoalLineageChainNode[];
 }
 
 export interface CheckInItem {
@@ -444,10 +464,25 @@ export interface GoalSuggestion {
   rationale?: string;
   explainability?: {
     source: string;
-    confidence: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
     whyFactors?: string[];
     timeWindow?: string;
   };
+}
+
+export interface ExplainabilityInfo {
+  source?: string;
+  confidence?: number | string;
+  confidenceLabel?: string;
+  reason?: string;
+  based_on?: string[];
+  time_window?: string;
+  whyFactors?: string[];
+  timeWindow?: string;
 }
 
 export interface BulkGoalInput {
@@ -472,6 +507,16 @@ export interface BulkGoalAnalysisItem {
 export interface BulkGoalAnalysisResponse {
   goals: BulkGoalAnalysisItem[];
   fallbackUsed: boolean;
+  explainability?: {
+    source: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
 }
 
 export interface BulkCheckInRowInput {
@@ -530,7 +575,11 @@ export interface CheckInSummarySuggestion {
   nextActions: string[];
   explainability?: {
     source: string;
-    confidence: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
     whyFactors?: string[];
     timeWindow?: string;
   };
@@ -542,14 +591,26 @@ export interface CheckInAgendaSuggestion {
   riskSignals: string[];
   explainability?: {
     source: string;
-    confidence: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
     whyFactors?: string[];
     timeWindow?: string;
   };
   usage?: {
     cap: number;
+    limit?: number;
     used: number;
     remaining: number;
+    tokensUsed?: number;
+    estimatedCost?: number;
+    nearLimit?: boolean;
+    totalCost?: number;
+    budget?: number | null;
+    nearBudget?: boolean;
+    overBudget?: boolean;
     featureType: string;
     cycleId: string;
   };
@@ -570,14 +631,26 @@ export interface CheckInIntelligenceSuggestion {
   revisedManagerFeedback: string;
   explainability?: {
     source: string;
-    confidence: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
     whyFactors?: string[];
     timeWindow?: string;
   };
   usage?: {
     cap: number;
+    limit?: number;
     used: number;
     remaining: number;
+    tokensUsed?: number;
+    estimatedCost?: number;
+    nearLimit?: boolean;
+    totalCost?: number;
+    budget?: number | null;
+    nearBudget?: boolean;
+    overBudget?: boolean;
     featureType: string;
     cycleId: string;
   };
@@ -588,6 +661,7 @@ export interface AiUsageFeature {
   cap: number;
   used: number;
   remaining: number;
+  nearLimit?: boolean;
   warning: boolean;
 }
 
@@ -598,6 +672,7 @@ export interface AiUsageSnapshot {
 
 export interface HrAiGovernanceOverview {
   cycleId?: string | null;
+  role?: string | null;
   totalsByFeature: Array<{
     featureType: string;
     capPerUser: number;
@@ -613,8 +688,50 @@ export interface HrAiGovernanceOverview {
     cap: number;
     remaining: number;
     nearCap: boolean;
+    nearLimit?: boolean;
+    usagePercent?: number;
     warning: boolean;
     lastUsedAt?: string | null;
+  }>;
+  totalNearLimitUsers?: number;
+  nearLimitUsers?: Array<{
+    userId: string;
+    featureType: string;
+    usagePercent: number;
+  }>;
+  totalCostByFeature?: Array<{
+    featureType: string;
+    totalCost: number;
+  }>;
+  totalCostByRole?: Array<{
+    role: string;
+    totalCost: number;
+  }>;
+  topSpenders?: Array<{
+    userId: string;
+    cycleId?: string;
+    role?: string;
+    totalCost: number;
+    budget?: number | null;
+    usagePercent?: number | null;
+    nearBudget?: boolean;
+    overBudget?: boolean;
+  }>;
+  nearBudgetUsers?: Array<{
+    userId: string;
+    cycleId?: string;
+    role?: string;
+    totalCost: number;
+    budget?: number | null;
+    usagePercent?: number | null;
+  }>;
+  overBudgetUsers?: Array<{
+    userId: string;
+    cycleId?: string;
+    role?: string;
+    totalCost: number;
+    budget?: number | null;
+    usagePercent?: number | null;
   }>;
 }
 
@@ -653,8 +770,16 @@ export interface ConversationalGoalEngineResponse {
   };
   usage?: {
     cap: number;
+    limit?: number;
     used: number;
     remaining: number;
+    tokensUsed?: number;
+    estimatedCost?: number;
+    nearLimit?: boolean;
+    totalCost?: number;
+    budget?: number | null;
+    nearBudget?: boolean;
+    overBudget?: boolean;
     featureType: string;
     cycleId: string;
   };
@@ -662,6 +787,16 @@ export interface ConversationalGoalEngineResponse {
     conversationId: string | null;
     parentGoalId: string | null;
     targetEmployeeId: string;
+  };
+  explainability?: {
+    source: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
+    whyFactors?: string[];
+    timeWindow?: string;
   };
 }
 
@@ -681,6 +816,43 @@ export interface EmployeeTrajectoryData {
   cycles: EmployeeTrajectoryCyclePoint[];
   trendLabel: TrajectoryTrendLabel;
   trendDeltaPercent: number;
+}
+
+export type DecisionRiskLevel = "low" | "medium" | "high";
+
+export interface DecisionRiskItem {
+  id: string;
+  level: DecisionRiskLevel;
+  message: string;
+  reason: string;
+  confidence: number;
+  based_on: string[];
+}
+
+export interface DecisionInsightItem {
+  id: string;
+  message: string;
+  flag?: string;
+  reason: string;
+  confidence: number;
+  based_on: string[];
+}
+
+export interface DecisionRecommendationItem {
+  id: string;
+  message: string;
+  priority: DecisionRiskLevel;
+}
+
+export interface DecisionInsightsData {
+  employeeId: string;
+  cycleId: string;
+  overallRiskLevel: DecisionRiskLevel;
+  topRecommendation: string;
+  risks: DecisionRiskItem[];
+  insights: DecisionInsightItem[];
+  recommendations: DecisionRecommendationItem[];
+  explainability?: ExplainabilityInfo;
 }
 
 export interface NotificationFeedItem {
@@ -849,11 +1021,31 @@ export interface MeetingIntelligenceReport {
   actionItems: MeetingActionItem[];
   goalInsights: MeetingGoalInsight[];
   generatedAt: string;
+  explainability?: {
+    source: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
 }
 
 export interface MeetingChatAnswer {
   answer: string;
   citations: string[];
+  explainability?: {
+    source: string;
+    confidence: number | string;
+    confidenceLabel?: string;
+    reason?: string;
+    based_on?: string[];
+    time_window?: string;
+    whyFactors?: string[];
+    timeWindow?: string;
+  };
 }
 
 export interface GoogleTokenStatus {
@@ -1962,8 +2154,11 @@ export async function fetchAiUsageSnapshot(cycleId?: string) {
   return (payload?.data || { features: [] }) as AiUsageSnapshot;
 }
 
-export async function fetchHrAiGovernanceOverview(cycleId?: string) {
-  const query = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : "";
+export async function fetchHrAiGovernanceOverview(cycleId?: string, role?: string) {
+  const params = new URLSearchParams();
+  if (cycleId) params.set("cycleId", cycleId);
+  if (role) params.set("role", role);
+  const query = params.toString() ? `?${params.toString()}` : "";
   const payload = await requestJson(`/api/hr/ai-governance/overview${query}`);
   return (payload?.data || { totalsByFeature: [], topUsers: [] }) as HrAiGovernanceOverview;
 }
@@ -2014,6 +2209,34 @@ export async function fetchGoalLineage(goalId: string) {
       ? data.descendants.map((row: unknown) => normalizeLineageNode(row))
       : [],
   } as GoalLineageData;
+}
+
+export async function fetchGoalLineageChain(goalId: string) {
+  const payload = await requestJson(`/api/goals/lineage?goalId=${encodeURIComponent(goalId)}`);
+  const data = payload?.data || {};
+
+  return {
+    currentGoal: (data?.currentGoal || null) as GoalItem | null,
+    parentGoal: (data?.parentGoal || null) as GoalItem | null,
+    rootGoal: (data?.rootGoal || null) as GoalItem | null,
+    aopReference: data?.aopReference ? String(data.aopReference) : null,
+    chain: Array.isArray(data?.chain)
+      ? data.chain.map((node: unknown) => {
+          const value = (node || {}) as Record<string, unknown>;
+
+          return {
+            goalId: String(value.goalId || "").trim(),
+            title: String(value.title || "").trim(),
+            owner: value.owner ? String(value.owner) : null,
+            contributionPercent:
+              typeof value.contributionPercent === "number" ? value.contributionPercent : null,
+            aopReference: value.aopReference ? String(value.aopReference) : null,
+            goalLevel: value.goalLevel ? String(value.goalLevel) : null,
+            status: value.status ? String(value.status) : null,
+          };
+        })
+      : [],
+  } as GoalLineageChainData;
 }
 
 export async function createCascadedGoal(
@@ -2095,6 +2318,31 @@ export async function fetchEmployeeTrajectory(employeeId?: string) {
 
   const payload = await requestJson(`/api/analytics/employee-trajectory${query}`);
   return normalizeTrajectoryData(payload?.data, employeeId);
+}
+
+export async function fetchDecisionInsights(input: {
+  employeeId: string;
+  cycleId: string;
+}) {
+  const params = new URLSearchParams();
+  params.set("employeeId", input.employeeId);
+  params.set("cycleId", input.cycleId);
+
+  const payload = await requestJson(`/api/analytics/decision-insights?${params.toString()}`);
+  const data = (payload?.data || {
+    employeeId: input.employeeId,
+    cycleId: input.cycleId,
+    overallRiskLevel: "low",
+    topRecommendation: "No immediate intervention required.",
+    risks: [],
+    insights: [],
+    recommendations: [],
+  }) as DecisionInsightsData;
+
+  return {
+    ...data,
+    explainability: ((payload?.explainability || null) as ExplainabilityInfo | null) || undefined,
+  } as DecisionInsightsData;
 }
 
 export async function fetchNotificationFeed(input?: { limit?: number; includeRead?: boolean }) {

@@ -1,4 +1,4 @@
-import { callOpenRouter } from "@/lib/openrouter";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 
 export type AnalyzeRole = "manager" | "employee";
 
@@ -24,6 +24,15 @@ export interface AnalyzedGoal {
 export interface AnalyzeGoalsResult {
   goals: AnalyzedGoal[];
   fallbackUsed: boolean;
+  usageMeta?: {
+    providerUsage: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    } | null;
+    messages: Array<{ role: string; content: string }>;
+    completionText: string;
+  };
 }
 
 function normalizeWeight(value: unknown): number {
@@ -175,26 +184,38 @@ export async function analyzeGoalsWithAi({
   const fallback = fallbackGoals(normalizedInput, role);
 
   try {
-    const raw = await callOpenRouter({
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a performance management expert. Always output strict JSON only, no markdown.",
-        },
-        {
-          role: "user",
-          content: buildPrompt(normalizedInput, role),
-        },
-      ],
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are a performance management expert. Always output strict JSON only, no markdown.",
+      },
+      {
+        role: "user",
+        content: buildPrompt(normalizedInput, role),
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
+      messages,
       jsonMode: true,
       maxTokens: 900,
     });
 
+    const raw = completion.content;
+
     const parsed = safeJsonParse(raw) as { goals?: unknown[] } | null;
 
     if (!parsed || !Array.isArray(parsed.goals) || parsed.goals.length === 0) {
-      return { goals: fallback, fallbackUsed: true };
+      return {
+        goals: fallback,
+        fallbackUsed: true,
+        usageMeta: {
+          providerUsage: completion.usage,
+          messages,
+          completionText: raw,
+        },
+      };
     }
 
     const normalizedGoals = normalizedInput.map((baseGoal, index) =>
@@ -204,6 +225,11 @@ export async function analyzeGoalsWithAi({
     return {
       goals: normalizedGoals,
       fallbackUsed: false,
+      usageMeta: {
+        providerUsage: completion.usage,
+        messages,
+        completionText: raw,
+      },
     };
   } catch {
     return {

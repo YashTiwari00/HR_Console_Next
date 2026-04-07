@@ -145,6 +145,26 @@ export async function POST(request, context) {
       );
     }
 
+    const existingCascadedGoal = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.goalsCollectionId,
+      [
+        Query.equal("parentGoalId", parentGoalId),
+        Query.equal("employeeId", employeeId),
+        Query.limit(1),
+      ]
+    );
+
+    if ((existingCascadedGoal.documents || []).length > 0) {
+      return Response.json(
+        {
+          error: "A cascaded goal already exists for this employee under the selected parent goal.",
+          code: "cascade_duplicate_child",
+        },
+        { status: 409 }
+      );
+    }
+
     const goalPayload = buildCascadePayload({
       parentGoal,
       title,

@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { ExplainabilityDrawer, type ExplainabilityPayload, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 import { formatDate } from "@/app/employee/_lib/pmsClient";
@@ -68,6 +68,8 @@ export default function TeamApprovalsPage() {
   const [aiMeta, setAiMeta] = useState<
     Record<string, { source: string; confidence: string; remaining?: number }>
   >({});
+  const [aiExplainability, setAiExplainability] = useState<Record<string, ExplainabilityPayload>>({});
+  const [activeExplainabilityId, setActiveExplainabilityId] = useState<string | null>(null);
   const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
   const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
 
@@ -319,10 +321,17 @@ export default function TeamApprovalsPage() {
         ...prev,
         [row.$id]: {
           source: explainability?.source || "extractive_summary",
-          confidence: explainability?.confidence || "medium",
+          confidence: String(explainability?.confidenceLabel || explainability?.confidence || "medium"),
           remaining: typeof usage?.remaining === "number" ? usage.remaining : undefined,
         },
       }));
+
+      if (explainability && typeof explainability === "object") {
+        setAiExplainability((prev) => ({
+          ...prev,
+          [row.$id]: explainability as ExplainabilityPayload,
+        }));
+      }
 
       setSuccess("AI check-in summary generated. Review before marking completed.");
     } catch (err) {
@@ -564,12 +573,24 @@ export default function TeamApprovalsPage() {
                     </Button>
 
                     {aiMeta[row.$id] && (
-                      <span className="caption">
-                        Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
-                        {typeof aiMeta[row.$id].remaining === "number"
-                          ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
-                          : ""}
-                      </span>
+                      <>
+                        <span className="caption">
+                          Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
+                          {typeof aiMeta[row.$id].remaining === "number"
+                            ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
+                            : ""}
+                        </span>
+                        {aiExplainability[row.$id] && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setActiveExplainabilityId(row.$id)}
+                          >
+                            Why this suggestion?
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -593,6 +614,13 @@ export default function TeamApprovalsPage() {
           ))}
         </Stack>
       </Card>
+
+      <ExplainabilityDrawer
+        open={Boolean(activeExplainabilityId)}
+        onClose={() => setActiveExplainabilityId(null)}
+        payload={activeExplainabilityId ? aiExplainability[activeExplainabilityId] || null : null}
+        title="Why this suggestion?"
+      />
     </Stack>
   );
 }

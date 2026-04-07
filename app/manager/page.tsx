@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
-import { GoalLineageView, PageHeader } from "@/src/components/patterns";
+import { ExplainabilityDrawer, GoalLineageView, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
+  DecisionInsightsData,
   fetchCheckIns,
+  fetchDecisionInsights,
   fetchGoals,
   fetchProgressUpdates,
   fetchTeamMembers,
@@ -31,8 +33,37 @@ export default function ManagerPage() {
   const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [lineageGoalId, setLineageGoalId] = useState("");
+  const [decisionInsights, setDecisionInsights] = useState<DecisionInsightsData | null>(null);
+  const [decisionTargetLabel, setDecisionTargetLabel] = useState("");
+  const [insightsExplainabilityOpen, setInsightsExplainabilityOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  function riskBadgeVariant(level: DecisionInsightsData["overallRiskLevel"]) {
+    if (level === "high") return "danger" as const;
+    if (level === "medium") return "warning" as const;
+    return "success" as const;
+  }
+
+  function pickInsightTarget(goals: TeamGoalItem[]) {
+    const candidates = goals
+      .filter((goal) => String(goal.employeeId || "").trim() && String(goal.cycleId || "").trim())
+      .slice()
+      .sort((a, b) => {
+        const byContribution = (Number(b.contributionPercent) || 0) - (Number(a.contributionPercent) || 0);
+        if (byContribution !== 0) return byContribution;
+        return (Number(b.weightage) || 0) - (Number(a.weightage) || 0);
+      });
+
+    const first = candidates[0] || null;
+    if (!first) return null;
+
+    return {
+      employeeId: String(first.employeeId || "").trim(),
+      cycleId: String(first.cycleId || "").trim(),
+      goalTitle: String(first.title || "").trim(),
+    };
+  }
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -50,6 +81,19 @@ export default function ManagerPage() {
       setTeamCheckIns(nextTeamCheckIns);
       setTeamUpdates(nextTeamUpdates);
       setTeamMembers(nextTeamMembers);
+
+      const target = pickInsightTarget(nextTeamGoals as TeamGoalItem[]);
+      if (target?.employeeId && target?.cycleId) {
+        const nextInsights = await fetchDecisionInsights({
+          employeeId: target.employeeId,
+          cycleId: target.cycleId,
+        });
+        setDecisionInsights(nextInsights);
+        setDecisionTargetLabel(target.goalTitle || target.employeeId);
+      } else {
+        setDecisionInsights(null);
+        setDecisionTargetLabel("");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load manager dashboard.");
     } finally {
@@ -307,6 +351,43 @@ export default function ManagerPage() {
           <p className="heading-xl">{loading ? "..." : pendingGoalApprovals}</p>
         </Card>
       </Grid>
+
+      <Card title="AI Insights" description="Decision intelligence highlight from team performance signals.">
+        {loading && <p className="caption">Loading AI insights...</p>}
+
+        {!loading && !decisionInsights && (
+          <p className="caption">AI insights are unavailable until team cycle data is available.</p>
+        )}
+
+        {!loading && decisionInsights && (
+          <Stack gap="2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={riskBadgeVariant(decisionInsights.overallRiskLevel)}>
+                Risk: {String(decisionInsights.overallRiskLevel || "low").toUpperCase()}
+              </Badge>
+              <p className="caption">Focus: {decisionTargetLabel || decisionInsights.employeeId}</p>
+              {decisionInsights.explainability && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setInsightsExplainabilityOpen(true)}
+                >
+                  Why this suggestion?
+                </Button>
+              )}
+            </div>
+            <p className="body-sm text-[var(--color-text)]">{decisionInsights.topRecommendation}</p>
+          </Stack>
+        )}
+      </Card>
+
+      <ExplainabilityDrawer
+        open={insightsExplainabilityOpen}
+        onClose={() => setInsightsExplainabilityOpen(false)}
+        payload={decisionInsights?.explainability || null}
+        title="Why this suggestion?"
+      />
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Feature Pages" description="Use dedicated pages for manager workflows.">

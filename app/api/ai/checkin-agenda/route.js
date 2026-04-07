@@ -1,7 +1,8 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildExplainability } from "@/lib/ai/explainability";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 
 function safeParse(raw, fallback) {
   try {
@@ -31,24 +32,41 @@ export async function POST(request) {
       userId: profile.$id,
       cycleId,
       featureType: "checkin_summary",
+      userRole: profile.role,
     });
 
-    const raw = await callOpenRouter({
-      messages: [
-        {
-          role: "system",
-          content: "You are a performance coaching assistant. Return valid JSON only.",
-        },
-        {
-          role: "user",
-          content: `Generate a short pre-check-in agenda.\nGoal: ${goalTitle}\nScheduledAt: ${scheduledAt || "n/a"}\nEmployee notes: ${employeeNotes || "n/a"}\n\nReturn JSON:\n{"agenda":["..."],"focusQuestions":["..."],"riskSignals":["..."]}`,
-        },
-      ],
+    const messages = [
+      {
+        role: "system",
+        content: "You are a performance coaching assistant. Return valid JSON only.",
+      },
+      {
+        role: "user",
+        content: `Generate a short pre-check-in agenda.\nGoal: ${goalTitle}\nScheduledAt: ${scheduledAt || "n/a"}\nEmployee notes: ${employeeNotes || "n/a"}\n\nReturn JSON:\n{"agenda":["..."],"focusQuestions":["..."],"riskSignals":["..."]}`,
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
+      messages,
       jsonMode: true,
       maxTokens: 400,
     });
 
-    const parsed = safeParse(raw, {});
+    const parsed = safeParse(completion.content, {});
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "checkin_summary",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
 
     const agenda = Array.isArray(parsed?.agenda) ? parsed.agenda.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 6) : [];
     const focusQuestions = Array.isArray(parsed?.focusQuestions) ? parsed.focusQuestions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 5) : [];
@@ -69,7 +87,7 @@ export async function POST(request) {
           ],
           timeWindow: cycleId,
         }),
-        usage,
+        usage: trackedUsage,
       },
     });
   } catch (error) {

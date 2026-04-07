@@ -8,10 +8,12 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const cycleId = String(searchParams.get("cycleId") || "").trim();
+    const role = String(searchParams.get("role") || "").trim().toLowerCase();
 
     const overview = await getAiUsageOverview({
       databases,
       cycleId: cycleId || undefined,
+      role: role || undefined,
     });
 
     return Response.json({ data: overview });

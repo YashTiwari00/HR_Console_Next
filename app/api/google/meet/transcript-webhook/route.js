@@ -3,10 +3,12 @@ import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse } from "@/lib/serverAuth";
 import { parseStringList } from "@/lib/meetingIntelligence";
 import { createAdminServices } from "@/lib/appwriteServer";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { upsertMeetingIntelligenceReport } from "@/lib/meetingIntelligenceStore";
 import { upsertMeetingMetadata } from "@/lib/meetingMetadataStore";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildExplainability } from "@/lib/ai/explainability";
 
 function hasWebhookAccess(request) {
   const configuredSecret = String(process.env.GOOGLE_MEET_TRANSCRIPT_WEBHOOK_SECRET || "").trim();
@@ -96,35 +98,57 @@ async function generateIntelligenceFromTranscript({
   const goals = await listGoals(databases, linkedGoalIds);
   const cycleId = resolveCycleId(goals, meeting.$id);
   const usageUserId = String(meeting?.employeeId || meeting?.managerId || "").trim();
+  let usage = null;
 
   if (usageUserId) {
-    await assertAndTrackAiUsage({
+    usage = await assertAndTrackAiUsage({
       databases,
       userId: usageUserId,
       cycleId,
       featureType: "meeting_intelligence",
+      userRole: "employee",
     });
   }
 
-  const raw = await callOpenRouter({
+  const messages = [
+    {
+      role: "system",
+      content:
+        "You are a performance meeting intelligence assistant. Use only the transcript and linked goals context. Return valid JSON only.",
+    },
+    {
+      role: "user",
+      content: `Create structured meeting intelligence for this goal-linked meeting.\n\nLinked goals:\n${buildGoalContext(
+        goals
+      )}\n\nTranscript:\n${transcriptText}\n\nReturn JSON with this exact schema:\n{"summary":"...","keyTakeaways":["..."],"actionItems":[{"owner":"...","action":"...","dueDate":"optional ISO date"}],"goalInsights":[{"goalId":"...","insight":"...","impact":"positive|neutral|risk"}]}`,
+    },
+  ];
+
+  const completion = await callOpenRouterWithUsage({
     jsonMode: true,
     maxTokens: 700,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a performance meeting intelligence assistant. Use only the transcript and linked goals context. Return valid JSON only.",
-      },
-      {
-        role: "user",
-        content: `Create structured meeting intelligence for this goal-linked meeting.\n\nLinked goals:\n${buildGoalContext(
-          goals
-        )}\n\nTranscript:\n${transcriptText}\n\nReturn JSON with this exact schema:\n{"summary":"...","keyTakeaways":["..."],"actionItems":[{"owner":"...","action":"...","dueDate":"optional ISO date"}],"goalInsights":[{"goalId":"...","insight":"...","impact":"positive|neutral|risk"}]}`,
-      },
-    ],
+    messages,
   });
 
-  const parsed = safeParseJson(raw, {});
+  if (usageUserId && usage) {
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+
+    await trackAiUsageCost({
+      databases,
+      userId: usageUserId,
+      cycleId,
+      featureType: "meeting_intelligence",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
+  }
+
+  const parsed = safeParseJson(completion.content, {});
   const generatedAt = new Date().toISOString();
 
   return {
@@ -134,6 +158,13 @@ async function generateIntelligenceFromTranscript({
     keyTakeaways: normalizeStringList(parsed?.keyTakeaways, 10),
     actionItems: normalizeActionItems(parsed?.actionItems),
     goalInsights: normalizeGoalInsights(parsed?.goalInsights),
+    explainability: buildExplainability({
+      source: "openrouter_llm",
+      confidence: 0.78,
+      reason: "Webhook intelligence generated from transcript and linked goal context.",
+      based_on: ["meeting transcript", "linked goals"],
+      time_window: cycleId,
+    }),
     generatedAt,
   };
 }

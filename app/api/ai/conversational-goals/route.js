@@ -2,9 +2,14 @@ import { appwriteConfig } from "@/lib/appwrite";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildExplainability } from "@/lib/ai/explainability";
+import { getAOP } from "@/lib/aop/getAOP";
+
+const MAX_AOP_PROMPT_CHARS = 4000;
 
 function safeJsonParse(input, fallback) {
   try {
@@ -117,6 +122,54 @@ Rules:
 - Never include sensitive data outside the provided context.`;
 }
 
+function buildAopPromptContext(aopContent) {
+  const raw = String(aopContent || "").trim();
+  if (!raw) return "";
+
+  const trimmed = raw.length > MAX_AOP_PROMPT_CHARS
+    ? `${raw.slice(0, MAX_AOP_PROMPT_CHARS)}\n\n[Truncated for prompt safety]`
+    : raw;
+
+  return `\n\nCompany Annual Operating Plan (AOP):\n${trimmed}\n\nInstructions:\n- Align all suggested goals with this AOP\n- Ensure goals contribute to business objectives\n- Mention alignment briefly in each goal`;
+}
+
+function deriveAopAlignment(suggestion, aopContent) {
+  const fallback = { aopAligned: false, aopReference: "" };
+
+  try {
+    const aop = String(aopContent || "").toLowerCase();
+    if (!aop) return fallback;
+
+    const title = String(suggestion?.title || "");
+    const description = String(suggestion?.description || "");
+    const cascadeHint = String(suggestion?.cascadeHint || "");
+    const combined = `${title} ${description} ${cascadeHint}`.toLowerCase();
+    const businessSignal = /align|alignment|business objective|strategic|operating plan/.test(combined);
+
+    const keywords = combined
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 5)
+      .slice(0, 20);
+
+    const overlap = keywords.filter((token) => aop.includes(token));
+    const isAligned = businessSignal || overlap.length >= 2;
+
+    if (!isAligned) return fallback;
+
+    const reference = overlap.length > 0
+      ? `AOP overlap detected via: ${overlap.slice(0, 3).join(", ")}.`
+      : "Suggestion indicates alignment to business objectives from AOP.";
+
+    return {
+      aopAligned: true,
+      aopReference: reference,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -180,30 +233,52 @@ export async function POST(request) {
       userId: profile.$id,
       cycleId,
       featureType: "goal_suggestion",
+      userRole: profile.role,
     });
 
     const context = await listGoalContext(databases, targetEmployeeId, cycleId);
+    const aopContent = await getAOP(databases);
+    const basePrompt = buildConversationPrompt({
+      profile,
+      frameworkType,
+      message,
+      context,
+      parentGoal,
+      conversationId,
+    });
+    const promptWithAop = `${basePrompt}${buildAopPromptContext(aopContent)}`;
 
-    const raw = await callOpenRouter({
-      messages: [
-        {
-          role: "system",
-          content: "You are a precise performance-management assistant. JSON only.",
-        },
-        {
-          role: "user",
-          content: buildConversationPrompt({
-            profile,
-            frameworkType,
-            message,
-            context,
-            parentGoal,
-            conversationId,
-          }),
-        },
-      ],
+    const messages = [
+      {
+        role: "system",
+        content: "You are a precise performance-management assistant. JSON only.",
+      },
+      {
+        role: "user",
+        content: promptWithAop,
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
+      messages,
       jsonMode: true,
       maxTokens: 500,
+    });
+
+    const raw = completion.content;
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "goal_suggestion",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
     });
 
     const parsed = safeJsonParse(raw, {
@@ -216,13 +291,27 @@ export async function POST(request) {
 
     const normalizedSuggestions = Array.isArray(parsed?.suggestedGoals)
       ? parsed.suggestedGoals
-          .map((item) => ({
-            title: String(item?.title || "").trim(),
-            description: String(item?.description || "").trim(),
-            weightage: Number.parseInt(String(item?.weightage || ""), 10),
-            cascadeHint: String(item?.cascadeHint || "").trim(),
-            explainability: { source: "openrouter_llm", confidence: "medium" },
-          }))
+          .map((item) => {
+            const normalized = {
+              title: String(item?.title || "").trim(),
+              description: String(item?.description || "").trim(),
+              weightage: Number.parseInt(String(item?.weightage || ""), 10),
+              cascadeHint: String(item?.cascadeHint || "").trim(),
+            };
+            const alignment = deriveAopAlignment(normalized, aopContent);
+
+            return {
+              ...normalized,
+              explainability: buildExplainability({
+                source: "openrouter_llm",
+                confidence: 0.7,
+                reason: "Suggestion generated from conversation intent, existing goals, and current progress context.",
+                based_on: ["goal data", "progress", "check-ins"],
+                whyFactors: [alignment.aopAligned ? alignment.aopReference : ""],
+                time_window: cycleId,
+              }),
+            };
+          })
           .filter(
             (item) =>
               item.title &&
@@ -245,13 +334,19 @@ export async function POST(request) {
           recentProgress: context.recentProgress.length,
           checkIns: context.checkIns.length,
         },
-        usage,
+        usage: trackedUsage,
         conversation: {
           conversationId: conversationId || null,
           parentGoalId: parentGoalId || null,
           targetEmployeeId,
         },
-        explainability: { source: "openrouter_llm", confidence: "medium" },
+        explainability: buildExplainability({
+          source: "openrouter_llm",
+          confidence: 0.72,
+          reason: "Conversational guidance was generated using message intent and cycle context.",
+          based_on: ["goal data", "progress", "check-ins", "conversation context"],
+          time_window: cycleId,
+        }),
       },
     });
   } catch (error) {

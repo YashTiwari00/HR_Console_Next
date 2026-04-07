@@ -4,7 +4,11 @@ import { Badge, Card, Modal } from "@/src/components/ui";
 
 export interface ExplainabilityPayload {
   source?: string;
-  confidence?: string;
+  confidence?: string | number;
+  confidenceLabel?: string;
+  reason?: string;
+  based_on?: string[];
+  time_window?: string;
   whyFactors?: string[];
   timeWindow?: string;
 }
@@ -23,6 +27,22 @@ function confidenceVariant(confidence: string) {
   return "info" as const;
 }
 
+function normalizeConfidenceLabel(payload: ExplainabilityPayload | null | undefined) {
+  const explicit = String(payload?.confidenceLabel || "").trim().toLowerCase();
+  if (explicit) return explicit;
+
+  const raw = payload?.confidence;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw >= 0.8) return "high";
+    if (raw >= 0.6) return "medium";
+    return "low";
+  }
+
+  const text = String(raw || "").trim().toLowerCase();
+  if (text === "high" || text === "medium" || text === "low") return text;
+  return "medium";
+}
+
 export default function ExplainabilityDrawer({
   open,
   onClose,
@@ -30,11 +50,20 @@ export default function ExplainabilityDrawer({
   payload,
 }: ExplainabilityDrawerProps) {
   const source = String(payload?.source || "openrouter_llm").trim() || "openrouter_llm";
-  const confidence = String(payload?.confidence || "medium").trim() || "medium";
-  const timeWindow = String(payload?.timeWindow || "current_cycle").trim() || "current_cycle";
+  const confidence = normalizeConfidenceLabel(payload);
+  const confidenceValue =
+    typeof payload?.confidence === "number" && Number.isFinite(payload.confidence)
+      ? payload.confidence.toFixed(2)
+      : null;
+  const timeWindow = String(payload?.time_window || payload?.timeWindow || "current_cycle").trim() || "current_cycle";
+  const reason = String(payload?.reason || "").trim();
+  const basedOn = Array.isArray(payload?.based_on)
+    ? payload.based_on.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
   const whyFactors = Array.isArray(payload?.whyFactors)
     ? payload.whyFactors.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
+  const factors = basedOn.length > 0 ? basedOn : whyFactors;
 
   return (
     <Modal
@@ -48,17 +77,25 @@ export default function ExplainabilityDrawer({
         <Card>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="default">Source: {source}</Badge>
-            <Badge variant={confidenceVariant(confidence)}>Confidence: {confidence}</Badge>
+            <Badge variant={confidenceVariant(confidence)}>
+              Confidence: {confidenceValue ? `${confidence} (${confidenceValue})` : confidence}
+            </Badge>
             <Badge variant="info">Window: {timeWindow}</Badge>
           </div>
         </Card>
 
+        <Card title="Reason" description="Why this AI output was generated.">
+          <p className="caption">
+            {reason || "Output generated from available context and role-aware patterns."}
+          </p>
+        </Card>
+
         <Card title="Why Factors" description="Primary signals used for this recommendation.">
-          {whyFactors.length === 0 ? (
+          {factors.length === 0 ? (
             <p className="caption">No specific factors were returned for this response.</p>
           ) : (
             <ul className="list-disc space-y-1 pl-5 caption">
-              {whyFactors.map((item, index) => (
+              {factors.map((item, index) => (
                 <li key={`${item}-${index}`}>{item}</li>
               ))}
             </ul>

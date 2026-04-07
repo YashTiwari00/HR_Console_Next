@@ -1,5 +1,7 @@
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
 import { analyzeGoalsWithAi } from "@/lib/ai/analyzeGoals";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildExplainability } from "@/lib/ai/explainability";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 
 function defaultCycleId() {
@@ -39,15 +41,46 @@ export async function POST(request) {
       userId: profile.$id,
       cycleId,
       featureType: "goal_analysis",
+      userRole: role,
     });
 
     const analysis = await analyzeGoalsWithAi({ goals, role });
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: analysis.usageMeta?.providerUsage,
+      messages: analysis.usageMeta?.messages,
+      completionText: analysis.usageMeta?.completionText,
+    });
+
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "goal_analysis",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
+
+    const explainability = buildExplainability({
+      source: analysis.fallbackUsed ? "hybrid_fallback" : "openrouter_llm",
+      confidence: analysis.fallbackUsed ? 0.55 : 0.82,
+      reason: analysis.fallbackUsed
+        ? "Goal analysis used deterministic fallback heuristics due to limited model output quality."
+        : "Goal analysis inferred clarity, measurability, and execution signals from submitted goals.",
+      based_on: ["goal data", "role context"],
+      time_window: cycleId,
+      whyFactors: [
+        `Analyzed ${goals.length} goal entries`,
+        role === "manager" ? "Included allocation guidance for manager workflow" : "Focused on individual goal quality",
+      ],
+    });
 
     return Response.json(
       {
         goals: analysis.goals,
         fallbackUsed: analysis.fallbackUsed,
-        usage,
+        explainability,
+        usage: trackedUsage,
       },
       { status: 200 }
     );

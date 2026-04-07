@@ -5,6 +5,7 @@ import { normalizeCycleId } from "@/lib/cycle";
 import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { postProcessGoalAop } from "@/app/api/goals/_lib/aopPostProcess";
 
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
@@ -170,6 +171,12 @@ export async function POST(request) {
       } else {
         throw error;
       }
+    }
+
+    try {
+      await postProcessGoalAop(databases, goal);
+    } catch {
+      // AOP linkage must never block goal creation.
     }
 
     return Response.json({ data: goal }, { status: 201 });

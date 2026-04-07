@@ -1,6 +1,10 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
-import { isMissingCollectionError, isUnknownAttributeError } from "@/app/api/notifications/_lib/engine";
+import {
+  isMissingCollectionError,
+  isPermissionDeniedError,
+  isUnknownAttributeError,
+} from "@/app/api/notifications/_lib/engine";
 
 function uniqueCollectionIds() {
   const ids = [
@@ -74,7 +78,7 @@ async function listCollectionRows(databases, collectionId, { userId, limit, incl
     const result = await databases.listDocuments(databaseId, collectionId, queries);
     return result.documents;
   } catch (error) {
-    if (isMissingCollectionError(error, collectionId)) {
+    if (isMissingCollectionError(error, collectionId) || isPermissionDeniedError(error)) {
       return [];
     }
 
@@ -175,6 +179,9 @@ export async function findNotificationForUser(databases, notificationId, userId)
       return { doc, collectionId };
     } catch (error) {
       if (isMissingCollectionError(error, collectionId)) {
+        continue;
+      }
+      if (isPermissionDeniedError(error)) {
         continue;
       }
       const message = String(error?.message || "").toLowerCase();

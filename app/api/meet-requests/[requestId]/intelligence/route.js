@@ -1,7 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { Query, databaseId } from "@/lib/appwriteServer";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import {
   assertMeetingParticipant,
   buildIntelligenceUpdatePayload,
@@ -13,6 +13,8 @@ import {
 } from "@/lib/meetingIntelligenceStore";
 import { getMeetingWithMetadata } from "@/lib/meetingMetadataStore";
 import { errorResponse, requireAuth } from "@/lib/serverAuth";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildExplainability } from "@/lib/ai/explainability";
 
 function safeParseJson(raw, fallback) {
   try {
@@ -144,11 +146,28 @@ export async function GET(request, context) {
     assertMeetingParticipant(profile, meeting);
 
     const intelligence = await fetchMeetingIntelligenceReport(databases, meeting);
+    const linkedGoalIds = parseLinkedGoalIds(meeting);
+    const cycleId = resolveCycleId([], meetingId);
 
     return Response.json({
       data: {
         meeting,
-        report: intelligence.report,
+        report: intelligence.report
+          ? {
+              ...intelligence.report,
+              explainability: buildExplainability({
+                source: "meeting_intelligence_store",
+                confidence: 0.74,
+                reason: "Stored intelligence was generated from transcript evidence and linked goals context.",
+                based_on: ["meeting transcript", "linked goals", "stored insights"],
+                time_window: cycleId,
+                whyFactors: [
+                  `Linked goals considered: ${linkedGoalIds.length}`,
+                  "Summary and action items reconstructed from persisted intelligence",
+                ],
+              }),
+            }
+          : null,
       },
     });
   } catch (error) {
@@ -195,27 +214,45 @@ export async function POST(request, context) {
       userId: profile.$id,
       cycleId,
       featureType: "meeting_intelligence",
+      userRole: profile.role,
     });
 
-    const raw = await callOpenRouter({
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are a performance meeting intelligence assistant. Use only the transcript and linked goals context. Return valid JSON only.",
+      },
+      {
+        role: "user",
+        content: `Create structured meeting intelligence for this goal-linked meeting.\n\nLinked goals:\n${buildGoalContext(
+          goals
+        )}\n\nTranscript:\n${transcriptText}\n\nReturn JSON with this exact schema:\n{"summary":"...","keyTakeaways":["..."],"actionItems":[{"owner":"...","action":"...","dueDate":"optional ISO date"}],"goalInsights":[{"goalId":"...","insight":"...","impact":"positive|neutral|risk"}]}`,
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
       jsonMode: true,
       maxTokens: 700,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a performance meeting intelligence assistant. Use only the transcript and linked goals context. Return valid JSON only.",
-        },
-        {
-          role: "user",
-          content: `Create structured meeting intelligence for this goal-linked meeting.\n\nLinked goals:\n${buildGoalContext(
-            goals
-          )}\n\nTranscript:\n${transcriptText}\n\nReturn JSON with this exact schema:\n{"summary":"...","keyTakeaways":["..."],"actionItems":[{"owner":"...","action":"...","dueDate":"optional ISO date"}],"goalInsights":[{"goalId":"...","insight":"...","impact":"positive|neutral|risk"}]}`,
-        },
-      ],
+      messages,
     });
 
-    const parsed = safeParseJson(raw, {});
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "meeting_intelligence",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
+
+    const parsed = safeParseJson(completion.content, {});
     const report = {
       transcriptText,
       summary: String(parsed?.summary || "").trim() || "Meeting intelligence generated.",
@@ -223,7 +260,14 @@ export async function POST(request, context) {
       actionItems: normalizeActionItems(parsed?.actionItems),
       goalInsights: normalizeGoalInsights(parsed?.goalInsights),
       generatedAt: new Date().toISOString(),
-      usage,
+      explainability: buildExplainability({
+        source: "openrouter_llm",
+        confidence: 0.79,
+        reason: "Intelligence report generated from transcript analysis and linked goal context.",
+        based_on: ["meeting transcript", "linked goals"],
+        time_window: cycleId,
+      }),
+      usage: trackedUsage,
     };
 
     const updatedMeeting = await updateMeetingWithFallback(
@@ -252,6 +296,8 @@ export async function POST(request, context) {
           actionItems: report.actionItems,
           goalInsights: report.goalInsights,
           generatedAt: report.generatedAt,
+          explainability: report.explainability,
+          usage: report.usage,
         },
       },
     });

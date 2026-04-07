@@ -3,8 +3,8 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
-import { BulkGoalAiReviewPanel, ExplainabilityDrawer, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { BulkGoalAiReviewPanel, ExplainabilityDrawer, GoalLineageView, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
+import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
@@ -72,6 +72,8 @@ export default function ManagerGoalsPage() {
   const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
   const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
   const [managerTeamMemberIds, setManagerTeamMemberIds] = useState<string[]>([]);
+  const [distributingGoalId, setDistributingGoalId] = useState<string | null>(null);
+  const [lineageGoalId, setLineageGoalId] = useState<string | null>(null);
 
   function readCell(row: Record<string, unknown>, keys: string[]) {
     const entries = Object.entries(row);
@@ -497,6 +499,35 @@ export default function ManagerGoalsPage() {
     }
   }
 
+  async function handleDistributeToTeam(goal: GoalItem) {
+    const goalId = String(goal.$id || "").trim();
+    if (!goalId) return;
+
+    if (managerTeamMemberIds.length === 0) {
+      setError("No team members found for cascade distribution.");
+      return;
+    }
+
+    setDistributingGoalId(goalId);
+    setError("");
+    setSuccess("");
+
+    try {
+      await createGoalCascade({
+        parentGoalId: goalId,
+        employeeIds: managerTeamMemberIds,
+        splitStrategy: "equal",
+      });
+
+      setSuccess(`Goal distributed to ${managerTeamMemberIds.length} team member(s).`);
+      await loadGoals();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to distribute goal to team.");
+    } finally {
+      setDistributingGoalId(null);
+    }
+  }
+
   async function handleAiSuggest() {
     setAiLoading(true);
     setAiError("");
@@ -620,7 +651,7 @@ export default function ManagerGoalsPage() {
                       variant="ghost"
                       onClick={() => setExplainabilityOpen(true)}
                     >
-                      View Explainability
+                      Why this suggestion?
                     </Button>
                   </div>
                 )}
@@ -710,7 +741,21 @@ export default function ManagerGoalsPage() {
                   <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
                   <p className="caption mt-1">{goal.description}</p>
                 </div>
-                <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                  {typeof goal.aopAligned === "boolean" && (
+                    goal.aopAligned ? (
+                      <Tooltip
+                        content={`This goal aligns with company objective: ${goal.aopReference || "Alignment identified from AOP context."}`}
+                        position="top"
+                      >
+                        <Badge variant="success">AOP Aligned</Badge>
+                      </Tooltip>
+                    ) : (
+                      <Badge variant="default">Not aligned</Badge>
+                    )
+                  )}
+                </div>
               </div>
 
               {editingGoalId === goal.$id ? (
@@ -780,6 +825,16 @@ export default function ManagerGoalsPage() {
                     <span className="caption">Framework: {goal.frameworkType}</span>
                     <span className="caption">Weightage: {goal.weightage}%</span>
                     <span className="caption">Progress: {goal.progressPercent}%</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setLineageGoalId((prev) => (prev === goal.$id ? null : goal.$id))
+                      }
+                      disabled={submitting}
+                    >
+                      {lineageGoalId === goal.$id ? "Hide Lineage" : "Goal Lineage"}
+                    </Button>
                     {(goal.status === "draft" || goal.status === "needs_changes") && (
                       <>
                         <Button
@@ -798,6 +853,15 @@ export default function ManagerGoalsPage() {
                         >
                           Submit for Approval
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleDistributeToTeam(goal)}
+                          loading={distributingGoalId === goal.$id}
+                          disabled={submitting || managerTeamMemberIds.length === 0}
+                        >
+                          Distribute to Team
+                        </Button>
                       </>
                     )}
                   </div>
@@ -806,6 +870,15 @@ export default function ManagerGoalsPage() {
                     <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                       <p className="caption font-medium">Latest approver feedback</p>
                       <p className="caption mt-1">{feedbackByGoal[goal.$id]}</p>
+                    </div>
+                  )}
+
+                  {lineageGoalId === goal.$id && (
+                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3">
+                      <p className="caption font-medium">Goal Lineage</p>
+                      <div className="mt-2">
+                        <GoalLineageView goalId={goal.$id} embedded mode="chain" />
+                      </div>
                     </div>
                   )}
                 </>

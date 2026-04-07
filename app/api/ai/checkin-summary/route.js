@@ -1,7 +1,8 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildExplainability } from "@/lib/ai/explainability";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 
 export async function POST(request) {
   try {
@@ -25,27 +26,60 @@ export async function POST(request) {
       userId: profile.$id,
       cycleId,
       featureType: "checkin_summary",
+      userRole: profile.role,
     });
 
-    const raw = await callOpenRouter({
-      messages: [
-        {
-          role: "system",
-          content: "You are a performance management assistant. Respond with valid JSON only.",
-        },
-        {
-          role: "user",
-          content: `Summarise this check-in for goal "${goalTitle || "this goal"}":
+    const messages = [
+      {
+        role: "system",
+        content: "You are a performance management assistant. Respond with valid JSON only.",
+      },
+      {
+        role: "user",
+        content: `Summarise this check-in for goal "${goalTitle || "this goal"}":
 "${notes}"
 
 Return ONLY this JSON shape:
 {"summary":"one sentence summary","highlights":["...","..."],"blockers":["..."],"nextActions":["...","..."]}`,
-        },
-      ],
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
+      messages,
       jsonMode: true,
     });
 
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(completion.content);
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "checkin_summary",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
+
+    let explainability = null;
+    try {
+      explainability = buildExplainability({
+        source: "openrouter_llm",
+        confidence: "high",
+        whyFactors: [
+          `Goal context: ${goalTitle || "general"}`,
+          "Extracted progress highlights and blockers from check-in notes.",
+          "Action items prioritized for next milestone.",
+        ],
+        timeWindow: cycleId,
+      });
+    } catch {
+      explainability = null;
+    }
 
     return Response.json({
       data: {
@@ -55,18 +89,10 @@ Return ONLY this JSON shape:
         nextActions: parsed.nextActions?.length
           ? parsed.nextActions
           : ["Confirm next milestone before the next check-in."],
-        explainability: buildExplainability({
-          source: "openrouter_llm",
-          confidence: "high",
-          whyFactors: [
-            `Goal context: ${goalTitle || "general"}`,
-            "Extracted progress highlights and blockers from check-in notes.",
-            "Action items prioritized for next milestone.",
-          ],
-          timeWindow: cycleId,
-        }),
-        usage,
+        explainability,
+        usage: trackedUsage,
       },
+      explainability,
     });
   } catch (error) {
     return errorResponse(error);

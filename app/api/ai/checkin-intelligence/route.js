@@ -1,6 +1,6 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
-import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
-import { callOpenRouter } from "@/lib/openrouter";
+import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsage";
+import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildExplainability } from "@/lib/ai/explainability";
 import {
   computeMatrixBlend,
@@ -9,6 +9,7 @@ import {
   listFeedback,
 } from "@/lib/matrixReviews";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 
 function safeParse(raw, fallback) {
   try {
@@ -89,24 +90,41 @@ export async function POST(request) {
       userId: profile.$id,
       cycleId,
       featureType: "checkin_summary",
+      userRole: profile.role,
     });
 
-    const raw = await callOpenRouter({
-      messages: [
-        {
-          role: "system",
-          content: "You are a check-in intelligence assistant. Return valid JSON only.",
-        },
-        {
-          role: "user",
-          content: `Analyze this check-in text for commitments, coaching quality, and tone guidance.\nGoal: ${goalTitle || "n/a"}\nNotes:\n${notes}\n\nMatrix reviewer context:\n${JSON.stringify(matrixBlend)}\n\nReturn JSON:\n{"summary":"...","commitments":[{"owner":"...","action":"...","dueDate":"optional"}],"coachingScore":{"score":1-10,"reasoning":["..."]},"toneGuidance":["..."],"revisedManagerFeedback":"..."}`,
-        },
-      ],
+    const messages = [
+      {
+        role: "system",
+        content: "You are a check-in intelligence assistant. Return valid JSON only.",
+      },
+      {
+        role: "user",
+        content: `Analyze this check-in text for commitments, coaching quality, and tone guidance.\nGoal: ${goalTitle || "n/a"}\nNotes:\n${notes}\n\nMatrix reviewer context:\n${JSON.stringify(matrixBlend)}\n\nReturn JSON:\n{"summary":"...","commitments":[{"owner":"...","action":"...","dueDate":"optional"}],"coachingScore":{"score":1-10,"reasoning":["..."]},"toneGuidance":["..."],"revisedManagerFeedback":"..."}`,
+      },
+    ];
+
+    const completion = await callOpenRouterWithUsage({
+      messages,
       jsonMode: true,
       maxTokens: 700,
     });
 
-    const parsed = safeParse(raw, {});
+    const parsed = safeParse(completion.content, {});
+    const usageDelta = buildAiUsageDelta({
+      providerUsage: completion.usage,
+      messages,
+      completionText: completion.content,
+    });
+    const trackedUsage = await trackAiUsageCost({
+      databases,
+      userId: profile.$id,
+      cycleId,
+      featureType: "checkin_summary",
+      usage,
+      tokensUsedDelta: usageDelta.tokensUsed,
+      estimatedCostDelta: usageDelta.estimatedCost,
+    });
     const commitments = Array.isArray(parsed?.commitments)
       ? parsed.commitments
           .map((item) => ({
@@ -152,7 +170,7 @@ export async function POST(request) {
           ],
           timeWindow: cycleId,
         }),
-        usage,
+        usage: trackedUsage,
       },
     });
   } catch (error) {

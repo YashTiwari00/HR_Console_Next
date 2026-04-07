@@ -7,10 +7,11 @@ import {
   BulkGoalAiReviewPanel,
   ConversationalGoalComposer,
   ExplainabilityDrawer,
+  GoalLineageView,
   type GoalAiDraft,
   PageHeader,
 } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
@@ -80,6 +81,7 @@ export default function EmployeeGoalsPage() {
   const [bulkSourceGoals, setBulkSourceGoals] = useState<BulkGoalInput[]>([]);
   const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
   const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [lineageGoalId, setLineageGoalId] = useState<string | null>(null);
 
   function readCell(row: Record<string, unknown>, keys: string[]) {
     const entries = Object.entries(row);
@@ -609,7 +611,7 @@ export default function EmployeeGoalsPage() {
                         variant="ghost"
                         onClick={() => setExplainabilityOpen(true)}
                       >
-                        View Explainability
+                        Why this suggestion?
                       </Button>
                     </div>
                   )}
@@ -705,7 +707,21 @@ export default function EmployeeGoalsPage() {
                   <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
                   <p className="caption mt-1">{goal.description}</p>
                 </div>
-                <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                  {typeof goal.aopAligned === "boolean" && (
+                    goal.aopAligned ? (
+                      <Tooltip
+                        content={`This goal aligns with company objective: ${goal.aopReference || "Alignment identified from AOP context."}`}
+                        position="top"
+                      >
+                        <Badge variant="success">AOP Aligned</Badge>
+                      </Tooltip>
+                    ) : (
+                      <Badge variant="default">Not aligned</Badge>
+                    )
+                  )}
+                </div>
               </div>
 
               {editingGoalId === goal.$id ? (
@@ -775,6 +791,16 @@ export default function EmployeeGoalsPage() {
                     <span className="caption">Framework: {goal.frameworkType}</span>
                     <span className="caption">Weightage: {goal.weightage}%</span>
                     <span className="caption">Progress: {goal.progressPercent}%</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setLineageGoalId((prev) => (prev === goal.$id ? null : goal.$id))
+                      }
+                      disabled={submitting}
+                    >
+                      {lineageGoalId === goal.$id ? "Hide Lineage" : "Goal Lineage"}
+                    </Button>
                     {(goal.status === "draft" || goal.status === "needs_changes") && (
                       <>
                         <Button
@@ -801,6 +827,25 @@ export default function EmployeeGoalsPage() {
                     <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                       <p className="caption font-medium">Latest manager feedback</p>
                       <p className="caption mt-1">{feedbackByGoal[goal.$id]}</p>
+                    </div>
+                  )}
+
+                  {goal.parentGoalId && (
+                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                      <p className="caption font-medium">Derived from manager goal</p>
+                      <p className="caption mt-1">Parent goal ID: {goal.parentGoalId}</p>
+                      {typeof goal.contributionPercent === "number" && (
+                        <p className="caption mt-1">Contribution: {goal.contributionPercent}%</p>
+                      )}
+                    </div>
+                  )}
+
+                  {lineageGoalId === goal.$id && (
+                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3">
+                      <p className="caption font-medium">Goal Lineage</p>
+                      <div className="mt-2">
+                        <GoalLineageView goalId={goal.$id} embedded mode="chain" />
+                      </div>
                     </div>
                   )}
                 </>

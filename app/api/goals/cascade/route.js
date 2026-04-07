@@ -168,6 +168,31 @@ async function assertEmployeeWeightageCap(databases, employeeId, cycleId, additi
   }
 }
 
+async function getExistingCascadeMap(databases, parentGoalId, employeeIds) {
+  const out = new Map();
+
+  await Promise.all(
+    employeeIds.map(async (employeeId) => {
+      const existing = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.goalsCollectionId,
+        [
+          Query.equal("parentGoalId", parentGoalId),
+          Query.equal("employeeId", employeeId),
+          Query.limit(1),
+        ]
+      );
+
+      const first = (existing.documents || [])[0] || null;
+      if (first && first.$id) {
+        out.set(employeeId, String(first.$id));
+      }
+    })
+  );
+
+  return out;
+}
+
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -234,6 +259,19 @@ export async function POST(request) {
       };
     });
 
+    const existingByEmployee = await getExistingCascadeMap(databases, parentGoalId, employeeIds);
+    if (existingByEmployee.size > 0) {
+      const duplicateEmployeeIds = Array.from(existingByEmployee.keys());
+      return Response.json(
+        {
+          error: "Cascade child goals already exist for some employees under this parent goal.",
+          code: "cascade_duplicate_child",
+          duplicateEmployeeIds,
+        },
+        { status: 409 }
+      );
+    }
+
     await Promise.all(
       childRows.map((row) =>
         assertEmployeeWeightageCap(databases, row.employeeId, cycleId, row.weightage)
@@ -242,31 +280,44 @@ export async function POST(request) {
 
     const created = [];
 
-    for (const row of childRows) {
-      const payload = buildCascadePayload({
-        parentGoal,
-        title,
-        description,
-        cycleId,
-        frameworkType,
-        managerId: String(profile.$id || "").trim(),
-        employeeId: row.employeeId,
-        weightage: row.weightage,
-        dueDate,
-        aiSuggested: body?.aiSuggested ?? true,
-        lineageRef,
-        optionalFields: {
-          parentGoalId,
-          cascadeSourceGoalId: parentGoalId,
-          goalLevel,
-          contributionPercent: row.contributionPercent,
-          goalConversationId: body?.goalConversationId,
-          conversationId: body?.conversationId,
-        },
-      });
+    try {
+      for (const row of childRows) {
+        const payload = buildCascadePayload({
+          parentGoal,
+          title,
+          description,
+          cycleId,
+          frameworkType,
+          managerId: String(profile.$id || "").trim(),
+          employeeId: row.employeeId,
+          weightage: row.weightage,
+          dueDate,
+          aiSuggested: body?.aiSuggested ?? true,
+          lineageRef,
+          optionalFields: {
+            parentGoalId,
+            cascadeSourceGoalId: parentGoalId,
+            goalLevel,
+            contributionPercent: row.contributionPercent,
+            goalConversationId: body?.goalConversationId,
+            conversationId: body?.conversationId,
+          },
+        });
 
-      const child = await createGoalDocumentCompat(databases, payload);
-      created.push(child);
+        const child = await createGoalDocumentCompat(databases, payload);
+        created.push(child);
+      }
+    } catch (error) {
+      await Promise.allSettled(
+        created.map((doc) =>
+          databases.deleteDocument(
+            databaseId,
+            appwriteConfig.goalsCollectionId,
+            String(doc?.$id || "")
+          )
+        )
+      );
+      throw error;
     }
 
     return Response.json(

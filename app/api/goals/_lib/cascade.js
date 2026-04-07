@@ -1,6 +1,7 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { GOAL_LEVELS } from "@/lib/appwriteSchema";
 import { ID, databaseId } from "@/lib/appwriteServer";
+import { postProcessGoalAop } from "@/app/api/goals/_lib/aopPostProcess";
 
 function isUnknownAttributeError(error) {
   return String(error?.message || "").toLowerCase().includes("unknown attribute");
@@ -64,12 +65,20 @@ export async function createGoalDocumentCompat(databases, payload) {
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      return await databases.createDocument(
+      const created = await databases.createDocument(
         databaseId,
         appwriteConfig.goalsCollectionId,
         ID.unique(),
         mutablePayload
       );
+
+      try {
+        await postProcessGoalAop(databases, created);
+      } catch {
+        // AOP linkage must never block goal creation.
+      }
+
+      return created;
     } catch (error) {
       if (isUnknownAttributeError(error)) {
         const unknownField = extractUnknownAttributeName(error);

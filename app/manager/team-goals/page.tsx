@@ -10,7 +10,7 @@ import {
   type GoalAiDraft,
   PageHeader,
 } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
@@ -472,7 +472,21 @@ export default function ManagerTeamGoalsPage() {
                     <p className="body-sm font-medium text-[var(--color-text)]">{goal.title}</p>
                     <p className="caption mt-1">Employee: {employee?.name || goal.employeeId}</p>
                   </div>
-                  <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
+                    {typeof goal.aopAligned === "boolean" && (
+                      goal.aopAligned ? (
+                        <Tooltip
+                          content={`This goal aligns with company objective: ${goal.aopReference || "Alignment identified from AOP context."}`}
+                          position="top"
+                        >
+                          <Badge variant="success">AOP Aligned</Badge>
+                        </Tooltip>
+                      ) : (
+                        <Badge variant="default">Not aligned</Badge>
+                      )
+                    )}
+                  </div>
                 </div>
 
                 {!isEditing && (
