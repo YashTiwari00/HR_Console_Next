@@ -2,6 +2,7 @@ import { appwriteConfig } from "@/lib/appwrite";
 import { GOAL_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { computeAndPersistEmployeeCycleScore, setCycleRatingsVisibility } from "@/lib/finalRatings";
+import { analyzeRatingDrop, isRatingDropAnalysisEnabled } from "@/lib/ratingDropAnalysis";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 
 export async function POST(request, context) {
@@ -73,13 +74,24 @@ export async function POST(request, context) {
       // goal_cycles schema may not include closure attributes in all environments.
     }
 
-    return Response.json({
-      data: {
-        cycleId,
-        closed: true,
-        employeesUpdated: pairs.size,
-      },
-    });
+    const responseData = {
+      cycleId,
+      closed: true,
+      employeesUpdated: pairs.size,
+    };
+
+    if (isRatingDropAnalysisEnabled()) {
+      queueMicrotask(() => {
+        void analyzeRatingDrop(cycleId, { databases, logger: console }).catch((error) => {
+          console.error("[rating-drop-analysis] failed for closed cycle", {
+            cycleId,
+            message: String(error?.message || "unknown error"),
+          });
+        });
+      });
+    }
+
+    return Response.json({ data: responseData });
   } catch (error) {
     return errorResponse(error);
   }

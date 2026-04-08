@@ -38,3 +38,6 @@ export type { BulkGoalAiReviewPanelProps } from './BulkGoalAiReviewPanel';
 
 export { default as BulkGoalDashboardImportCard } from './BulkGoalDashboardImportCard';
 export type { BulkGoalDashboardImportCardProps } from './BulkGoalDashboardImportCard';
+
+export { default as RatingDropWarningSection } from './RatingDropWarningSection';
+export type { RatingDropWarningSectionProps, RatingDropWarningItem } from './RatingDropWarningSection';

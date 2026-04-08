@@ -12,6 +12,10 @@ const collections = {
   goals: process.env.NEXT_PUBLIC_GOALS_COLLECTION_ID || "goals",
   goal_approvals:
     process.env.NEXT_PUBLIC_GOAL_APPROVALS_COLLECTION_ID || "goal_approvals",
+  goal_self_reviews:
+    process.env.NEXT_PUBLIC_GOAL_SELF_REVIEWS_COLLECTION_ID || "goal_self_reviews",
+  goal_kpi_library:
+    process.env.NEXT_PUBLIC_GOAL_KPI_LIBRARY_COLLECTION_ID || "goal_kpi_library",
   checkins: process.env.NEXT_PUBLIC_CHECK_INS_COLLECTION_ID || "check_ins",
   progress: process.env.NEXT_PUBLIC_PROGRESS_UPDATES_COLLECTION_ID || "progress_updates",
   goal_cycles: process.env.NEXT_PUBLIC_GOAL_CYCLES_COLLECTION_ID || "goal_cycles",
@@ -19,6 +23,8 @@ const collections = {
     process.env.NEXT_PUBLIC_EMPLOYEE_CYCLE_SCORES_COLLECTION_ID || "employee_cycle_scores",
   manager_cycle_ratings:
     process.env.NEXT_PUBLIC_MANAGER_CYCLE_RATINGS_COLLECTION_ID || "manager_cycle_ratings",
+  rating_drop_insights:
+    process.env.NEXT_PUBLIC_RATING_DROP_INSIGHTS_COLLECTION_ID || "rating_drop_insights",
   ai_events: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
   ai_policies: process.env.NEXT_PUBLIC_AI_POLICIES_COLLECTION_ID || "ai_policies",
   checkin_approvals:
@@ -101,6 +107,9 @@ const required = {
     { key: "managerFinalRatedAt", type: "datetime", required: false },
     { key: "managerFinalRatedBy", type: "string", size: 64, required: false },
     { key: "ratingVisibleToEmployee", type: "boolean", required: false, default: false },
+    { key: "selfReviewId", type: "string", size: 64, required: false },
+    { key: "selfReviewStatus", type: "enum", required: false, elements: ["draft", "submitted"] },
+    { key: "selfReviewSubmittedAt", type: "datetime", required: false },
   ],
   [collections.goal_approvals]: [
     { key: "goalId", type: "string", size: 64, required: true },
@@ -108,6 +117,44 @@ const required = {
     { key: "decision", type: "enum", required: true, elements: ["approved", "rejected", "needs_changes"] },
     { key: "comments", type: "string", size: 8192, required: false },
     { key: "decidedAt", type: "datetime", required: true },
+  ],
+  [collections.goal_self_reviews]: [
+    // Unique synthetic key: `${employeeId}|${goalId}|${cycleId}`.
+    { key: "reviewKey", type: "string", size: 196, required: true },
+    { key: "employeeId", type: "string", size: 64, required: true },
+    { key: "goalId", type: "string", size: 64, required: true },
+    { key: "cycleId", type: "string", size: 32, required: true },
+    { key: "status", type: "enum", required: false, elements: ["draft", "submitted"], default: "draft" },
+    { key: "submittedAt", type: "datetime", required: false },
+    { key: "selfRatingValue", type: "integer", required: false, min: 1, max: 5 },
+    { key: "selfRatingLabel", type: "enum", required: false, elements: ["EE", "DE", "ME", "SME", "NI"] },
+    { key: "selfComment", type: "string", size: 8192, required: false },
+    { key: "achievements", type: "string", size: 2048, required: false },
+    { key: "challenges", type: "string", size: 2048, required: false },
+    { key: "evidenceLinks", type: "string", size: 2048, required: false, array: true },
+    { key: "achievementsJson", type: "string", size: 2048, required: false },
+    { key: "createdAt", type: "datetime", required: true },
+    { key: "updatedAt", type: "datetime", required: false },
+  ],
+  [collections.goal_kpi_library]: [
+    { key: "title", type: "string", size: 512, required: true },
+    { key: "description", type: "string", size: 8192, required: true },
+    { key: "department", type: "string", size: 128, required: true },
+    { key: "role", type: "string", size: 128, required: true },
+    { key: "domain", type: "string", size: 128, required: false },
+    { key: "kpi_metrics", type: "string", size: 65000, required: true },
+    { key: "default_weightage", type: "float", required: false },
+    { key: "tags", type: "string", size: 128, required: false, array: true },
+    {
+      key: "source_type",
+      type: "enum",
+      required: true,
+      elements: ["hr", "manager", "leadership", "system"],
+    },
+    { key: "approved", type: "boolean", required: false, default: false },
+    { key: "approved_by", type: "string", size: 64, required: false },
+    { key: "created_by", type: "string", size: 64, required: true },
+    { key: "created_at", type: "datetime", required: true },
   ],
   [collections.checkins]: [
     { key: "goalId", type: "string", size: 64, required: true },
@@ -117,6 +164,20 @@ const required = {
     { key: "status", type: "enum", required: true, elements: ["planned", "completed"] },
     { key: "employeeNotes", type: "string", size: 8192, required: false },
     { key: "managerNotes", type: "string", size: 8192, required: false },
+    { key: "selfReviewText", type: "string", size: 8192, required: false },
+    {
+      key: "selfReviewStatus",
+      type: "enum",
+      required: false,
+      elements: ["draft", "submitted", "reopened"],
+    },
+    { key: "selfReviewSubmittedAt", type: "datetime", required: false },
+    { key: "selfReviewSubmittedBy", type: "string", size: 64, required: false },
+    { key: "selfReviewReopenedAt", type: "datetime", required: false },
+    { key: "selfReviewReopenedBy", type: "string", size: 64, required: false },
+    { key: "selfReviewReopenReason", type: "string", size: 2048, required: false },
+    { key: "goalSelfReviewId", type: "string", size: 64, required: false },
+    { key: "goalSelfReviewStatus", type: "enum", required: false, elements: ["draft", "submitted"] },
     { key: "transcriptText", type: "string", size: 8192, required: false },
     { key: "isFinalCheckIn", type: "boolean", required: false, default: false },
     { key: "managerRating", type: "integer", required: false, min: 1, max: 5 },
@@ -160,6 +221,16 @@ const required = {
     { key: "ratingLabel", type: "enum", required: true, elements: ["EE", "DE", "ME", "SME", "NI"] },
     { key: "comments", type: "string", size: 8192, required: false },
     { key: "ratedAt", type: "datetime", required: true },
+  ],
+  [collections.rating_drop_insights]: [
+    { key: "employeeId", type: "string", size: 64, required: true },
+    { key: "managerId", type: "string", size: 64, required: false },
+    { key: "cycleId", type: "string", size: 32, required: true },
+    { key: "previousRating", type: "integer", required: true, min: 1, max: 5 },
+    { key: "currentRating", type: "integer", required: true, min: 1, max: 5 },
+    { key: "drop", type: "float", required: true, min: -5, max: 5 },
+    { key: "riskLevel", type: "enum", required: true, elements: ["HIGH RISK", "MODERATE"] },
+    { key: "createdAt", type: "datetime", required: true },
   ],
   [collections.ai_events]: [
     { key: "userId", type: "string", size: 64, required: true },
@@ -290,6 +361,10 @@ const required = {
         "goal_pending_approval",
         "goal_approved",
         "meeting_scheduled",
+        "self_review_window_opened",
+        "self_review_deadline_reminder",
+        "self_review_submitted",
+        "self_review_submitted_manager",
         "deadline_near",
         "checkin_overdue",
         "review_pending",
@@ -319,6 +394,10 @@ const required = {
         "goal_pending_approval",
         "goal_approved",
         "meeting_scheduled",
+        "self_review_window_opened",
+        "self_review_deadline_reminder",
+        "self_review_submitted",
+        "self_review_submitted_manager",
         "deadline_near",
         "checkin_overdue",
         "review_pending",
@@ -372,6 +451,10 @@ const required = {
         "goal_pending_approval",
         "goal_approved",
         "meeting_scheduled",
+        "self_review_window_opened",
+        "self_review_deadline_reminder",
+        "self_review_submitted",
+        "self_review_submitted_manager",
         "deadline_near",
         "checkin_overdue",
         "review_pending",
@@ -478,6 +561,30 @@ const required = {
   ],
 };
 
+const requiredIndexes = {
+  [collections.goal_self_reviews]: [
+    { key: "idx_gsr_key_u", type: "unique", attributes: ["reviewKey"] },
+    { key: "idx_gsr_emp", type: "key", attributes: ["employeeId"] },
+    { key: "idx_gsr_goal", type: "key", attributes: ["goalId"] },
+    { key: "idx_gsr_cycle", type: "key", attributes: ["cycleId"] },
+    { key: "idx_gsr_status", type: "key", attributes: ["status"] },
+    { key: "idx_gsr_goal_cycle", type: "key", attributes: ["goalId", "cycleId"] },
+  ],
+  [collections.goal_kpi_library]: [
+    { key: "idx_goal_kpi_library_department", type: "key", attributes: ["department"] },
+    { key: "idx_goal_kpi_library_role", type: "key", attributes: ["role"] },
+    { key: "idx_goal_kpi_library_source_type", type: "key", attributes: ["source_type"] },
+    { key: "idx_goal_kpi_library_approved", type: "key", attributes: ["approved"] },
+  ],
+  [collections.rating_drop_insights]: [
+    { key: "idx_rdi_employee_cycle_u", type: "unique", attributes: ["employeeId", "cycleId"] },
+    { key: "idx_rdi_manager_cycle", type: "key", attributes: ["managerId", "cycleId"] },
+    { key: "idx_rdi_cycle_risk", type: "key", attributes: ["cycleId", "riskLevel"] },
+    { key: "idx_rdi_cycle_created", type: "key", attributes: ["cycleId", "createdAt"] },
+    { key: "idx_rdi_created", type: "key", attributes: ["createdAt"] },
+  ],
+};
+
 function assertEnv() {
   const missing = [];
   if (!endpoint) missing.push("NEXT_PUBLIC_APPWRITE_ENDPOINT");
@@ -493,6 +600,14 @@ function assertEnv() {
 function isNotFound(err) {
   const message = String(err?.message || "").toLowerCase();
   return message.includes("could not be found") || message.includes("not found");
+}
+
+function isAlreadyExists(err) {
+  const message = String(err?.message || "").toLowerCase();
+  return (
+    message.includes("already exists") ||
+    message.includes("attribute with the requested key")
+  );
 }
 
 async function ensureCollection(databases, collectionId) {
@@ -592,6 +707,36 @@ async function createAttribute(databases, collectionId, attr) {
   throw new Error(`Unsupported attribute type: ${attr.type}`);
 }
 
+async function createIndex(databases, collectionId, index) {
+  const attempts = 5;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await databases.createIndex(
+        databaseId,
+        collectionId,
+        index.key,
+        index.type,
+        index.attributes,
+        index.orders ?? null
+      );
+      return;
+    } catch (err) {
+      const message = String(err?.message || "").toLowerCase();
+      const retryable =
+        message.includes("server error") ||
+        message.includes("still processing") ||
+        message.includes("attribute") ||
+        message.includes("not ready");
+
+      if (!retryable || i === attempts - 1) {
+        throw err;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 async function main() {
   assertEnv();
 
@@ -601,7 +746,15 @@ async function main() {
   const summary = [];
 
   for (const [collectionId, attrs] of Object.entries(required)) {
-    const row = { collectionId, createdCollection: false, missing: [], created: [], failed: [] };
+    const row = {
+      collectionId,
+      createdCollection: false,
+      missing: [],
+      created: [],
+      missingIndexes: [],
+      createdIndexes: [],
+      failed: [],
+    };
 
     const collectionState = await ensureCollection(databases, collectionId);
     row.createdCollection = collectionState.created;
@@ -632,7 +785,36 @@ async function main() {
         await createAttribute(databases, collectionId, attr);
         row.created.push(attr.key);
       } catch (err) {
-        row.failed.push(`${attr.key}: ${String(err?.message || err)}`);
+        if (!isAlreadyExists(err)) {
+          row.failed.push(`${attr.key}: ${String(err?.message || err)}`);
+        }
+      }
+    }
+
+    const indexes = requiredIndexes[collectionId] || [];
+    if (indexes.length > 0) {
+      let existingIndexes = [];
+      try {
+        const list = await databases.listIndexes(databaseId, collectionId);
+        existingIndexes = (list.indexes || []).map((index) => index.key);
+      } catch (err) {
+        row.failed.push(`listIndexes failed: ${String(err?.message || err)}`);
+        summary.push(row);
+        continue;
+      }
+
+      for (const index of indexes) {
+        if (existingIndexes.includes(index.key)) continue;
+        row.missingIndexes.push(index.key);
+
+        if (mode !== "apply") continue;
+
+        try {
+          await createIndex(databases, collectionId, index);
+          row.createdIndexes.push(index.key);
+        } catch (err) {
+          row.failed.push(`${index.key}: ${String(err?.message || err)}`);
+        }
       }
     }
 
@@ -648,6 +830,12 @@ async function main() {
     console.log(`  missing attrs: ${row.missing.length ? row.missing.join(", ") : "none"}`);
     if (row.created.length) {
       console.log(`  created attrs: ${row.created.join(", ")}`);
+    }
+    console.log(
+      `  missing indexes: ${row.missingIndexes.length ? row.missingIndexes.join(", ") : "none"}`
+    );
+    if (row.createdIndexes.length) {
+      console.log(`  created indexes: ${row.createdIndexes.join(", ")}`);
     }
     if (row.failed.length) {
       console.log("  failures:");

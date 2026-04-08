@@ -36,6 +36,26 @@ const frameworkOptions = [
   { value: "HYBRID", label: "HYBRID" },
 ];
 
+function getSuggestionSourceBadge(suggestion: GoalSuggestion | null): {
+  label: string;
+  variant: "default" | "success" | "danger" | "warning" | "info";
+} {
+  if (!suggestion) return { label: "AI Generated", variant: "info" };
+
+  const sourceType = String(suggestion.source_type || "").trim().toLowerCase();
+
+  if (sourceType === "hr") return { label: "Company Standard", variant: "success" };
+  if (sourceType === "leadership") return { label: "Strategic", variant: "info" };
+  if (sourceType === "system") return { label: "Generic", variant: "default" };
+  if (sourceType === "manager") {
+    return suggestion.approved
+      ? { label: "Team Recommended", variant: "success" }
+      : { label: "Pending Approval", variant: "warning" };
+  }
+
+  return { label: "AI Generated", variant: "info" };
+}
+
 export default function EmployeeGoalsPage() {
   const [mode, setMode] = useState<"form" | "ai">("form");
   const [goals, setGoals] = useState<GoalItem[]>([]);
@@ -599,7 +619,12 @@ export default function EmployeeGoalsPage() {
 
               {aiSuggestion && (
                 <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
-                  <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
+                  <div className="flex items-center gap-2">
+                    <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
+                    <Badge variant={getSuggestionSourceBadge(aiSuggestion).variant}>
+                      {getSuggestionSourceBadge(aiSuggestion).label}
+                    </Badge>
+                  </div>
                   <p className="caption mt-1">{aiSuggestion.title}</p>
                   <p className="caption mt-1">{aiSuggestion.description}</p>
                   {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}

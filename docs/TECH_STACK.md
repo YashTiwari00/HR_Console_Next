@@ -39,3 +39,42 @@ This file lists the technologies currently used in this project.
 
 ## Package manager and scripts
 - npm scripts for development, build, start, lint, schema sync, seeding, and smoke tests
+
+## Data model extension: goal self reviews
+- New Appwrite collection: goal_self_reviews
+- Purpose: one employee self-review per goal per cycle, with structured fields for analytics and AI.
+
+### Core linkage fields
+- employeeId (string, required)
+- goalId (string, required)
+- cycleId (string, required)
+
+### Review content fields
+- selfRatingValue (integer 1..5, optional)
+- selfRatingLabel (enum: EE, DE, ME, SME, NI, optional)
+- selfComment (string text, optional)
+- achievements (string text, optional)
+- challenges (string text, optional)
+- evidenceLinks (string array, optional) for attachment IDs or URLs
+
+### Workflow fields
+- status (enum: draft, submitted; default draft)
+- submittedAt (datetime, optional)
+
+### AI-ready structured fields
+- achievementsJson (string JSON payload, optional)
+- challengesJson (string JSON payload, optional)
+
+### Uniqueness and constraints
+- reviewKey (required synthetic key: employeeId|goalId|cycleId)
+- Unique index on reviewKey enforces one self-review per goal per cycle per employee.
+
+### Integration with existing schema (non-breaking)
+- goals collection adds optional linkage/summary fields:
+	- selfReviewId
+	- selfReviewStatus (draft/submitted)
+	- selfReviewSubmittedAt
+- check_ins collection adds optional linkage fields:
+	- goalSelfReviewId
+	- goalSelfReviewStatus (draft/submitted)
+- Existing check-in self-review fields remain intact for backward compatibility.

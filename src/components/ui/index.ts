@@ -38,6 +38,9 @@ export type { SkeletonProps, SkeletonVariant } from './Skeleton';
 export { default as Spinner } from './Spinner';
 export type { SpinnerProps, SpinnerSize } from './Spinner';
 
+export { default as SpeechToTextButton } from './SpeechToTextButton';
+export type { SpeechToTextButtonProps } from './SpeechToTextButton';
+
 export { default as Textarea } from './Textarea';
 export type { TextareaProps } from './Textarea';
 

@@ -3,9 +3,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
-import { formatDate } from "@/app/employee/_lib/pmsClient";
+import { isManagerRoleValue } from "@/src/lib/auth/useManagerRole";
+import { fetchCurrentUserContext, formatDate } from "@/app/employee/_lib/pmsClient";
 
 type CheckInStatus = "planned" | "completed";
 
@@ -22,9 +23,36 @@ interface ManagerCheckIn {
   isFinalCheckIn?: boolean;
   managerRating?: number;
   ratedAt?: string;
+  canManagerSubmitRating?: boolean;
+  selfReviewDeadlinePassed?: boolean;
+  managerRatingBlockMessage?: string;
+  employeeSelfReview?: {
+    reviewId?: string;
+    status?: "draft" | "submitted" | string;
+    submittedAt?: string | null;
+    achievements?: string;
+    challenges?: string;
+    selfRatingValue?: number | null;
+    selfRatingLabel?: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+    comments?: string;
+  } | null;
+}
+
+function getManagerRatingBlockMessage(row: ManagerCheckIn) {
+  if (!row.isFinalCheckIn) return "";
+
+  const canSubmit =
+    typeof row.canManagerSubmitRating === "boolean"
+      ? row.canManagerSubmitRating
+      : String(row.employeeSelfReview?.status || "").trim() === "submitted";
+
+  if (canSubmit) return "";
+
+  return String(row.managerRatingBlockMessage || "").trim() || "Waiting for employee self-review";
 }
 
 export default function ManagerCheckInsPage() {
+  const MIN_AI_FEEDBACK_LENGTH = 12;
   const [rows, setRows] = useState<ManagerCheckIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -55,6 +83,25 @@ export default function ManagerCheckInsPage() {
   const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
   const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
   const [aiBudgetWarning, setAiBudgetWarning] = useState("");
+  const [aiFeedbackAnalysis, setAiFeedbackAnalysis] = useState<{
+    score: number;
+    reason: string;
+    tone: string;
+    suggestion: string;
+    loading: boolean;
+    error: string | null;
+  }>({
+    score: 0,
+    reason: "",
+    tone: "",
+    suggestion: "",
+    loading: false,
+    error: null,
+  });
+  const [aiFeedbackTargetId, setAiFeedbackTargetId] = useState<string | null>(null);
+  const [aiFeedbackDismissed, setAiFeedbackDismissed] = useState(false);
+  const [isManagerRole, setIsManagerRole] = useState(true);
+  const [roleResolved, setRoleResolved] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"pending" | "all">("pending");
   const [lastFailedIds, setLastFailedIds] = useState<string[]>([]);
@@ -94,6 +141,18 @@ export default function ManagerCheckInsPage() {
     setError("");
 
     try {
+      const userContext = await fetchCurrentUserContext();
+      const currentRole = userContext?.profile?.role;
+
+      if (!isManagerRoleValue(currentRole)) {
+        setIsManagerRole(false);
+        setRows([]);
+        setError("Only manager role can add or edit manager feedback in team check-ins.");
+        return;
+      }
+
+      setIsManagerRole(true);
+
       const [checkInsPayload, goalsPayload, teamMembersPayload, usagePayload] = await Promise.all([
         requestJson("/api/check-ins?scope=team"),
         requestJson("/api/goals"),
@@ -144,6 +203,7 @@ export default function ManagerCheckInsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load check-ins.");
     } finally {
+      setRoleResolved(true);
       setLoading(false);
     }
   }, []);
@@ -170,6 +230,11 @@ export default function ManagerCheckInsPage() {
         const rawRating = (managerRatings[checkInId] || "").trim();
         const parsedRating = rawRating === "" ? null : Number(rawRating);
         const ratingLabel = managerRatingLabels[checkInId] || "ME";
+        const blockedReason = row ? getManagerRatingBlockMessage(row) : "";
+
+        if (row?.isFinalCheckIn && blockedReason) {
+          throw new Error(`${blockedReason} (check-in ${checkInId}).`);
+        }
 
         if (row?.isFinalCheckIn) {
           if (!Number.isInteger(parsedRating) || (parsedRating || 0) < 1 || (parsedRating || 0) > 5) {
@@ -399,6 +464,129 @@ export default function ManagerCheckInsPage() {
     }
   }
 
+  async function handleImproveWithAi(row: ManagerCheckIn) {
+    if (!roleResolved || !isManagerRole) {
+      setError("Only manager role can use Improve with AI.");
+      return;
+    }
+
+    if (aiFeedbackAnalysis.loading && aiFeedbackTargetId === row.$id) {
+      return;
+    }
+
+    const feedback = String(managerNotes[row.$id] || "").trim();
+    const cycleId = String(goalCycleById[row.goalId] || "").trim();
+
+    if (!cycleId) {
+      const message = "Cycle context missing for this goal. Refresh and try again.";
+      setError(message);
+      setAiFeedbackTargetId(row.$id);
+      setAiFeedbackDismissed(false);
+      setAiFeedbackAnalysis((prev) => ({
+        ...prev,
+        loading: false,
+        error: message,
+      }));
+      return;
+    }
+
+    if (!feedback) {
+      const message = "Add manager notes before using Improve with AI.";
+      setError(message);
+      setAiFeedbackTargetId(row.$id);
+      setAiFeedbackAnalysis((prev) => ({
+        ...prev,
+        loading: false,
+        error: message,
+      }));
+      return;
+    }
+
+    if (feedback.length < MIN_AI_FEEDBACK_LENGTH) {
+      const message = `Please add a bit more detail (at least ${MIN_AI_FEEDBACK_LENGTH} characters) for useful AI feedback.`;
+      setError(message);
+      setAiFeedbackTargetId(row.$id);
+      setAiFeedbackDismissed(false);
+      setAiFeedbackAnalysis((prev) => ({
+        ...prev,
+        loading: false,
+        error: message,
+      }));
+      return;
+    }
+
+    setError("");
+    setAiFeedbackTargetId(row.$id);
+    setAiFeedbackDismissed(false);
+    setAiFeedbackAnalysis((prev) => ({
+      ...prev,
+      loading: true,
+      error: null,
+    }));
+
+    try {
+      const payload = await requestJson("/api/ai/manager-feedback-analysis", {
+        method: "POST",
+        body: JSON.stringify({ feedback, cycleId }),
+      });
+
+      setAiFeedbackAnalysis({
+        score: Number(payload?.data?.score || 0),
+        reason: String(payload?.data?.reason || "").trim(),
+        tone: String(payload?.data?.tone || "neutral").trim(),
+        suggestion: String(payload?.data?.suggestion || "").trim(),
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Unable to analyze feedback right now. Please try again.";
+      setAiFeedbackAnalysis((prev) => ({
+        ...prev,
+        loading: false,
+        error: message,
+      }));
+      setError(message);
+    }
+  }
+
+  function toneVariant(tone: string) {
+    const normalized = String(tone || "").trim().toLowerCase();
+    if (normalized === "harsh") return "warning" as const;
+    if (normalized === "constructive") return "success" as const;
+    return "info" as const;
+  }
+
+  function renderSelfRating(row: ManagerCheckIn) {
+    const numeric = typeof row.employeeSelfReview?.selfRatingValue === "number"
+      ? `${row.employeeSelfReview?.selfRatingValue}/5`
+      : "";
+    const label = String(row.employeeSelfReview?.selfRatingLabel || "").trim();
+
+    if (numeric && label) return `${numeric} (${label})`;
+    if (numeric) return numeric;
+    if (label) return label;
+    return "Not provided";
+  }
+
+  function handleUseAiSuggestion(row: ManagerCheckIn) {
+    const suggestion = String(aiFeedbackAnalysis.suggestion || "").trim();
+
+    if (!suggestion) {
+      setError("No AI suggestion available to apply.");
+      return;
+    }
+
+    setManagerNotes((prev) => ({
+      ...prev,
+      [row.$id]: suggestion,
+    }));
+
+    setSuccess("AI suggestion applied to manager notes. Review and submit when ready.");
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
@@ -419,6 +607,11 @@ export default function ManagerCheckInsPage() {
         <Alert variant="warning" title="AI Budget Warning" description={aiBudgetWarning} onDismiss={() => setAiBudgetWarning("")} />
       )}
 
+      {roleResolved && !isManagerRole ? (
+        <Card title="Team Check-ins" description="Manager access required.">
+          <p className="caption">Manager feedback inputs are disabled because this account is not mapped to the manager role.</p>
+        </Card>
+      ) : (
       <Card title="Team Check-ins" description="Mark planned check-ins as completed with manager notes.">
         <Stack gap="3">
           <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
@@ -497,6 +690,11 @@ export default function ManagerCheckInsPage() {
               onSubmit={(event) => handleComplete(event, row)}
               className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
             >
+              {(() => {
+                const blockedMessage = getManagerRatingBlockMessage(row);
+                const isRatingBlocked = Boolean(blockedMessage);
+                return (
+                  <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {row.status === "planned" && (
@@ -521,109 +719,238 @@ export default function ManagerCheckInsPage() {
               {row.employeeNotes && <p className="caption mt-2">Employee notes: {row.employeeNotes}</p>}
 
               {row.status === "planned" ? (
-                <div className="mt-3 space-y-2">
-                  {row.isFinalCheckIn && (
-                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                      <Badge variant="warning">Final check-in flagged by employee</Badge>
-                      <div className="mt-2">
-                        <Input
-                          label="Final Rating (1 to 5)"
-                          type="number"
-                          min={1}
-                          max={5}
-                          step={1}
-                          required
-                          value={managerRatings[row.$id] || ""}
-                          onChange={(event) =>
-                            setManagerRatings((prev) => ({ ...prev, [row.$id]: event.target.value }))
-                          }
-                          helperText="Required when this is a final check-in."
-                        />
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="body-sm font-medium text-[var(--color-text)]">Employee Self Reflection</p>
+                      <Badge
+                        variant={
+                          String(row.employeeSelfReview?.status || "").trim() === "submitted"
+                            ? "success"
+                            : "warning"
+                        }
+                      >
+                        {String(row.employeeSelfReview?.status || "draft").trim() || "draft"}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      <div>
+                        <p className="caption font-medium">Achievements</p>
+                        <p className="caption mt-1">
+                          {row.employeeSelfReview?.achievements || "No achievements shared yet."}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="caption font-medium">Challenges</p>
+                        <p className="caption mt-1">
+                          {row.employeeSelfReview?.challenges || "No challenges shared yet."}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="caption font-medium">Self rating</p>
+                        <p className="caption mt-1">{renderSelfRating(row)}</p>
+                      </div>
+                      <div>
+                        <p className="caption font-medium">Comments</p>
+                        <p className="caption mt-1">
+                          {row.employeeSelfReview?.comments || "No additional comments shared yet."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
+                  <div className="space-y-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                    <p className="body-sm font-medium text-[var(--color-text)]">Manager Feedback</p>
+
+                    {isRatingBlocked && (
+                      <Alert
+                        variant="warning"
+                        title="Rating blocked"
+                        description={blockedMessage}
+                      />
+                    )}
+
+                    {row.isFinalCheckIn && (
+                      <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                        <Badge variant="warning">Final check-in flagged by employee</Badge>
                         <div className="mt-2">
-                          <p className="caption mb-1">Goal rating label</p>
-                          <div className="flex flex-wrap gap-2">
-                            {(["EE", "DE", "ME", "SME", "NI"] as const).map((label) => (
-                              <Button
-                                key={label}
-                                type="button"
-                                size="sm"
-                                variant={managerRatingLabels[row.$id] === label ? "primary" : "secondary"}
-                                onClick={() =>
-                                  setManagerRatingLabels((prev) => ({
-                                    ...prev,
-                                    [row.$id]: label,
-                                  }))
-                                }
-                              >
-                                {label}
-                              </Button>
-                            ))}
+                          <Input
+                            label="Final Rating (1 to 5)"
+                            type="number"
+                            min={1}
+                            max={5}
+                            step={1}
+                            required
+                            value={managerRatings[row.$id] || ""}
+                            disabled={isRatingBlocked}
+                            onChange={(event) =>
+                              setManagerRatings((prev) => ({ ...prev, [row.$id]: event.target.value }))
+                            }
+                            helperText="Required when this is a final check-in."
+                          />
+
+                          <div className="mt-2">
+                            <p className="caption mb-1">Goal rating label</p>
+                            <div className="flex flex-wrap gap-2">
+                              {(["EE", "DE", "ME", "SME", "NI"] as const).map((label) => (
+                                <Button
+                                  key={label}
+                                  type="button"
+                                  size="sm"
+                                  variant={managerRatingLabels[row.$id] === label ? "primary" : "secondary"}
+                                  disabled={isRatingBlocked}
+                                  onClick={() =>
+                                    setManagerRatingLabels((prev) => ({
+                                      ...prev,
+                                      [row.$id]: label,
+                                    }))
+                                  }
+                                >
+                                  {label}
+                                </Button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <Textarea
-                    label="Manager Notes"
-                    value={managerNotes[row.$id] || ""}
-                    onChange={(event) =>
-                      setManagerNotes((prev) => ({ ...prev, [row.$id]: event.target.value }))
-                    }
-                    placeholder="Summary and coaching notes"
-                  />
+                    <Textarea
+                      label="Manager Notes"
+                      value={managerNotes[row.$id] || ""}
+                      onChange={(event) =>
+                        setManagerNotes((prev) => ({ ...prev, [row.$id]: event.target.value }))
+                      }
+                      placeholder="Summary and coaching notes"
+                    />
 
-                  <Textarea
-                    label="Transcript / Summary"
-                    value={transcriptText[row.$id] || ""}
-                    onChange={(event) =>
-                      setTranscriptText((prev) => ({ ...prev, [row.$id]: event.target.value }))
-                    }
-                    placeholder="Optional meeting transcript summary"
-                  />
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleGenerateAgenda(row)}
-                      loading={Boolean(aiWorking[row.$id])}
-                    >
-                      Generate Agenda
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleAnalyzeIntelligence(row)}
-                      loading={Boolean(aiWorking[row.$id])}
-                    >
-                      Analyze Commitments & Tone
-                    </Button>
-
-                    {aiMeta[row.$id] && (
-                      <div className="caption">
-                        Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
-                        {typeof aiMeta[row.$id].remaining === "number"
-                          ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
-                          : ""}
-                        {typeof aiMeta[row.$id].coachingScore === "number"
-                          ? `, coaching quality: ${aiMeta[row.$id].coachingScore}/10`
-                          : ""}
-                        {Array.isArray(aiMeta[row.$id]?.toneTips) && (aiMeta[row.$id]?.toneTips?.length || 0) > 0
-                          ? `, tone tips: ${aiMeta[row.$id]?.toneTips?.join("; ")}`
-                          : ""}
-                        {typeof aiMeta[row.$id]?.matrixWeightedRating === "number"
-                          ? `, matrix signal: ${aiMeta[row.$id]?.matrixWeightedRating?.toFixed(2)}/5 (${aiMeta[row.$id]?.matrixResponses || 0} responses)`
-                          : ""}
+                    {roleResolved && isManagerRole && (
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <SpeechToTextButton
+                          ariaLabel="Manager notes speech input"
+                          disabled={working}
+                          onFinalTranscript={(transcript) => {
+                            setManagerNotes((prev) => {
+                              const current = String(prev[row.$id] || "").trim();
+                              const next = transcript.trim();
+                              if (!next) return prev;
+                              return {
+                                ...prev,
+                                [row.$id]: current ? `${current} ${next}` : next,
+                              };
+                            });
+                          }}
+                        />
+                        {(() => {
+                          const noteText = String(managerNotes[row.$id] || "").trim();
+                          const isImproveLoading = aiFeedbackAnalysis.loading && aiFeedbackTargetId === row.$id;
+                          return (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleImproveWithAi(row)}
+                          loading={isImproveLoading}
+                          disabled={noteText.length === 0 || isImproveLoading}
+                        >
+                          Improve with AI
+                        </Button>
+                          );
+                        })()}
                       </div>
                     )}
-                  </div>
 
-                  <Button type="submit" loading={working}>Approve Check-in</Button>
+                    {aiFeedbackTargetId === row.$id && !aiFeedbackDismissed && aiFeedbackAnalysis.error && (
+                      <div className="mt-1 rounded-[var(--radius-sm)] border border-[var(--color-warning)] bg-[var(--color-surface)] px-3 py-2">
+                        <p className="caption">{aiFeedbackAnalysis.error}</p>
+                      </div>
+                    )}
+
+                    {aiFeedbackTargetId === row.$id &&
+                      !aiFeedbackDismissed &&
+                      !aiFeedbackAnalysis.error &&
+                      (aiFeedbackAnalysis.reason || aiFeedbackAnalysis.suggestion) && (
+                        <div className="mt-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="caption">AI score: {aiFeedbackAnalysis.score}/10</p>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={toneVariant(aiFeedbackAnalysis.tone)}>
+                                {aiFeedbackAnalysis.tone || "neutral"}
+                              </Badge>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleUseAiSuggestion(row)}
+                              >
+                                Use Suggestion
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setAiFeedbackDismissed(true)}
+                              >
+                                Dismiss
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="caption mt-1">{aiFeedbackAnalysis.reason}</p>
+                          <p className="caption mt-1">Suggested feedback: {aiFeedbackAnalysis.suggestion}</p>
+                        </div>
+                      )}
+
+                    <Textarea
+                      label="Transcript / Summary"
+                      value={transcriptText[row.$id] || ""}
+                      onChange={(event) =>
+                        setTranscriptText((prev) => ({ ...prev, [row.$id]: event.target.value }))
+                      }
+                      placeholder="Optional meeting transcript summary"
+                    />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleGenerateAgenda(row)}
+                        loading={Boolean(aiWorking[row.$id])}
+                      >
+                        Generate Agenda
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleAnalyzeIntelligence(row)}
+                        loading={Boolean(aiWorking[row.$id])}
+                      >
+                        Analyze Commitments & Tone
+                      </Button>
+
+                      {aiMeta[row.$id] && (
+                        <div className="caption">
+                          Source: {aiMeta[row.$id].source}, confidence: {aiMeta[row.$id].confidence}
+                          {typeof aiMeta[row.$id].remaining === "number"
+                            ? `, remaining this cycle: ${aiMeta[row.$id].remaining}`
+                            : ""}
+                          {typeof aiMeta[row.$id].coachingScore === "number"
+                            ? `, coaching quality: ${aiMeta[row.$id].coachingScore}/10`
+                            : ""}
+                          {Array.isArray(aiMeta[row.$id]?.toneTips) && (aiMeta[row.$id]?.toneTips?.length || 0) > 0
+                            ? `, tone tips: ${aiMeta[row.$id]?.toneTips?.join("; ")}`
+                            : ""}
+                          {typeof aiMeta[row.$id]?.matrixWeightedRating === "number"
+                            ? `, matrix signal: ${aiMeta[row.$id]?.matrixWeightedRating?.toFixed(2)}/5 (${aiMeta[row.$id]?.matrixResponses || 0} responses)`
+                            : ""}
+                        </div>
+                      )}
+                    </div>
+
+                    <Button type="submit" loading={working} disabled={isRatingBlocked}>Approve Check-in</Button>
+                  </div>
                 </div>
               ) : (
                 <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
@@ -639,10 +966,14 @@ export default function ManagerCheckInsPage() {
                   )}
                 </div>
               )}
+                  </>
+                );
+              })()}
             </form>
           ))}
         </Stack>
       </Card>
+      )}
     </Stack>
   );
 }

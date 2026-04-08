@@ -3,8 +3,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { ExplainabilityDrawer, type ExplainabilityPayload, PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
+import { useManagerRole } from "@/src/lib/auth/useManagerRole";
 import { formatDate } from "@/app/employee/_lib/pmsClient";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -36,6 +37,20 @@ interface ManagerCheckIn {
   isFinalCheckIn?: boolean;
   managerRating?: number;
   ratedAt?: string;
+  canManagerSubmitRating?: boolean;
+  selfReviewDeadlinePassed?: boolean;
+  managerRatingBlockMessage?: string;
+}
+
+function getManagerRatingBlockMessage(row: ManagerCheckIn) {
+  if (!row.isFinalCheckIn) return "";
+
+  const canSubmit =
+    typeof row.canManagerSubmitRating === "boolean" ? row.canManagerSubmitRating : false;
+
+  if (canSubmit) return "";
+
+  return String(row.managerRatingBlockMessage || "").trim() || "Waiting for employee self-review";
 }
 
 function decisionBadge(decision: ApprovalDecision) {
@@ -45,6 +60,7 @@ function decisionBadge(decision: ApprovalDecision) {
 }
 
 export default function TeamApprovalsPage() {
+  const { roleResolved, isManagerRole } = useManagerRole();
   const [approvalRows, setApprovalRows] = useState<GoalForApproval[]>([]);
   const [checkInRows, setCheckInRows] = useState<ManagerCheckIn[]>([]);
   const [loadingApprovals, setLoadingApprovals] = useState(true);
@@ -234,6 +250,13 @@ export default function TeamApprovalsPage() {
     setError("");
     setSuccess("");
 
+    const blockedMessage = getManagerRatingBlockMessage(row);
+    if (blockedMessage) {
+      setError(blockedMessage);
+      setWorkingCheckIns(false);
+      return;
+    }
+
     const rawRating = (managerRatings[row.$id] || "").trim();
     const parsedRating = rawRating === "" ? NaN : Number(rawRating);
     const ratingLabel = managerRatingLabels[row.$id] || "ME";
@@ -292,16 +315,22 @@ export default function TeamApprovalsPage() {
           cycleId,
           notes: notesSource,
           goalTitle: goalTitleById[row.goalId] || row.goalId,
+          goalId: row.goalId,
+          employeeId: row.employeeId,
         }),
       });
 
       const summary = payload?.data?.summary || "";
+      const balancedSummary = payload?.data?.balancedSummary || "";
+      const insights = Array.isArray(payload?.data?.insights) ? payload.data.insights : [];
       const highlights = Array.isArray(payload?.data?.highlights) ? payload.data.highlights : [];
       const blockers = Array.isArray(payload?.data?.blockers) ? payload.data.blockers : [];
       const nextActions = Array.isArray(payload?.data?.nextActions) ? payload.data.nextActions : [];
 
       const composed = [
         summary,
+        balancedSummary ? `Balanced: ${balancedSummary}` : "",
+        insights.length ? `Insights: ${insights.join("; ")}` : "",
         highlights.length ? `Highlights: ${highlights.join("; ")}` : "",
         blockers.length ? `Blockers: ${blockers.join("; ")}` : "",
         nextActions.length ? `Next actions: ${nextActions.join("; ")}` : "",
@@ -460,6 +489,25 @@ export default function TeamApprovalsPage() {
                         }
                         placeholder="Add guidance for the employee"
                       />
+                      {roleResolved && isManagerRole && (
+                        <div className="mt-1 flex justify-end">
+                          <SpeechToTextButton
+                            ariaLabel="Manager comments speech input"
+                            disabled={workingApprovals}
+                            onFinalTranscript={(transcript) => {
+                              setComments((prev) => {
+                                const current = String(prev[goal.$id] || "").trim();
+                                const next = transcript.trim();
+                                if (!next) return prev;
+                                return {
+                                  ...prev,
+                                  [goal.$id]: current ? `${current} ${next}` : next,
+                                };
+                              });
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-3">
@@ -486,6 +534,11 @@ export default function TeamApprovalsPage() {
               onSubmit={(event) => handleComplete(event, row)}
               className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
             >
+              {(() => {
+                const blockedMessage = getManagerRatingBlockMessage(row);
+                const isRatingBlocked = Boolean(blockedMessage);
+                return (
+                  <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="body-sm text-[var(--color-text)]">{formatDate(row.scheduledAt)}</p>
                 <Badge variant={row.status === "completed" ? "success" : "info"}>{row.status}</Badge>
@@ -500,6 +553,10 @@ export default function TeamApprovalsPage() {
 
               {row.status === "planned" ? (
                 <div className="mt-3 space-y-2">
+                  {isRatingBlocked && (
+                    <Alert variant="warning" title="Rating blocked" description={blockedMessage} />
+                  )}
+
                   {row.isFinalCheckIn && (
                     <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                       <Badge variant="warning">Final check-in flagged by employee</Badge>
@@ -512,6 +569,7 @@ export default function TeamApprovalsPage() {
                           step={1}
                           required
                           value={managerRatings[row.$id] || ""}
+                          disabled={isRatingBlocked}
                           onChange={(event) =>
                             setManagerRatings((prev) => ({ ...prev, [row.$id]: event.target.value }))
                           }
@@ -527,6 +585,7 @@ export default function TeamApprovalsPage() {
                                 type="button"
                                 size="sm"
                                 variant={managerRatingLabels[row.$id] === label ? "primary" : "secondary"}
+                                disabled={isRatingBlocked}
                                 onClick={() =>
                                   setManagerRatingLabels((prev) => ({
                                     ...prev,
@@ -551,6 +610,26 @@ export default function TeamApprovalsPage() {
                     }
                     placeholder="Summary and coaching notes"
                   />
+
+                  {roleResolved && isManagerRole && (
+                    <div className="mt-1 flex justify-end">
+                      <SpeechToTextButton
+                        ariaLabel="Manager notes speech input"
+                        disabled={workingCheckIns}
+                        onFinalTranscript={(transcript) => {
+                          setManagerNotes((prev) => {
+                            const current = String(prev[row.$id] || "").trim();
+                            const next = transcript.trim();
+                            if (!next) return prev;
+                            return {
+                              ...prev,
+                              [row.$id]: current ? `${current} ${next}` : next,
+                            };
+                          });
+                        }}
+                      />
+                    </div>
+                  )}
 
                   <Textarea
                     label="Transcript / Summary"
@@ -594,7 +673,7 @@ export default function TeamApprovalsPage() {
                     )}
                   </div>
 
-                  <Button type="submit" loading={workingCheckIns}>Mark Completed</Button>
+                  <Button type="submit" loading={workingCheckIns} disabled={isRatingBlocked}>Mark Completed</Button>
                 </div>
               ) : (
                 <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
@@ -610,6 +689,9 @@ export default function TeamApprovalsPage() {
                   )}
                 </div>
               )}
+                  </>
+                );
+              })()}
             </form>
           ))}
         </Stack>

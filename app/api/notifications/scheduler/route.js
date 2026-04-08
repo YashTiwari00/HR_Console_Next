@@ -21,6 +21,10 @@ import {
 } from "@/app/api/notifications/_lib/engine";
 import { applyGoalDecision } from "@/app/api/approvals/_lib/goalDecision";
 import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
+import {
+  resolveSelfReviewDeadlineIso,
+  resolveSelfReviewWindowOpenIso,
+} from "@/lib/workflow/selfReviewGate";
 
 function toPositiveLimit(value, fallback = 100) {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -52,6 +56,54 @@ function parseDateToMs(value) {
 
 function formatDateKey(timestampMs) {
   return new Date(timestampMs).toISOString().slice(0, 10);
+}
+
+async function listExistingUserNotificationsByTrigger(databases, userId, triggerType, limit = 200) {
+  const safeUserId = String(userId || "").trim();
+  const safeTrigger = String(triggerType || "").trim();
+  if (!safeUserId || !safeTrigger) return [];
+
+  const collectionIds = Array.from(
+    new Set(
+      [
+        String(appwriteConfig.notificationsCollectionId || "").trim(),
+        String(appwriteConfig.notificationEventsCollectionId || "").trim(),
+      ].filter(Boolean)
+    )
+  );
+
+  const allRows = [];
+
+  for (const collectionId of collectionIds) {
+    try {
+      const rows = await databases.listDocuments(databaseId, collectionId, [
+        Query.equal("userId", safeUserId),
+        Query.equal("triggerType", safeTrigger),
+        Query.limit(Math.max(1, Math.min(500, Number(limit) || 200))),
+      ]);
+      allRows.push(...(rows.documents || []));
+    } catch (error) {
+      if (isMissingCollectionError(error, collectionId)) {
+        continue;
+      }
+
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("unknown attribute") || message.includes("attribute not found")) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return allRows;
+}
+
+function hasDedupeKey(rows, dedupeKey) {
+  const key = String(dedupeKey || "").trim();
+  if (!key) return false;
+
+  return rows.some((row) => String(row?.dedupeKey || "").trim() === key);
 }
 
 function getCronSecretFromRequest(request) {
@@ -341,6 +393,199 @@ async function processDeadlineNearNotifications(databases, options) {
   return summary;
 }
 
+async function processSelfReviewNotifications(databases, options) {
+  const nowMs = Date.now();
+  const reminderLeadMs = 24 * 60 * 60 * 1000;
+  const scopeLimit = toPositiveLimit(options?.selfReviewScanLimit, 200);
+
+  let goals = [];
+  let cycles = [];
+  let reviews = [];
+
+  try {
+    const [goalResult, cycleResult, reviewResult] = await Promise.all([
+      databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [Query.limit(scopeLimit)]),
+      databases.listDocuments(databaseId, appwriteConfig.goalCyclesCollectionId, [Query.limit(scopeLimit)]),
+      databases.listDocuments(databaseId, appwriteConfig.goalSelfReviewsCollectionId, [
+        Query.limit(Math.max(scopeLimit, 500)),
+      ]),
+    ]);
+
+    goals = goalResult.documents || [];
+    cycles = cycleResult.documents || [];
+    reviews = reviewResult.documents || [];
+  } catch (error) {
+    if (
+      isMissingCollectionError(error, appwriteConfig.goalsCollectionId) ||
+      isMissingCollectionError(error, appwriteConfig.goalCyclesCollectionId) ||
+      isMissingCollectionError(error, appwriteConfig.goalSelfReviewsCollectionId)
+    ) {
+      return {
+        scannedCycles: 0,
+        windowOpenedSent: 0,
+        reminderSent: 0,
+        skipped: 0,
+        failed: 0,
+        failures: [],
+      };
+    }
+    throw error;
+  }
+
+  const summary = {
+    scannedCycles: cycles.length,
+    windowOpenedSent: 0,
+    reminderSent: 0,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+  };
+
+  const goalsByCycle = new Map();
+  const reviewsByEmployeeCycle = new Map();
+
+  for (const goal of goals) {
+    const cycleId = String(goal?.cycleId || "").trim();
+    const employeeId = String(goal?.employeeId || "").trim();
+    if (!cycleId || !employeeId) continue;
+
+    if (!goalsByCycle.has(cycleId)) {
+      goalsByCycle.set(cycleId, []);
+    }
+    goalsByCycle.get(cycleId).push(goal);
+  }
+
+  for (const review of reviews) {
+    const cycleId = String(review?.cycleId || "").trim();
+    const employeeId = String(review?.employeeId || "").trim();
+    if (!cycleId || !employeeId) continue;
+
+    const key = `${employeeId}|${cycleId}`;
+    if (!reviewsByEmployeeCycle.has(key)) {
+      reviewsByEmployeeCycle.set(key, []);
+    }
+    reviewsByEmployeeCycle.get(key).push(review);
+  }
+
+  for (const cycle of cycles) {
+    const cycleId = String(cycle?.name || "").trim();
+    if (!cycleId) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const cycleGoals = goalsByCycle.get(cycleId) || [];
+    if (cycleGoals.length === 0) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const openIso = resolveSelfReviewWindowOpenIso(cycle);
+    const deadlineIso = resolveSelfReviewDeadlineIso(cycle);
+    const openMs = parseDateToMs(openIso);
+    const deadlineMs = parseDateToMs(deadlineIso);
+
+    if (!openMs || !deadlineMs || deadlineMs <= openMs) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const employees = Array.from(
+      new Set(cycleGoals.map((item) => String(item.employeeId || "").trim()).filter(Boolean))
+    );
+
+    for (const employeeId of employees) {
+      try {
+        const employeeGoals = cycleGoals.filter(
+          (item) => String(item.employeeId || "").trim() === employeeId
+        );
+
+        if (employeeGoals.length === 0) {
+          summary.skipped += 1;
+          continue;
+        }
+
+        const reviewRows = reviewsByEmployeeCycle.get(`${employeeId}|${cycleId}`) || [];
+        const submittedGoalIds = new Set(
+          reviewRows
+            .filter((item) => String(item.status || "").trim().toLowerCase() === "submitted")
+            .map((item) => String(item.goalId || "").trim())
+        );
+
+        const allSubmitted = employeeGoals.every((goal) => submittedGoalIds.has(String(goal.$id || "").trim()));
+        if (allSubmitted) {
+          summary.skipped += 1;
+          continue;
+        }
+
+        if (nowMs >= openMs) {
+          const openDedupe = `self-review-open-${employeeId}-${cycleId}`;
+          const existingOpen = await listExistingUserNotificationsByTrigger(
+            databases,
+            employeeId,
+            NOTIFICATION_TRIGGER_TYPES.SELF_REVIEW_WINDOW_OPENED,
+            300
+          );
+
+          if (!hasDedupeKey(existingOpen, openDedupe)) {
+            await sendInAppAndQueueEmail(databases, {
+              userId: employeeId,
+              triggerType: NOTIFICATION_TRIGGER_TYPES.SELF_REVIEW_WINDOW_OPENED,
+              title: "Self-review window is open",
+              message: `Self-review is now open for cycle ${cycleId}.`,
+              actionUrl: `/employee/timeline/${cycleId}`,
+              dedupeKey: openDedupe,
+              metadata: {
+                cycleId,
+                windowOpenedAt: openIso,
+                deadlineAt: deadlineIso,
+              },
+            });
+            summary.windowOpenedSent += 1;
+          }
+        }
+
+        const reminderWindowStart = deadlineMs - reminderLeadMs;
+        if (nowMs >= reminderWindowStart && nowMs < deadlineMs) {
+          const deadlineKey = formatDateKey(deadlineMs);
+          const reminderDedupe = `self-review-reminder-${employeeId}-${cycleId}-${deadlineKey}`;
+          const existingReminder = await listExistingUserNotificationsByTrigger(
+            databases,
+            employeeId,
+            NOTIFICATION_TRIGGER_TYPES.SELF_REVIEW_DEADLINE_REMINDER,
+            300
+          );
+
+          if (!hasDedupeKey(existingReminder, reminderDedupe)) {
+            await sendInAppAndQueueEmail(databases, {
+              userId: employeeId,
+              triggerType: NOTIFICATION_TRIGGER_TYPES.SELF_REVIEW_DEADLINE_REMINDER,
+              title: "Self-review deadline reminder",
+              message: `Submit your self-review by ${deadlineKey}.`,
+              actionUrl: `/employee/timeline/${cycleId}`,
+              dedupeKey: reminderDedupe,
+              metadata: {
+                cycleId,
+                deadlineAt: deadlineIso,
+              },
+            });
+            summary.reminderSent += 1;
+          }
+        }
+      } catch (error) {
+        summary.failed += 1;
+        summary.failures.push({
+          cycleId,
+          employeeId,
+          reason: String(error?.message || "Unknown self-review notification error."),
+        });
+      }
+    }
+  }
+
+  return summary;
+}
+
 async function loadTemplateSafe(databases, templateId) {
   const safeTemplateId = String(templateId || "").trim();
   if (!safeTemplateId) return null;
@@ -504,6 +749,7 @@ export async function POST(request) {
     const limit = Math.max(1, Math.min(100, Number(body?.limit || 25) || 25));
     const runAutoApproval = toBoolean(body?.runAutoApproval, true);
     const runDeadlineNear = toBoolean(body?.runDeadlineNear, true);
+    const runSelfReview = toBoolean(body?.runSelfReview, true);
 
     let autoApprovalSummary = null;
     if (runAutoApproval) {
@@ -516,6 +762,13 @@ export async function POST(request) {
     if (runDeadlineNear) {
       deadlineNearSummary = await processDeadlineNearNotifications(databases, {
         deadlineScanLimit: body?.deadlineScanLimit,
+      });
+    }
+
+    let selfReviewSummary = null;
+    if (runSelfReview) {
+      selfReviewSummary = await processSelfReviewNotifications(databases, {
+        selfReviewScanLimit: body?.selfReviewScanLimit,
       });
     }
 
@@ -571,6 +824,8 @@ export async function POST(request) {
         autoApproval: autoApprovalSummary,
         runDeadlineNear,
         deadlineNear: deadlineNearSummary,
+        runSelfReview,
+        selfReview: selfReviewSummary,
       },
     });
   } catch (error) {

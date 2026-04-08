@@ -4,6 +4,7 @@ import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { buildCheckInCode } from "@/lib/cycle";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee, getManagerTeamEmployeeIds } from "@/lib/teamAccess";
+import { getManagerRatingGate } from "@/lib/workflow/selfReviewGate";
 
 const VALID_STATUSES = Object.values(CHECKIN_STATUSES);
 
@@ -72,6 +73,46 @@ async function listManagerCycleRatingsSafe(databases) {
     return response.documents;
   } catch (error) {
     if (isMissingCollectionError(error, appwriteConfig.managerCycleRatingsCollectionId)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function listGoalSelfReviewsSafe(databases, goalIds) {
+  if (!Array.isArray(goalIds) || goalIds.length === 0) return [];
+
+  try {
+    const response = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.goalSelfReviewsCollectionId,
+      [Query.equal("goalId", goalIds), Query.limit(500)]
+    );
+
+    return response.documents;
+  } catch (error) {
+    if (isMissingCollectionError(error, appwriteConfig.goalSelfReviewsCollectionId)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function listGoalCyclesSafe(databases, cycleIds) {
+  if (!Array.isArray(cycleIds) || cycleIds.length === 0) return [];
+
+  try {
+    const response = await databases.listDocuments(
+      databaseId,
+      appwriteConfig.goalCyclesCollectionId,
+      [Query.equal("name", cycleIds), Query.limit(200)]
+    );
+
+    return response.documents;
+  } catch (error) {
+    if (isMissingCollectionError(error, appwriteConfig.goalCyclesCollectionId)) {
       return [];
     }
 
@@ -187,19 +228,34 @@ export async function GET(request) {
     const goalIds = Array.from(new Set(documents.map((item) => String(item.goalId || "").trim()).filter(Boolean)));
     const goalById = new Map();
 
-    const [approvalRows, managerCycleRatings] = await Promise.all([
+    const [approvalRows, managerCycleRatings, goalSelfReviews] = await Promise.all([
       listCheckInApprovalsSafe(databases),
       listManagerCycleRatingsSafe(databases),
+      listGoalSelfReviewsSafe(databases, goalIds),
     ]);
 
     const latestReviewMap = latestReviewByCheckIn(approvalRows);
     const managerRatingByCycle = new Map();
+    const goalSelfReviewById = new Map();
+    const goalSelfReviewByKey = new Map();
 
     for (const row of managerCycleRatings) {
       const key = `${String(row.managerId || "").trim()}|${String(row.cycleId || "").trim()}`;
       if (!key.trim()) continue;
       if (!managerRatingByCycle.has(key)) {
         managerRatingByCycle.set(key, row);
+      }
+    }
+
+    for (const row of goalSelfReviews) {
+      const id = String(row.$id || "").trim();
+      if (id) {
+        goalSelfReviewById.set(id, row);
+      }
+
+      const key = `${String(row.employeeId || "").trim()}|${String(row.goalId || "").trim()}|${String(row.cycleId || "").trim()}`;
+      if (key.trim() && !goalSelfReviewByKey.has(key)) {
+        goalSelfReviewByKey.set(key, row);
       }
     }
 
@@ -214,8 +270,29 @@ export async function GET(request) {
       });
     }
 
+    const cycleIds = Array.from(
+      new Set(
+        documents
+          .map((item) => {
+            const goal = goalById.get(String(item.goalId || "").trim());
+            return String(goal?.cycleId || "").trim();
+          })
+          .filter(Boolean)
+      )
+    );
+
+    const cycleRows = await listGoalCyclesSafe(databases, cycleIds);
+    const cycleByName = new Map();
+    cycleRows.forEach((cycle) => {
+      cycleByName.set(String(cycle.name || "").trim(), cycle);
+    });
+
     const shaped = documents.map((item) => {
       const goal = goalById.get(String(item.goalId || "").trim());
+      const goalSelfReviewId = String(item.goalSelfReviewId || "").trim();
+      const reviewLookupKey = `${String(item.employeeId || "").trim()}|${String(item.goalId || "").trim()}|${String(goal?.cycleId || "").trim()}`;
+      const goalSelfReview =
+        goalSelfReviewById.get(goalSelfReviewId) || goalSelfReviewByKey.get(reviewLookupKey) || null;
       const latestReview = latestReviewMap.get(String(item.$id || "").trim());
       const managerCycleRating = managerRatingByCycle.get(
         `${String(item.managerId || "").trim()}|${String(goal?.cycleId || "").trim()}`
@@ -224,12 +301,38 @@ export async function GET(request) {
       const ratingVisibleToEmployee = Boolean(goal?.ratingVisibleToEmployee);
       const isManagerSelfRecord =
         profile.role === "manager" && String(item.employeeId || "").trim() === String(profile.$id || "").trim();
+      const cycle = cycleByName.get(String(goal?.cycleId || "").trim()) || null;
+      const managerRatingGate = getManagerRatingGate({
+        isFinalCheckIn: Boolean(item.isFinalCheckIn),
+        checkIn: item,
+        goalSelfReview,
+        cycle,
+      });
 
       if ((profile.role === "employee" && !ratingVisibleToEmployee) || isManagerSelfRecord) {
         return {
           ...item,
           managerRating: null,
           ratedAt: null,
+          selfReviewText: item.selfReviewText || "",
+          selfReviewStatus: item.selfReviewStatus || "draft",
+          selfReviewSubmittedAt: item.selfReviewSubmittedAt || null,
+          selfReviewSubmittedBy: item.selfReviewSubmittedBy || null,
+          selfReviewReopenedAt: item.selfReviewReopenedAt || null,
+          selfReviewReopenedBy: item.selfReviewReopenedBy || null,
+          selfReviewReopenReason: item.selfReviewReopenReason || "",
+          employeeSelfReview: goalSelfReview
+            ? {
+                reviewId: goalSelfReview.$id,
+                status: goalSelfReview.status || "draft",
+                submittedAt: goalSelfReview.submittedAt || null,
+                achievements: goalSelfReview.achievements || "",
+                challenges: goalSelfReview.challenges || "",
+                selfRatingValue: goalSelfReview.selfRatingValue ?? null,
+                selfRatingLabel: goalSelfReview.selfRatingLabel || null,
+                comments: goalSelfReview.selfComment || "",
+              }
+            : null,
           managerFinalRatingLabel: null,
           hrReviewStatus: latestReview?.decision || null,
           hrReviewComments: latestReview?.comments || "",
@@ -242,12 +345,34 @@ export async function GET(request) {
           managerReviewStatus,
           managerReviewedAt: managerReviewStatus === "reviewed" ? item.$updatedAt || null : null,
           managerReviewComments: item.managerNotes || "",
+          canManagerSubmitRating: managerRatingGate.canManagerSubmitRating,
+          selfReviewDeadlinePassed: managerRatingGate.selfReviewDeadlinePassed,
+          managerRatingBlockMessage: managerRatingGate.blockedReason,
           checkInCode: buildCheckInCode(item),
         };
       }
 
       return {
         ...item,
+        selfReviewText: item.selfReviewText || "",
+        selfReviewStatus: item.selfReviewStatus || "draft",
+        selfReviewSubmittedAt: item.selfReviewSubmittedAt || null,
+        selfReviewSubmittedBy: item.selfReviewSubmittedBy || null,
+        selfReviewReopenedAt: item.selfReviewReopenedAt || null,
+        selfReviewReopenedBy: item.selfReviewReopenedBy || null,
+        selfReviewReopenReason: item.selfReviewReopenReason || "",
+        employeeSelfReview: goalSelfReview
+          ? {
+              reviewId: goalSelfReview.$id,
+              status: goalSelfReview.status || "draft",
+              submittedAt: goalSelfReview.submittedAt || null,
+              achievements: goalSelfReview.achievements || "",
+              challenges: goalSelfReview.challenges || "",
+              selfRatingValue: goalSelfReview.selfRatingValue ?? null,
+              selfRatingLabel: goalSelfReview.selfRatingLabel || null,
+              comments: goalSelfReview.selfComment || "",
+            }
+          : null,
         managerFinalRatingLabel: goal?.managerFinalRatingLabel || null,
         hrReviewStatus: latestReview?.decision || null,
         hrReviewComments: latestReview?.comments || "",
@@ -260,6 +385,9 @@ export async function GET(request) {
         managerReviewStatus,
         managerReviewedAt: managerReviewStatus === "reviewed" ? item.$updatedAt || null : null,
         managerReviewComments: item.managerNotes || "",
+        canManagerSubmitRating: managerRatingGate.canManagerSubmitRating,
+        selfReviewDeadlinePassed: managerRatingGate.selfReviewDeadlinePassed,
+        managerRatingBlockMessage: managerRatingGate.blockedReason,
         checkInCode: buildCheckInCode(item),
       };
     });

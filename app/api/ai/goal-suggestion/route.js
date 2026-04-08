@@ -5,6 +5,7 @@ import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsa
 import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 import { getAOP } from "@/lib/aop/getAOP";
+import { getGoalLibraryTemplates } from "@/lib/services/goalLibraryService";
 
 const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 const MAX_AOP_PROMPT_CHARS = 4000;
@@ -55,6 +56,10 @@ function deriveAopAlignment(suggestion, aopContent) {
   } catch {
     return fallback;
   }
+}
+
+function normalizeText(value) {
+  return String(value || "").trim();
 }
 
 async function buildSuggestions({ databases, cycleId, frameworkType, profile, prompt }) {
@@ -118,9 +123,13 @@ export async function POST(request) {
     requireRole(profile, ["employee", "manager"]);
 
     const body = await request.json();
-    const cycleId = (body.cycleId || "").trim();
-    const frameworkType = (body.frameworkType || "").trim();
-    const prompt = body.prompt || "";
+    const cycleId = normalizeText(body.cycleId);
+    const frameworkType = normalizeText(body.frameworkType);
+    const prompt = normalizeText(body.prompt);
+    const contextRole = normalizeText(profile?.role);
+    const contextDepartment = normalizeText(body?.department || profile?.department);
+    const contextDomain = normalizeText(body?.domain || profile?.domain);
+    const contextInputText = prompt;
 
     if (!cycleId || !frameworkType) {
       return Response.json(
@@ -131,6 +140,23 @@ export async function POST(request) {
 
     if (!VALID_FRAMEWORKS.includes(frameworkType)) {
       return Response.json({ error: "Invalid frameworkType." }, { status: 400 });
+    }
+
+    const libraryResult = await getGoalLibraryTemplates({
+      role: contextRole,
+      department: contextDepartment,
+      domain: contextDomain || undefined,
+      query: contextInputText || undefined,
+    });
+
+    if ((libraryResult.templates || []).length > 0) {
+      return Response.json({
+        data: {
+          suggestions: libraryResult.templates,
+          source: "library",
+        },
+        source: "library",
+      });
     }
 
     const usage = await assertAndTrackAiUsage({
@@ -182,8 +208,10 @@ export async function POST(request) {
         suggestions,
         explainability,
         usage: trackedUsage,
+        source: "ai",
       },
       explainability,
+      source: "ai",
     });
   } catch (error) {
     return errorResponse(error);

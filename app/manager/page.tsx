@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
-import { ExplainabilityDrawer, GoalLineageView, PageHeader } from "@/src/components/patterns";
+import { ExplainabilityDrawer, GoalLineageView, PageHeader, RatingDropWarningSection } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
@@ -13,11 +13,13 @@ import {
   fetchDecisionInsights,
   fetchGoals,
   fetchProgressUpdates,
+  fetchRatingDropInsights,
   fetchTeamMembers,
   formatDate,
   GoalItem,
   goalStatusVariant,
   ProgressUpdateItem,
+  RatingDropInsightItem,
   TeamMemberItem,
 } from "@/app/employee/_lib/pmsClient";
 
@@ -30,6 +32,7 @@ export default function ManagerPage() {
   const [teamCheckIns, setTeamCheckIns] = useState<CheckInItem[]>([]);
   const [teamUpdates, setTeamUpdates] = useState<ProgressUpdateItem[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMemberItem[]>([]);
+  const [ratingDropInsights, setRatingDropInsights] = useState<RatingDropInsightItem[]>([]);
   const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [lineageGoalId, setLineageGoalId] = useState("");
@@ -70,17 +73,19 @@ export default function ManagerPage() {
     setError("");
 
     try {
-      const [nextTeamGoals, nextTeamCheckIns, nextTeamUpdates, nextTeamMembers] = await Promise.all([
+      const [nextTeamGoals, nextTeamCheckIns, nextTeamUpdates, nextTeamMembers, nextRatingDrops] = await Promise.all([
         fetchGoals("team"),
         fetchCheckIns("team"),
         fetchProgressUpdates(undefined, "team"),
         fetchTeamMembers(),
+        fetchRatingDropInsights({ limit: 100 }),
       ]);
 
       setTeamGoals(nextTeamGoals as TeamGoalItem[]);
       setTeamCheckIns(nextTeamCheckIns);
       setTeamUpdates(nextTeamUpdates);
       setTeamMembers(nextTeamMembers);
+      setRatingDropInsights(nextRatingDrops.rows || []);
 
       const target = pickInsightTarget(nextTeamGoals as TeamGoalItem[]);
       if (target?.employeeId && target?.cycleId) {
@@ -381,6 +386,13 @@ export default function ManagerPage() {
           </Stack>
         )}
       </Card>
+
+      <RatingDropWarningSection
+        title="Team insights"
+        description="Rating-drop alerts that may need manager follow-up."
+        items={ratingDropInsights}
+        initialVisibleCount={3}
+      />
 
       <ExplainabilityDrawer
         open={insightsExplainabilityOpen}

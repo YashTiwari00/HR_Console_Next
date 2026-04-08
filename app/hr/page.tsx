@@ -4,17 +4,22 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
-import { DataTable, PageHeader } from "@/src/components/patterns";
+import { DataTable, PageHeader, RatingDropWarningSection } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
+  approveKpiTemplate,
+  fetchPendingKpiTemplates,
   fetchGoals,
   fetchHrManagers,
   fetchProgressUpdates,
+  fetchRatingDropInsights,
   fetchTeamMembers,
   GoalItem,
   HrManagerSummary,
+  PendingKpiTemplateItem,
   ProgressUpdateItem,
+  RatingDropInsightItem,
   TeamMemberItem,
 } from "@/app/employee/_lib/pmsClient";
 
@@ -29,6 +34,13 @@ interface HrManagerRow extends Record<string, unknown> {
   pendingCheckInApprovals: number;
 }
 
+interface PendingKpiTemplateRow extends Record<string, unknown> {
+  templateId: string;
+  title: string;
+  role: string;
+  department: string;
+}
+
 type OrgGoalItem = GoalItem & { employeeId?: string };
 type HeatMapState = "on_track" | "behind" | "completed" | "no_update";
 type HeatMapFilter = "all" | HeatMapState;
@@ -39,27 +51,34 @@ export default function HrDashboardPage() {
   const [orgGoals, setOrgGoals] = useState<OrgGoalItem[]>([]);
   const [orgUpdates, setOrgUpdates] = useState<ProgressUpdateItem[]>([]);
   const [orgMembers, setOrgMembers] = useState<TeamMemberItem[]>([]);
+  const [orgRatingDropInsights, setOrgRatingDropInsights] = useState<RatingDropInsightItem[]>([]);
   const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pendingTemplates, setPendingTemplates] = useState<PendingKpiTemplateItem[]>([]);
+  const [approvingTemplateId, setApprovingTemplateId] = useState("");
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [nextRows, nextGoals, nextUpdates, nextMembers] = await Promise.all([
+      const [nextRows, nextGoals, nextUpdates, nextMembers, nextPendingTemplates, nextRatingDrops] = await Promise.all([
         fetchHrManagers(),
         fetchGoals("all"),
         fetchProgressUpdates(undefined, "all"),
         fetchTeamMembers(undefined, { includeManagers: true }),
+        fetchPendingKpiTemplates(),
+        fetchRatingDropInsights({ limit: 200 }),
       ]);
 
       setRows(nextRows);
       setOrgGoals(nextGoals as OrgGoalItem[]);
       setOrgUpdates(nextUpdates);
       setOrgMembers(nextMembers);
+      setPendingTemplates(nextPendingTemplates);
+      setOrgRatingDropInsights(nextRatingDrops.rows || []);
 
       if (nextRows.length > 0) {
         setSelectedManagerId((prev) => {
@@ -96,6 +115,17 @@ export default function HrDashboardPage() {
         pendingCheckInApprovals: item.pendingCheckInApprovals,
       })),
     [rows]
+  );
+
+  const pendingTemplateRows = useMemo<PendingKpiTemplateRow[]>(
+    () =>
+      pendingTemplates.map((item) => ({
+        templateId: String(item.$id || "").trim(),
+        title: String(item.title || "").trim(),
+        role: String(item.role || "").trim(),
+        department: String(item.department || "").trim(),
+      })),
+    [pendingTemplates]
   );
 
   const selectedManager = useMemo(
@@ -186,6 +216,65 @@ export default function HrDashboardPage() {
       },
     ],
     [selectedManagerId]
+  );
+
+  const pendingTemplateColumns = useMemo<DataTableColumn<PendingKpiTemplateRow>[]>(
+    () => [
+      {
+        key: "title",
+        header: "Title",
+      },
+      {
+        key: "role",
+        header: "Role",
+      },
+      {
+        key: "department",
+        header: "Department",
+      },
+      {
+        key: "templateId",
+        header: "Action",
+        align: "right",
+        render: (_value: unknown, row: PendingKpiTemplateRow) => (
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleApproveTemplate(row.templateId)}
+            loading={approvingTemplateId === row.templateId}
+            disabled={approvingTemplateId.length > 0}
+          >
+            Approve
+          </Button>
+        ),
+      },
+    ],
+    [approvingTemplateId]
+  );
+
+  const handleApproveTemplate = useCallback(
+    async (templateId: string) => {
+      const normalizedId = String(templateId || "").trim();
+      if (!normalizedId) return;
+
+      setApprovingTemplateId(normalizedId);
+      setError("");
+
+      try {
+        const result = await approveKpiTemplate(normalizedId);
+        setPendingTemplates((prev) =>
+          prev.filter((item) => String(item.$id || "").trim() !== normalizedId)
+        );
+        if (result?.message) {
+          setSuccess(result.message);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to approve template.");
+      } finally {
+        setApprovingTemplateId("");
+      }
+    },
+    []
   );
 
   const latestUpdateByGoalId = useMemo(() => {
@@ -416,6 +505,23 @@ export default function HrDashboardPage() {
           emptyMessage="No managers available yet."
         />
       </Card>
+
+      <Card title="Pending KPI Templates" description="Manager-submitted templates awaiting HR approval.">
+        <DataTable
+          columns={pendingTemplateColumns}
+          rows={pendingTemplateRows}
+          loading={loading}
+          rowKey={(row) => row.templateId}
+          emptyMessage="No pending KPI templates."
+        />
+      </Card>
+
+      <RatingDropWarningSection
+        title="Org insights"
+        description="Rating-drop alerts across the organization for HR review."
+        items={orgRatingDropInsights}
+        initialVisibleCount={4}
+      />
 
       <Card title="Organization Progress Heat Map" description="Latest RAG state by employee and goal across all departments (including managers).">
         <Stack gap="3">

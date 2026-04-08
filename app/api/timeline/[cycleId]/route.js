@@ -113,6 +113,24 @@ function buildCheckInEvents(checkIns) {
           managerRating: item.managerRating ?? null,
         },
       });
+
+      if (
+        Boolean(item.isFinalCheckIn) &&
+        String(item.selfReviewStatus || "") === "submitted"
+      ) {
+        events.push({
+          id: `self-review-submitted-${item.$id}`,
+          type: "self_review_submitted",
+          at: item.selfReviewSubmittedAt || item.$updatedAt || item.$createdAt,
+          goalId: item.goalId,
+          employeeId: item.employeeId,
+          managerId: item.managerId,
+          cycleId: item.cycleId,
+          payload: {
+            status: item.selfReviewStatus,
+          },
+        });
+      }
     }
   }
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
-import { fetchCheckIns, fetchGoals, GoalItem } from "@/app/employee/_lib/pmsClient";
+import { CheckInItem, fetchCheckIns, fetchGoals, GoalItem } from "@/app/employee/_lib/pmsClient";
 
 interface TimelineNode {
   label: string;
@@ -13,8 +13,19 @@ interface TimelineNode {
   details: string;
 }
 
+function hasManagerRating(checkIn: CheckInItem) {
+  const numeric = Number(checkIn.managerRating);
+  return Number.isInteger(numeric) && numeric >= 1 && numeric <= 5;
+}
+
+function isSelfReviewSatisfied(checkIn: CheckInItem) {
+  if (hasManagerRating(checkIn)) return true;
+  return checkIn.selfReviewStatus === "submitted";
+}
+
 export default function ManagerTimelinePage() {
   const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
   const [checkInCount, setCheckInCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,6 +40,7 @@ export default function ManagerTimelinePage() {
         fetchCheckIns("self"),
       ]);
       setGoals(nextGoals);
+      setCheckIns(nextCheckIns);
       setCheckInCount(nextCheckIns.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load timeline state.");
@@ -47,6 +59,14 @@ export default function ManagerTimelinePage() {
     const hasApproved = goals.some((goal) => goal.status === "approved" || goal.status === "closed");
     const allClosed = goals.length > 0 && goals.every((goal) => goal.status === "closed");
 
+    const finalCompletedCheckIns = checkIns.filter(
+      (item) => Boolean(item.isFinalCheckIn) && item.status === "completed"
+    );
+    const hasFinalCheckIn = finalCompletedCheckIns.length > 0;
+    const hasPendingSelfReview = finalCompletedCheckIns.some((item) => !isSelfReviewSatisfied(item));
+    const hasManagerReviewDone =
+      hasFinalCheckIn && finalCompletedCheckIns.every((item) => hasManagerRating(item));
+
     return [
       {
         label: "Goal Creation",
@@ -64,10 +84,16 @@ export default function ManagerTimelinePage() {
         details: `Planned/completed check-ins this cycle: ${checkInCount}`,
       },
       {
-        label: "Review",
-        done: false,
-        locked: true,
-        details: "Review opens after the check-in window and cycle policy gates.",
+        label: "Self Review",
+        done: hasFinalCheckIn && !hasPendingSelfReview,
+        locked: !hasFinalCheckIn || hasPendingSelfReview,
+        details: "Employees must submit self review before manager rating is enabled.",
+      },
+      {
+        label: "Manager Review",
+        done: hasManagerReviewDone,
+        locked: !hasFinalCheckIn || hasPendingSelfReview,
+        details: "Manager can view but not edit employee self review before rating.",
       },
       {
         label: "Cycle Closed",
@@ -75,7 +101,7 @@ export default function ManagerTimelinePage() {
         details: "All goals completed and cycle officially closed.",
       },
     ];
-  }, [goals, checkInCount]);
+  }, [goals, checkInCount, checkIns]);
 
   return (
     <Stack gap="4">

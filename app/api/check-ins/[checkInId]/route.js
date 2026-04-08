@@ -1,10 +1,40 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { CHECKIN_STATUSES, GOAL_STATUSES } from "@/lib/appwriteSchema";
-import { databaseId } from "@/lib/appwriteServer";
+import { Query, databaseId } from "@/lib/appwriteServer";
 import { computeAndPersistEmployeeCycleScore, getCycleState } from "@/lib/finalRatings";
 import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { getManagerRatingGate } from "@/lib/workflow/selfReviewGate";
+
+function hasManagerRating(value) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 1 && numeric <= 5;
+}
+
+function isMissingCollectionOrAttributeError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("unknown attribute") || message.includes("could not be found");
+}
+
+async function getGoalSelfReviewForCheckIn(databases, checkIn, goal) {
+  try {
+    const response = await databases.listDocuments(databaseId, appwriteConfig.goalSelfReviewsCollectionId, [
+      Query.equal("employeeId", String(checkIn.employeeId || "").trim()),
+      Query.equal("goalId", String(goal.$id || goal.id || checkIn.goalId || "").trim()),
+      Query.equal("cycleId", String(goal.cycleId || "").trim()),
+      Query.limit(1),
+    ]);
+
+    return response.documents[0] || null;
+  } catch (error) {
+    if (isMissingCollectionOrAttributeError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
 
 export async function PATCH(request, context) {
   try {
@@ -74,6 +104,32 @@ export async function PATCH(request, context) {
       if (!Number.isInteger(parsedRating.value) || parsedRating.value < 1 || parsedRating.value > 5) {
         return Response.json(
           { error: "Final check-in requires managerRating between 1 and 5." },
+          { status: 400 }
+        );
+      }
+
+      const isLegacyRated =
+        hasManagerRating(checkIn.managerRating) ||
+        hasManagerRating(goal.managerFinalRating) ||
+        Boolean(goal.managerFinalRatedAt);
+
+      const [cycleState, goalSelfReview] = await Promise.all([
+        getCycleState(databases, goal.cycleId),
+        getGoalSelfReviewForCheckIn(databases, checkIn, goal),
+      ]);
+
+      const managerRatingGate = getManagerRatingGate({
+        isFinalCheckIn: true,
+        checkIn,
+        goalSelfReview,
+        cycle: cycleState?.cycle || null,
+      });
+
+      if (!isLegacyRated && !managerRatingGate.canManagerSubmitRating) {
+        return Response.json(
+          {
+            error: managerRatingGate.blockedReason || "Waiting for employee self-review",
+          },
           { status: 400 }
         );
       }

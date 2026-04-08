@@ -1,6 +1,12 @@
 import type { CheckInItem, GoalItem } from "@/app/employee/_lib/pmsClient";
 
-export type WorkflowActionType = "create_goal" | "submit_goal" | "start_checkin" | "review" | null;
+export type WorkflowActionType =
+  | "create_goal"
+  | "submit_goal"
+  | "start_checkin"
+  | "submit_self_review"
+  | "manager_review"
+  | null;
 
 export interface WorkflowAction {
   label: string;
@@ -13,6 +19,24 @@ function goalsInCycle(goals: GoalItem[], cycle: string) {
 
 function checkInsForGoals(checkIns: CheckInItem[], goalIds: Set<string>) {
   return checkIns.filter((item) => goalIds.has(String(item.goalId || "").trim()));
+}
+
+function isFinalCompletedCheckIn(item: CheckInItem) {
+  return Boolean(item.isFinalCheckIn) && String(item.status || "") === "completed";
+}
+
+function hasManagerRating(item: CheckInItem) {
+  const numeric = Number(item.managerRating);
+  return Number.isInteger(numeric) && numeric >= 1 && numeric <= 5;
+}
+
+function isSelfReviewSatisfied(item: CheckInItem) {
+  // Backward compatibility: previously rated final check-ins remain valid.
+  if (hasManagerRating(item)) {
+    return true;
+  }
+
+  return String(item.selfReviewStatus || "") === "submitted";
 }
 
 export function getNextAction(goals: GoalItem[], checkIns: CheckInItem[], cycle: string): WorkflowAction {
@@ -58,9 +82,8 @@ export function getNextAction(goals: GoalItem[], checkIns: CheckInItem[], cycle:
     };
   }
 
-  const hasFinalCheckIn = scopedCheckIns.some(
-    (item) => Boolean(item.isFinalCheckIn) && String(item.status || "") === "completed"
-  );
+  const finalCompletedCheckIns = scopedCheckIns.filter(isFinalCompletedCheckIn);
+  const hasFinalCheckIn = finalCompletedCheckIns.length > 0;
 
   if (scopedCheckIns.length > 0 && !hasFinalCheckIn) {
     return {
@@ -71,10 +94,28 @@ export function getNextAction(goals: GoalItem[], checkIns: CheckInItem[], cycle:
 
   const allClosed = scopedGoals.length > 0 && scopedGoals.every((goal) => String(goal.status || "") === "closed");
 
+  const hasPendingSelfReview = finalCompletedCheckIns.some((item) => !isSelfReviewSatisfied(item));
+  if (hasPendingSelfReview) {
+    return {
+      label: "Submit self review",
+      actionType: "submit_self_review",
+    };
+  }
+
+  const hasPendingManagerReview = finalCompletedCheckIns.some(
+    (item) => isSelfReviewSatisfied(item) && !hasManagerRating(item)
+  );
+  if (hasPendingManagerReview) {
+    return {
+      label: "Awaiting manager review",
+      actionType: null,
+    };
+  }
+
   if (hasFinalCheckIn && !allClosed) {
     return {
-      label: "Complete review",
-      actionType: "review",
+      label: "Manager review completed",
+      actionType: "manager_review",
     };
   }
 

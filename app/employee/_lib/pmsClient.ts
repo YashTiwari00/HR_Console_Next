@@ -103,6 +103,13 @@ export interface CheckInItem {
   managerReviewStatus?: "pending" | "reviewed";
   managerReviewedAt?: string | null;
   managerReviewComments?: string;
+  selfReviewText?: string;
+  selfReviewStatus?: "draft" | "submitted" | "reopened";
+  selfReviewSubmittedAt?: string | null;
+  selfReviewSubmittedBy?: string | null;
+  selfReviewReopenedAt?: string | null;
+  selfReviewReopenedBy?: string | null;
+  selfReviewReopenReason?: string;
 }
 
 export interface ProgressUpdateItem {
@@ -202,6 +209,15 @@ export interface HrManagerSummary {
     computedAt: string;
     visibility: "hidden" | "visible";
   }>;
+}
+
+export interface PendingKpiTemplateItem {
+  $id: string;
+  title: string;
+  role: string;
+  department: string;
+  source_type?: string;
+  approved?: boolean;
 }
 
 export interface HrEmployeeDrilldown {
@@ -462,6 +478,9 @@ export interface GoalSuggestion {
   description: string;
   weightage: number;
   rationale?: string;
+  source?: string;
+  source_type?: "hr" | "leadership" | "manager" | "system" | string;
+  approved?: boolean;
   explainability?: {
     source: string;
     confidence: number | string;
@@ -570,6 +589,8 @@ export interface ManagerCheckInApprovalItemInput {
 
 export interface CheckInSummarySuggestion {
   summary: string;
+  balancedSummary?: string;
+  insights?: string[];
   highlights: string[];
   blockers: string[];
   nextActions: string[];
@@ -618,6 +639,8 @@ export interface CheckInAgendaSuggestion {
 
 export interface CheckInIntelligenceSuggestion {
   summary: string;
+  balancedSummary?: string;
+  insights?: string[];
   commitments: Array<{
     owner: string;
     action: string;
@@ -629,6 +652,26 @@ export interface CheckInIntelligenceSuggestion {
   };
   toneGuidance: string[];
   revisedManagerFeedback: string;
+  ratingSuggestion?: {
+    value: number;
+    label: "EE" | "DE" | "ME" | "SME" | "NI";
+    rationale: string;
+  } | null;
+  contextUsed?: {
+    selfReview?: {
+      status?: string;
+      achievements?: string;
+      challenges?: string;
+      ratingValue?: number | null;
+      ratingLabel?: string;
+      comments?: string;
+    } | null;
+    checkInSummaries?: string[];
+    progress?: {
+      percent: number;
+      latestUpdateText?: string;
+    };
+  };
   explainability?: {
     source: string;
     confidence: number | string;
@@ -743,6 +786,7 @@ export interface LifecycleTimelineEvent {
     | "progress_updated"
     | "checkin_planned"
     | "checkin_completed"
+    | "self_review_submitted"
     | "meeting_scheduled"
     | "meeting_intelligence_ready";
   at: string;
@@ -853,6 +897,24 @@ export interface DecisionInsightsData {
   insights: DecisionInsightItem[];
   recommendations: DecisionRecommendationItem[];
   explainability?: ExplainabilityInfo;
+}
+
+export interface RatingDropInsightItem {
+  employeeId: string;
+  employeeName: string;
+  previousRatingLabel: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+  currentRatingLabel: "EE" | "DE" | "ME" | "SME" | "NI" | null;
+  dropSeverity: "HIGH RISK" | "MODERATE" | "UNKNOWN";
+  shortMessage: string;
+  explainability: {
+    reason: string;
+    based_on: string[];
+    confidence: number;
+  };
+  riskLevel: "HIGH RISK" | "MODERATE" | null;
+  drop: number | null;
+  cycleId: string | null;
+  createdAt: string | null;
 }
 
 export interface NotificationFeedItem {
@@ -1794,6 +1856,23 @@ export async function fetchHrManagers() {
   return (payload?.data || []) as HrManagerSummary[];
 }
 
+export async function fetchPendingKpiTemplates() {
+  const payload = await requestJson("/api/goal-library/pending");
+  return (payload?.data || []) as PendingKpiTemplateItem[];
+}
+
+export async function approveKpiTemplate(templateId: string) {
+  const payload = await requestJson("/api/goal-library/approve", {
+    method: "POST",
+    body: JSON.stringify({ templateId }),
+  });
+
+  return payload as {
+    success: boolean;
+    message: string;
+  };
+}
+
 export async function fetchRegionAdminOverview() {
   const payload = await requestJson("/api/region-admin/overview");
   return (payload?.data || {}) as RegionAdminOverview;
@@ -2062,7 +2141,32 @@ export async function getGoalSuggestions(input: {
     body: JSON.stringify(input),
   });
 
-  return (payload?.data?.suggestions || []) as GoalSuggestion[];
+  const source = String(payload?.data?.source || payload?.source || "").trim();
+
+  const suggestions = Array.isArray(payload?.data?.suggestions)
+    ? payload.data.suggestions
+    : [];
+
+  return suggestions.map((item: unknown) => {
+    const suggestion = (item || {}) as Record<string, unknown>;
+
+    return {
+      ...suggestion,
+      title: String(suggestion.title || "").trim(),
+      description: String(suggestion.description || "").trim(),
+      weightage: Number.parseInt(String(suggestion.weightage || "0"), 10) || 0,
+      rationale: String(suggestion.rationale || "").trim() || undefined,
+      source: String(suggestion.source || source || "ai").trim() || "ai",
+      source_type: String(suggestion.source_type || "").trim() || undefined,
+      approved:
+        typeof suggestion.approved === "boolean"
+          ? suggestion.approved
+          : undefined,
+      explainability:
+        ((suggestion.explainability || null) as ExplainabilityInfo | null) ||
+        undefined,
+    } as GoalSuggestion;
+  });
 }
 
 export async function getBulkGoalAnalysis(input: {
@@ -2112,6 +2216,8 @@ export async function getCheckInSummarySuggestion(input: {
   cycleId: string;
   notes: string;
   goalTitle?: string;
+  goalId?: string;
+  employeeId?: string;
 }) {
   const payload = await requestJson("/api/ai/checkin-summary", {
     method: "POST",
@@ -2139,6 +2245,8 @@ export async function getCheckInIntelligenceSuggestion(input: {
   cycleId: string;
   notes: string;
   goalTitle?: string;
+  goalId?: string;
+  employeeId?: string;
 }) {
   const payload = await requestJson("/api/ai/checkin-intelligence", {
     method: "POST",
@@ -2345,6 +2453,36 @@ export async function fetchDecisionInsights(input: {
   } as DecisionInsightsData;
 }
 
+export async function fetchRatingDropInsights(input?: {
+  cycleId?: string;
+  managerId?: string;
+  riskLevel?: "HIGH RISK" | "MODERATE";
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+
+  if (input?.cycleId) params.set("cycleId", input.cycleId);
+  if (input?.managerId) params.set("managerId", input.managerId);
+  if (input?.riskLevel) params.set("riskLevel", input.riskLevel);
+  if (typeof input?.limit === "number") params.set("limit", String(input.limit));
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/analytics/rating-drops${query}`);
+
+  return {
+    filters: (payload?.data?.filters || {
+      cycleId: null,
+      managerId: null,
+      riskLevel: null,
+    }) as {
+      cycleId: string | null;
+      managerId: string | null;
+      riskLevel: string | null;
+    },
+    rows: (payload?.data?.rows || []) as RatingDropInsightItem[],
+  };
+}
+
 export async function fetchNotificationFeed(input?: { limit?: number; includeRead?: boolean }) {
   const params = new URLSearchParams();
   if (typeof input?.limit === "number") params.set("limit", String(input.limit));
@@ -2377,6 +2515,18 @@ export async function markAllNotificationsRead(limit = 200) {
   });
 
   return payload?.data as { marked: number; failed: number };
+}
+
+export async function submitCheckInSelfReview(checkInId: string, input: { selfReviewText: string }) {
+  const payload = await requestJson(
+    `/api/check-ins/${encodeURIComponent(checkInId)}/self-review`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    }
+  );
+
+  return payload?.data as CheckInItem;
 }
 
 export async function fetchNotificationTemplates(input?: {

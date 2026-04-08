@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
+import { useManagerRole } from "@/src/lib/auth/useManagerRole";
 import { account } from "@/lib/appwrite";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -28,6 +29,7 @@ function decisionBadge(decision: ApprovalDecision) {
 }
 
 export default function ManagerPage() {
+  const { roleResolved, isManagerRole } = useManagerRole();
   const [rows, setRows] = useState<GoalForApproval[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -373,6 +375,25 @@ export default function ManagerPage() {
                         }
                         placeholder="Add guidance for the employee"
                       />
+                      {roleResolved && isManagerRole && (
+                        <div className="mt-1 flex justify-end">
+                          <SpeechToTextButton
+                            ariaLabel="Manager comments speech input"
+                            disabled={working}
+                            onFinalTranscript={(transcript) => {
+                              setComments((prev) => {
+                                const current = String(prev[goal.$id] || "").trim();
+                                const next = transcript.trim();
+                                if (!next) return prev;
+                                return {
+                                  ...prev,
+                                  [goal.$id]: current ? `${current} ${next}` : next,
+                                };
+                              });
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-3">
