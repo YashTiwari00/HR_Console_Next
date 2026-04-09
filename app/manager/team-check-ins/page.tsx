@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Textarea, VoiceTextarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 import { formatDate } from "@/app/employee/_lib/pmsClient";
 
@@ -565,20 +565,32 @@ export default function ManagerCheckInsPage() {
                     </div>
                   )}
 
-                  <Textarea
+                  <VoiceTextarea
                     label="Manager Notes"
                     value={managerNotes[row.$id] || ""}
                     onChange={(event) =>
                       setManagerNotes((prev) => ({ ...prev, [row.$id]: event.target.value }))
                     }
+                    onTranscript={(text) =>
+                      setManagerNotes((prev) => ({
+                        ...prev,
+                        [row.$id]: [prev[row.$id] || "", text].filter(Boolean).join(" "),
+                      }))
+                    }
                     placeholder="Summary and coaching notes"
                   />
 
-                  <Textarea
+                  <VoiceTextarea
                     label="Transcript / Summary"
                     value={transcriptText[row.$id] || ""}
                     onChange={(event) =>
                       setTranscriptText((prev) => ({ ...prev, [row.$id]: event.target.value }))
+                    }
+                    onTranscript={(text) =>
+                      setTranscriptText((prev) => ({
+                        ...prev,
+                        [row.$id]: [prev[row.$id] || "", text].filter(Boolean).join(" "),
+                      }))
                     }
                     placeholder="Optional meeting transcript summary"
                   />

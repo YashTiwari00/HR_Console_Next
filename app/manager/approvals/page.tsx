@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Input, Textarea } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Checkbox, Input, Textarea, VoiceTextarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -362,13 +362,19 @@ export default function ManagerPage() {
                     </div>
 
                     <div className="mt-3">
-                      <Textarea
+                      <VoiceTextarea
                         label="Manager Comments"
                         value={comments[goal.$id] || ""}
                         onChange={(event) =>
                           setComments((prev) => ({
                             ...prev,
                             [goal.$id]: event.target.value,
+                          }))
+                        }
+                        onTranscript={(text) =>
+                          setComments((prev) => ({
+                            ...prev,
+                            [goal.$id]: [prev[goal.$id] || "", text].filter(Boolean).join(" "),
                           }))
                         }
                         placeholder="Add guidance for the employee"

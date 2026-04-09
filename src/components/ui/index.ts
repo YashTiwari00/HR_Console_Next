@@ -49,3 +49,9 @@ export type { ChatBotProps } from './ChatBot';
 
 export { default as Companion } from './Companion';
 export type { CompanionProps } from './Companion';
+
+export { default as SpeechToTextButton } from './SpeechToTextButton';
+export type { SpeechToTextButtonProps } from './SpeechToTextButton';
+
+export { default as VoiceTextarea } from './VoiceTextarea';
+export type { VoiceTextareaProps } from './VoiceTextarea';
