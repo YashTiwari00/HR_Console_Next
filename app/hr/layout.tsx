@@ -14,25 +14,81 @@ interface HrLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
-  { label: "Dashboard",            href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"      },
-  { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics" },
-  { label: "Check-in Monitoring",  href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"       },
-  { label: "AI Governance",        href: "/hr/ai-governance",  route: "/hr/ai-governance",  tutorialId: "nav-ai-governance"  },
-  { label: "Calibration Workbench", href: "/hr/calibration",   route: "/hr/calibration",    tutorialId: "nav-calibration"    },
-  { label: "9-Box Talent Map",     href: "/hr/9-box",         route: "/hr/9-box",          tutorialId: "nav-9-box"          },
-  { label: "Notification Policy",  href: "/hr/notifications",  route: "/hr/notifications",  tutorialId: "nav-notifications"  },
+type HrView = "hr" | "manager" | "employee";
+
+const hrNavItems = [
+  { label: "Dashboard",             href: "/hr",                 route: "/hr",                 tutorialId: "nav-dashboard"       },
+  { label: "Team Ranking & Graph",  href: "/hr/team-analytics",  route: "/hr/team-analytics",  tutorialId: "nav-team-analytics"  },
+  { label: "Check-in Monitoring",   href: "/hr/check-ins",       route: "/hr/check-ins",       tutorialId: "nav-checkins"        },
+  { label: "AI Governance",         href: "/hr/ai-governance",   route: "/hr/ai-governance",   tutorialId: "nav-ai-governance"   },
+  { label: "Calibration Workbench", href: "/hr/calibration",     route: "/hr/calibration",     tutorialId: "nav-calibration"     },
+  { label: "9-Box Talent Map",      href: "/hr/9-box",           route: "/hr/9-box",           tutorialId: "nav-9-box"           },
+  { label: "Notification Policy",   href: "/hr/notifications",   route: "/hr/notifications",   tutorialId: "nav-notifications"   },
 ];
 
-const quickActions = [
-  { label: "View Team Ranking", href: "/hr/team-analytics" },
-  { label: "Monitor Goal Progress", href: "/hr" },
-  { label: "Monitor Manager Cadence", href: "/hr/check-ins" },
-  { label: "Review AI Governance", href: "/hr/ai-governance" },
-  { label: "Run Calibration Session", href: "/hr/calibration" },
-  { label: "Review 9-Box Snapshot", href: "/hr/9-box" },
-  { label: "Manage Notifications", href: "/hr/notifications" },
+const managerViewNavItems = [
+  { label: "Manager Dashboard",    href: "/hr/manager-view",    route: "/hr/manager-view",    tutorialId: "nav-manager-dashboard"  },
+  { label: "Team Goal Assignment", href: "/hr/team-goals",      route: "/hr/team-goals",      tutorialId: "nav-team-goals"         },
+  { label: "Team Approvals",       href: "/hr/team-approvals",  route: "/hr/team-approvals",  tutorialId: "nav-team-approvals"     },
+  { label: "Team Check-ins",       href: "/hr/team-check-ins",  route: "/hr/team-check-ins",  tutorialId: "nav-team-checkins"      },
+  { label: "Matrix Reviews",       href: "/hr/matrix-reviews",  route: "/hr/matrix-reviews",  tutorialId: "nav-matrix-reviews"     },
 ];
+
+const employeeViewNavItems = [
+  { label: "Personal Dashboard", href: "/hr/employee-dashboard", route: "/hr/employee-dashboard", tutorialId: "nav-employee-dashboard" },
+  { label: "Goal Workspace",     href: "/hr/my-goals",           route: "/hr/my-goals",           tutorialId: "nav-my-goals"           },
+  { label: "Progress Updates",   href: "/hr/my-progress",        route: "/hr/my-progress",        tutorialId: "nav-my-progress"        },
+  { label: "My Check-ins",       href: "/hr/my-check-ins",       route: "/hr/my-check-ins",       tutorialId: "nav-my-checkins"        },
+  { label: "Cycle Timeline",     href: "/hr/my-timeline",        route: "/hr/my-timeline",        tutorialId: "nav-my-timeline"        },
+];
+
+const hrQuickActions = [
+  { label: "View Team Ranking",      href: "/hr/team-analytics" },
+  { label: "Monitor Goal Progress",  href: "/hr"                },
+  { label: "Monitor Manager Cadence",href: "/hr/check-ins"      },
+  { label: "Review AI Governance",   href: "/hr/ai-governance"  },
+  { label: "Run Calibration Session",href: "/hr/calibration"    },
+  { label: "Review 9-Box Snapshot",  href: "/hr/9-box"          },
+  { label: "Manage Notifications",   href: "/hr/notifications"  },
+];
+
+const managerViewQuickActions = [
+  { label: "Open Manager Dashboard",  href: "/hr/manager-view"   },
+  { label: "Assign Team Goal",        href: "/hr/team-goals"     },
+  { label: "Review Team Approvals",   href: "/hr/team-approvals" },
+  { label: "Monitor Team Check-ins",  href: "/hr/team-check-ins" },
+  { label: "Open Matrix Reviews",     href: "/hr/matrix-reviews" },
+];
+
+const employeeViewQuickActions = [
+  { label: "Open Personal Dashboard", href: "/hr/employee-dashboard" },
+  { label: "Create My Goal",          href: "/hr/my-goals"           },
+  { label: "Log My Progress",         href: "/hr/my-progress"        },
+  { label: "Open My Check-ins",       href: "/hr/my-check-ins"       },
+  { label: "Open My Timeline",        href: "/hr/my-timeline"        },
+];
+
+const managerViewRoutes = [
+  "/hr/manager-view",
+  "/hr/team-goals",
+  "/hr/team-approvals",
+  "/hr/team-check-ins",
+  "/hr/matrix-reviews",
+];
+
+const employeeViewRoutes = [
+  "/hr/employee-dashboard",
+  "/hr/my-goals",
+  "/hr/my-progress",
+  "/hr/my-check-ins",
+  "/hr/my-timeline",
+];
+
+function getViewForPath(pathname: string): HrView {
+  if (managerViewRoutes.some((r) => pathname === r || pathname.startsWith(`${r}/`))) return "manager";
+  if (employeeViewRoutes.some((r) => pathname === r || pathname.startsWith(`${r}/`))) return "employee";
+  return "hr";
+}
 
 export default function HrLayout({ children }: HrLayoutProps) {
   const pathname = usePathname();
@@ -43,6 +99,11 @@ export default function HrLayout({ children }: HrLayoutProps) {
   const [userName, setUserName] = useState("HR User");
   const [userRole, setUserRole] = useState("hr");
   const [userDepartment, setUserDepartment] = useState("People Operations");
+  const [view, setView] = useState<HrView>(() => getViewForPath(pathname));
+
+  useEffect(() => {
+    setView(getViewForPath(pathname));
+  }, [pathname]);
 
   useEffect(() => {
     let active = true;
@@ -76,6 +137,13 @@ export default function HrLayout({ children }: HrLayoutProps) {
     return (parts[0]?.[0] || "H") + (parts[1]?.[0] || "R");
   }, [userName]);
 
+  function switchView(nextView: HrView) {
+    setView(nextView);
+    if (nextView === "hr") router.push("/hr");
+    else if (nextView === "manager") router.push("/hr/manager-view");
+    else router.push("/hr/employee-dashboard");
+  }
+
   async function handleLogout() {
     setLogoutError("");
     setLoggingOut(true);
@@ -97,11 +165,52 @@ export default function HrLayout({ children }: HrLayoutProps) {
     }
   }
 
+  const activeNavItems =
+    view === "hr" ? hrNavItems : view === "manager" ? managerViewNavItems : employeeViewNavItems;
+
+  const activeQuickActions =
+    view === "hr" ? hrQuickActions : view === "manager" ? managerViewQuickActions : employeeViewQuickActions;
+
   const sidebar = (
     <Stack
       gap="4"
       className="px-[var(--space-3)] py-[var(--space-4)] bg-[linear-gradient(180deg,var(--color-surface)_0%,var(--color-bg)_100%)]"
     >
+      <Card data-tutorial="view-switcher">
+        <Stack gap="2">
+          <p className="caption">Current View: {view === "hr" ? "HR" : view === "manager" ? "Manager" : "Employee"}</p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="flex-1"
+              variant={view === "hr" ? "primary" : "secondary"}
+              onClick={() => switchView("hr")}
+            >
+              HR
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="flex-1"
+              variant={view === "manager" ? "primary" : "secondary"}
+              onClick={() => switchView("manager")}
+            >
+              Manager
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="flex-1"
+              variant={view === "employee" ? "primary" : "secondary"}
+              onClick={() => switchView("employee")}
+            >
+              Employee
+            </Button>
+          </div>
+        </Stack>
+      </Card>
+
       <Card className="border-transparent shadow-[var(--shadow-md)]">
         <div className="flex items-start justify-between gap-[var(--space-2)]">
           <div className="flex items-center gap-[var(--space-2)]">
@@ -116,7 +225,7 @@ export default function HrLayout({ children }: HrLayoutProps) {
       </Card>
 
       <Stack gap="2" className="px-[var(--space-1)]">
-        {navItems.map((item) => {
+        {activeNavItems.map((item) => {
           const isActive = item.route === "/hr"
             ? pathname === "/hr" || pathname.startsWith("/hr/managers/")
             : pathname === item.route || pathname.startsWith(`${item.route}/`);
@@ -140,7 +249,7 @@ export default function HrLayout({ children }: HrLayoutProps) {
       <Divider label="Quick Actions" />
 
       <Stack gap="2" className="px-[var(--space-1)]">
-        {quickActions.map((action) => (
+        {activeQuickActions.map((action) => (
           <Link
             key={action.label}
             href={action.href}
