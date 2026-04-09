@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { MILESTONE_MESSAGES } from "@/lib/milestones";
 import {
   createProgressUpdate,
   fetchGoals,
@@ -21,6 +22,8 @@ const ragOptions = [
   { value: "completed", label: "Completed" },
 ];
 
+const THRESHOLDS = [25, 50, 75, 100] as const;
+
 function ragVariant(status: RagStatus) {
   if (status === "completed") return "success" as const;
   if (status === "behind") return "warning" as const;
@@ -36,6 +39,10 @@ export default function EmployeeProgressPage() {
   const [success, setSuccess] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [previousPct, setPreviousPct] = useState(0);
+  const [justCrossedMilestone, setJustCrossedMilestone] = useState<
+    { threshold: 25 | 50 | 75 | 100; goalTitle: string } | null
+  >(null);
 
   const [form, setForm] = useState({
     goalId: "",
@@ -70,6 +77,17 @@ export default function EmployeeProgressPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const activeGoal = goals.find((goal) => goal.$id === form.goalId) || null;
+    setPreviousPct(Number(activeGoal?.progressPercent || 0));
+  }, [goals, form.goalId]);
+
+  useEffect(() => {
+    if (!justCrossedMilestone) return;
+    const timer = setTimeout(() => setJustCrossedMilestone(null), 8000);
+    return () => clearTimeout(timer);
+  }, [justCrossedMilestone]);
+
   const average = useMemo(() => {
     if (goals.length === 0) return 0;
     const total = goals.reduce((sum, item) => sum + (item.progressPercent || 0), 0);
@@ -83,6 +101,11 @@ export default function EmployeeProgressPage() {
     setSuccess("");
 
     try {
+      const targetGoal = goals.find((goal) => goal.$id === form.goalId) || null;
+      const goalTitle = String(targetGoal?.title || "your goal");
+      const newPct = Number.parseInt(form.percentComplete, 10);
+      const crossed = THRESHOLDS.find((threshold) => previousPct < threshold && newPct >= threshold);
+
       const uploaded = selectedFiles.length > 0 ? await uploadAttachments(selectedFiles) : [];
 
       await createProgressUpdate({
@@ -96,6 +119,10 @@ export default function EmployeeProgressPage() {
       setForm((prev) => ({ ...prev, updateText: "" }));
       setSelectedFiles([]);
       setFileInputKey((prev) => prev + 1);
+      setPreviousPct(newPct);
+      if (crossed) {
+        setJustCrossedMilestone({ threshold: crossed, goalTitle });
+      }
       setSuccess("Progress update saved.");
       await loadData();
     } catch (err) {
@@ -194,6 +221,36 @@ export default function EmployeeProgressPage() {
           </Button>
         </form>
       </Card>
+
+      {justCrossedMilestone && (
+        <div className="mb-4 rounded-xl border border-[var(--color-success)] bg-[var(--color-success-subtle)] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl leading-none" aria-hidden="true">
+                {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.emoji || "🎉"}
+              </span>
+              <div>
+                <p className="body font-semibold text-[var(--color-text)]">
+                  {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.title || "Milestone reached!"}
+                </p>
+                <p className="caption mt-1 text-[var(--color-text)]">
+                  {String(
+                    MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.body ||
+                      "You crossed a milestone on '{goalTitle}'."
+                  ).replace("{goalTitle}", justCrossedMilestone.goalTitle)}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setJustCrossedMilestone(null)}
+              className="caption text-[var(--color-text)] underline underline-offset-2 hover:no-underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       <Card title="Recent Updates" description="Your latest updates across all goals.">
         <Stack gap="2">

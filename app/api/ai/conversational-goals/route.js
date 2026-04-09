@@ -8,6 +8,7 @@ import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 import { buildExplainability } from "@/lib/ai/explainability";
 import { getAOP } from "@/lib/aop/getAOP";
+import { buildModeSystemSuffix, resolveAiMode } from "@/lib/ai/modes.js";
 
 const MAX_AOP_PROMPT_CHARS = 4000;
 
@@ -182,6 +183,8 @@ export async function POST(request) {
     const conversationId = String(body.conversationId || "").trim();
     const targetEmployeeId = String(body.targetEmployeeId || profile.$id || "").trim();
     const parentGoalId = String(body.parentGoalId || "").trim();
+    const rawMode = body?.mode ?? "suggestion";
+    const mode = resolveAiMode(rawMode, profile.role);
 
     if (!cycleId || !message) {
       return Response.json(
@@ -234,6 +237,7 @@ export async function POST(request) {
       cycleId,
       featureType: "goal_suggestion",
       userRole: profile.role,
+      resolvedMode: mode,
     });
 
     const context = await listGoalContext(databases, targetEmployeeId, cycleId);
@@ -251,7 +255,7 @@ export async function POST(request) {
     const messages = [
       {
         role: "system",
-        content: "You are a precise performance-management assistant. JSON only.",
+        content: `You are a precise performance-management assistant. JSON only. ${buildModeSystemSuffix(mode, profile.role)}`,
       },
       {
         role: "user",
@@ -262,7 +266,7 @@ export async function POST(request) {
     const completion = await callOpenRouterWithUsage({
       messages,
       jsonMode: true,
-      maxTokens: 500,
+      maxTokens: mode === "decision_support" ? 2000 : 800,
     });
 
     const raw = completion.content;

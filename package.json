@@ -17,9 +17,13 @@
     "seed:verify": "node scripts/verify-seed-data.mjs",
     "test:trajectory": "node scripts/test-employee-trajectory.mjs",
     "smoke:api": "node scripts/smoke-api-routes.mjs",
+    "smoke:gamification": "node scripts/smoke-gamification.mjs",
     "smoke:self-review": "node scripts/smoke-self-review-flow.mjs",
     "smoke:ai:bulk-goals": "node scripts/smoke-ai-bulk-goals.mjs",
-    "smoke:ui": "node scripts/smoke-ui-pages.mjs"
+    "smoke:ai:modes": "node scripts/smoke-ai-modes.mjs",
+    "smoke:ui": "node scripts/smoke-ui-pages.mjs",
+    "smoke:contribution-badge": "node scripts/smoke-contribution-badge.mjs",
+    "smoke:growth-hub": "node scripts/smoke-growth-hub.mjs"
   },
   "dependencies": {
     "@fullcalendar/interaction": "^6.1.20",

@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
 import {
   BulkGoalAiReviewPanel,
+  GoalLineageCard,
   GoalLineageView,
   type GoalAiDraft,
   PageHeader,
@@ -70,6 +71,7 @@ export default function ManagerTeamGoalsPage() {
   const [bulkSourceRows, setBulkSourceRows] = useState<TeamBulkGoalRow[]>([]);
   const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
   const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [currentUserId, setCurrentUserId] = useState("");
 
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -93,6 +95,7 @@ export default function ManagerTeamGoalsPage() {
       ]);
 
       const profileId = String(me?.profile?.$id || "").trim();
+      setCurrentUserId(profileId);
       setTeamMembers(members);
       setTeamGoals(
         (goals as TeamGoalItem[])
@@ -511,12 +514,26 @@ export default function ManagerTeamGoalsPage() {
                         type="button"
                         size="sm"
                         variant="ghost"
-                        onClick={() => setLineageGoalId(goal.$id)}
+                        onClick={() =>
+                          setLineageGoalId((prev) => (prev === goal.$id ? "" : goal.$id))
+                        }
                       >
-                        View Lineage
+                        {lineageGoalId === goal.$id ? "Hide Team Contribution" : "View Team Contribution"}
                       </Button>
                       {!editable && <p className="caption self-center">Locked after submission.</p>}
                     </div>
+
+                    {lineageGoalId === goal.$id && (
+                      <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
+                        <p className="caption font-medium">Team Contribution</p>
+                        <p className="caption mt-1 text-[var(--color-text-muted)]">
+                          How {goal.employeeId === currentUserId ? "your" : `${employee?.name || "this employee"}'s`} goal connects to business targets
+                        </p>
+                        <div className="mt-2">
+                          <GoalLineageCard goalId={goal.$id} cycleId={goal.cycleId} compact={false} />
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 

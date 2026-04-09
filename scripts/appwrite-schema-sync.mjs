@@ -26,6 +26,8 @@ const collections = {
   rating_drop_insights:
     process.env.NEXT_PUBLIC_RATING_DROP_INSIGHTS_COLLECTION_ID || "rating_drop_insights",
   ai_events: process.env.NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID || "ai_events",
+  milestone_events:
+    process.env.NEXT_PUBLIC_MILESTONE_EVENTS_COLLECTION_ID || "milestone_events",
   ai_policies: process.env.NEXT_PUBLIC_AI_POLICIES_COLLECTION_ID || "ai_policies",
   checkin_approvals:
     process.env.NEXT_PUBLIC_CHECK_IN_APPROVALS_COLLECTION_ID || "checkin_approvals",
@@ -61,6 +63,8 @@ const collections = {
     process.env.NEXT_PUBLIC_IMPORT_JOBS_COLLECTION_ID || "import_jobs",
   talent_snapshots:
     process.env.NEXT_PUBLIC_TALENT_SNAPSHOTS_COLLECTION_ID || "talent_snapshots",
+  succession_overrides:
+    process.env.NEXT_PUBLIC_SUCCESSION_OVERRIDES_COLLECTION_ID || "succession_overrides",
   aop_documents:
     process.env.NEXT_PUBLIC_AOP_DOCUMENTS_COLLECTION_ID || "aop_documents",
 };
@@ -98,7 +102,7 @@ const required = {
     { key: "dueDate", type: "datetime", required: false },
     { key: "approvalSource", type: "string", size: 32, required: false },
     { key: "autoApprovedAt", type: "datetime", required: false },
-    { key: "lineageRef", type: "string", size: 512, required: false },
+    { key: "lineageRef", type: "string", size: 36, required: false, default: null },
     { key: "aiSuggested", type: "boolean", required: false, default: false },
     { key: "aopAligned", type: "boolean", required: false, default: false },
     { key: "aopReference", type: "string", size: 512, required: false },
@@ -252,6 +256,15 @@ const required = {
     { key: "estimatedCost", type: "float", required: false, min: 0 },
     { key: "lastUsedAt", type: "datetime", required: true },
     { key: "metadata", type: "string", size: 8192, required: false },
+  ],
+  [collections.milestone_events]: [
+    { key: "userId", type: "string", size: 36, required: true },
+    { key: "milestoneType", type: "string", size: 64, required: true },
+    { key: "referenceId", type: "string", size: 36, required: true },
+    { key: "cycleId", type: "string", size: 36, required: false },
+    { key: "cycleStreak", type: "integer", required: false },
+    { key: "triggeredAt", type: "string", size: 32, required: true },
+    { key: "acknowledged", type: "boolean", required: false, default: false },
   ],
   [collections.ai_policies]: [
     {
@@ -548,8 +561,26 @@ const required = {
     { key: "performanceBand", type: "enum", required: true, elements: ["high", "medium", "low"] },
     { key: "potentialBand", type: "enum", required: true, elements: ["high", "medium", "low"] },
     { key: "readinessBand", type: "enum", required: true, elements: ["ready_now", "ready_1_2_years", "emerging"] },
+    { key: "successionTag", type: "enum", required: false, elements: ["ready", "needs_development", "watch"], default: null },
+    { key: "readinessScore", type: "integer", required: false, min: 0, max: 100 },
+    // Stores factor-level explainability used by AI when computing readinessScore/successionTag.
+    { key: "readinessReason", type: "string", size: 8192, required: false },
+    { key: "isOverridden", type: "boolean", required: false, default: false },
+    { key: "updatedBy", type: "string", size: 64, required: false },
+    { key: "updatedAt", type: "datetime", required: false },
+    { key: "lastEvaluatedAt", type: "datetime", required: false },
+    { key: "evaluatedBy", type: "string", size: 64, required: false },
     { key: "computedAt", type: "datetime", required: true },
     { key: "source", type: "string", size: 64, required: false },
+  ],
+  [collections.succession_overrides]: [
+    { key: "employeeId", type: "string", size: 64, required: true },
+    { key: "snapshotId", type: "string", size: 64, required: true },
+    { key: "cycleId", type: "string", size: 32, required: false },
+    { key: "successionTag", type: "enum", required: true, elements: ["ready", "needs_development", "watch"] },
+    { key: "overrideReason", type: "string", size: 8192, required: true },
+    { key: "updatedBy", type: "string", size: 64, required: true },
+    { key: "updatedAt", type: "datetime", required: true },
   ],
   [collections.aop_documents]: [
     { key: "organizationId", type: "string", size: 128, required: true },
@@ -562,6 +593,14 @@ const required = {
 };
 
 const requiredIndexes = {
+  [collections.milestone_events]: [
+    { key: "idx_milestone_events_user", type: "key", attributes: ["userId"] },
+    {
+      key: "idx_milestone_events_dedupe",
+      type: "key",
+      attributes: ["userId", "milestoneType", "referenceId"],
+    },
+  ],
   [collections.goal_self_reviews]: [
     { key: "idx_gsr_key_u", type: "unique", attributes: ["reviewKey"] },
     { key: "idx_gsr_emp", type: "key", attributes: ["employeeId"] },

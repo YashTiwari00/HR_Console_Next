@@ -2,6 +2,8 @@
 
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Button, Card, Input, Spinner } from "@/src/components/ui";
+import AiModeToggle from "@/src/components/patterns/AiModeToggle";
+import { useAiMode } from "@/src/context/AiModeContext";
 
 type Message = { role: "user" | "assistant"; content: string };
 type ChatRole = "employee" | "manager" | "hr" | "guest";
@@ -61,6 +63,7 @@ const GREETINGS: Record<ChatRole, string> = {
 
 export default function ChatBot({ role = "guest", userName, theme = "default" }: ChatBotProps) {
   const t = theme === "lp" ? LP : DEF;
+  const aiMode = useAiMode();
   const [open, setOpen]         = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { role: "assistant", content: GREETINGS[role] },
@@ -84,10 +87,22 @@ export default function ChatBot({ role = "guest", userName, theme = "default" }:
     setStatus("loading");
 
     try {
+      const requestContext = next.slice(-10).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       const res = await fetch("/api/ai/chat", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ messages: next, role, userName }),
+        body:    JSON.stringify({
+          message: text,
+          role,
+          context: requestContext,
+          mode: aiMode.mode,
+          messages: next,
+          userName,
+        }),
       });
 
       if (!res.body) throw new Error("No stream body");
@@ -233,7 +248,10 @@ export default function ChatBot({ role = "guest", userName, theme = "default" }:
                   {role} workspace · HR Console
                 </p>
               </div>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <AiModeToggle />
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+              </div>
             </div>
 
             {/* messages */}

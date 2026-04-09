@@ -6,6 +6,7 @@ import { ExplainabilityDrawer, type ExplainabilityPayload, PageHeader } from "@/
 import { Alert, Badge, Button, Card, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 import { useManagerRole } from "@/src/lib/auth/useManagerRole";
+import { useAiMode } from "@/src/context/AiModeContext";
 import { formatDate } from "@/app/employee/_lib/pmsClient";
 
 type ApprovalDecision = "approved" | "rejected" | "needs_changes";
@@ -42,6 +43,58 @@ interface ManagerCheckIn {
   managerRatingBlockMessage?: string;
 }
 
+type StructuredSummarySections = {
+  keyThemes?: string;
+  progressAssessment?: string;
+  riskSignals?: string;
+  nextActions?: string;
+};
+
+function parseStructuredSummary(summary: string): StructuredSummarySections | null {
+  const text = String(summary || "").trim();
+  if (!text) return null;
+
+  const headers = [
+    { key: "keyThemes", label: "Key Themes" },
+    { key: "progressAssessment", label: "Progress Assessment" },
+    { key: "riskSignals", label: "Risk Signals" },
+    { key: "nextActions", label: "Recommended Next Actions" },
+  ] as const;
+
+  const indices = headers
+    .map((header) => {
+      const regex = new RegExp(`(?:^|\\n)${header.label}:?\\s*`, "i");
+      const match = regex.exec(text);
+      if (!match) return null;
+
+      const matchIndex = match.index || 0;
+      const contentStart = matchIndex + match[0].length;
+      return { header, matchIndex, contentStart };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.matchIndex - b.matchIndex) as Array<{
+      header: (typeof headers)[number];
+      matchIndex: number;
+      contentStart: number;
+    }>;
+
+  if (indices.length === 0) return null;
+
+  const sections: StructuredSummarySections = {};
+
+  for (let index = 0; index < indices.length; index += 1) {
+    const current = indices[index];
+    const next = indices[index + 1];
+    const end = next ? next.matchIndex : text.length;
+    const chunk = text.slice(current.contentStart, end).trim();
+    if (chunk) {
+      sections[current.header.key] = chunk;
+    }
+  }
+
+  return Object.keys(sections).length > 0 ? sections : null;
+}
+
 function getManagerRatingBlockMessage(row: ManagerCheckIn) {
   if (!row.isFinalCheckIn) return "";
 
@@ -61,6 +114,7 @@ function decisionBadge(decision: ApprovalDecision) {
 
 export default function TeamApprovalsPage() {
   const { roleResolved, isManagerRole } = useManagerRole();
+  const aiMode = useAiMode();
   const [approvalRows, setApprovalRows] = useState<GoalForApproval[]>([]);
   const [checkInRows, setCheckInRows] = useState<ManagerCheckIn[]>([]);
   const [loadingApprovals, setLoadingApprovals] = useState(true);
@@ -84,10 +138,13 @@ export default function TeamApprovalsPage() {
   const [aiMeta, setAiMeta] = useState<
     Record<string, { source: string; confidence: string; remaining?: number }>
   >({});
+  const [aiSummaryByCheckIn, setAiSummaryByCheckIn] = useState<Record<string, string>>({});
   const [aiExplainability, setAiExplainability] = useState<Record<string, ExplainabilityPayload>>({});
   const [activeExplainabilityId, setActiveExplainabilityId] = useState<string | null>(null);
   const [goalCycleById, setGoalCycleById] = useState<Record<string, string>>({});
   const [goalTitleById, setGoalTitleById] = useState<Record<string, string>>({});
+  const [completedCheckInId, setCompletedCheckInId] = useState<string | null>(null);
+  const [completedCheckInHasSummary, setCompletedCheckInHasSummary] = useState<Record<string, boolean>>({});
 
   const normalizedEmployeeApprovalQuery = employeeApprovalQuery.trim().toLowerCase();
 
@@ -216,6 +273,12 @@ export default function TeamApprovalsPage() {
     refreshAll();
   }, [refreshAll]);
 
+  useEffect(() => {
+    if (!completedCheckInId) return;
+    const timer = setTimeout(() => setCompletedCheckInId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [completedCheckInId]);
+
   async function handleDecision(event: FormEvent, goalId: string) {
     event.preventDefault();
     setWorkingApprovals(true);
@@ -270,7 +333,7 @@ export default function TeamApprovalsPage() {
     }
 
     try {
-      await requestJson(`/api/check-ins/${row.$id}`, {
+      const payload = await requestJson(`/api/check-ins/${row.$id}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "completed",
@@ -283,6 +346,11 @@ export default function TeamApprovalsPage() {
       });
 
       setSuccess("Check-in marked as completed.");
+      setCompletedCheckInId(row.$id);
+      setCompletedCheckInHasSummary((prev) => ({
+        ...prev,
+        [row.$id]: String(payload?.data?.transcriptText || "").trim().length > 0,
+      }));
       await loadCheckIns();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update check-in.");
@@ -317,6 +385,7 @@ export default function TeamApprovalsPage() {
           goalTitle: goalTitleById[row.goalId] || row.goalId,
           goalId: row.goalId,
           employeeId: row.employeeId,
+          mode: aiMode.mode,
         }),
       });
 
@@ -337,6 +406,11 @@ export default function TeamApprovalsPage() {
       ]
         .filter(Boolean)
         .join("\n");
+
+      setAiSummaryByCheckIn((prev) => ({
+        ...prev,
+        [row.$id]: String(summary || "").trim(),
+      }));
 
       setTranscriptText((prev) => ({
         ...prev,
@@ -537,6 +611,22 @@ export default function TeamApprovalsPage() {
               {(() => {
                 const blockedMessage = getManagerRatingBlockMessage(row);
                 const isRatingBlocked = Boolean(blockedMessage);
+                const structuredSummary =
+                  aiMode.mode === "decision_support"
+                    ? parseStructuredSummary(aiSummaryByCheckIn[row.$id] || "")
+                    : null;
+                const explainability = aiExplainability[row.$id] || null;
+                const contributingFactors = Array.isArray(explainability?.whyFactors)
+                  ? explainability.whyFactors.map((item) => String(item || "").trim()).filter(Boolean)
+                  : [];
+                const timeWindow =
+                  String((explainability as Record<string, unknown>)?.timeWindow || "").trim() ||
+                  String((explainability as Record<string, unknown>)?.time_window || "").trim() ||
+                  "n/a";
+                const confidenceLevel =
+                  String((explainability as Record<string, unknown>)?.confidenceLabel || "").trim() ||
+                  String((explainability as Record<string, unknown>)?.confidence || "").trim() ||
+                  "medium";
                 return (
                   <>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -548,6 +638,38 @@ export default function TeamApprovalsPage() {
                 <span className="caption">Goal: {row.goalId}</span>
                 <span className="caption">Employee: {row.employeeId}</span>
               </div>
+
+              {completedCheckInId === row.$id && (
+                <div className="mt-3 rounded-[var(--radius-sm)] border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <div className="flex items-start gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M8 12.5l2.5 2.5L16 9.5" />
+                    </svg>
+                    <div className="min-w-0">
+                      <p className="body-sm font-semibold text-emerald-800">Check-in submitted!</p>
+                      <p className="caption text-emerald-700">
+                        Your feedback has been recorded for {String((row as { employeeName?: string }).employeeName || row.employeeId || "this employee")}.
+                      </p>
+                      {completedCheckInHasSummary[row.$id] && (
+                        <a
+                          href={`#checkin-summary-${row.$id}`}
+                          className="mt-1 inline-block text-xs font-medium text-emerald-700 underline-offset-2 hover:underline"
+                        >
+                          View Summary
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {row.employeeNotes && <p className="caption mt-2">Employee notes: {row.employeeNotes}</p>}
 
@@ -673,12 +795,56 @@ export default function TeamApprovalsPage() {
                     )}
                   </div>
 
+                  {structuredSummary && (
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                      {structuredSummary.keyThemes && (
+                        <div className="mb-2">
+                          <p className="caption font-medium">Key Themes</p>
+                          <p className="caption mt-1">{structuredSummary.keyThemes}</p>
+                        </div>
+                      )}
+                      {structuredSummary.progressAssessment && (
+                        <div className="mb-2">
+                          <p className="caption font-medium">Progress Assessment</p>
+                          <p className="caption mt-1">{structuredSummary.progressAssessment}</p>
+                        </div>
+                      )}
+                      {structuredSummary.riskSignals && (
+                        <div className="mb-2">
+                          <p className="caption font-medium">Risk Signals</p>
+                          <p className="caption mt-1">{structuredSummary.riskSignals}</p>
+                        </div>
+                      )}
+                      {structuredSummary.nextActions && (
+                        <div>
+                          <p className="caption font-medium">Next Actions</p>
+                          <p className="caption mt-1">{structuredSummary.nextActions}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {explainability && (
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
+                      <p className="caption font-medium">Explainability</p>
+                      <p className="caption mt-1">Confidence Level: {confidenceLevel}</p>
+                      <p className="caption mt-1">Time Window: {timeWindow}</p>
+                      {contributingFactors.length > 0 && (
+                        <p className="caption mt-1">Contributing Factors: {contributingFactors.join("; ")}</p>
+                      )}
+                    </div>
+                  )}
+
                   <Button type="submit" loading={workingCheckIns} disabled={isRatingBlocked}>Mark Completed</Button>
                 </div>
               ) : (
                 <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                   {row.managerNotes && <p className="caption">Manager notes: {row.managerNotes}</p>}
-                  {row.transcriptText && <p className="caption mt-1">Transcript: {row.transcriptText}</p>}
+                  {row.transcriptText && (
+                    <p id={`checkin-summary-${row.$id}`} className="caption mt-1">
+                      Transcript: {row.transcriptText}
+                    </p>
+                  )}
                   {row.isFinalCheckIn && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge variant="success">Final check-in</Badge>

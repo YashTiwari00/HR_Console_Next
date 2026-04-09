@@ -89,6 +89,14 @@ function toReadinessBand(performanceBand, potentialBand) {
   return "emerging";
 }
 
+function toSuccessionTag(performanceBand, potentialBand) {
+  // Keep succession tagging aligned to 9-box bands while independent from readiness scoring.
+  if (performanceBand === "high" && potentialBand === "high") return "ready";
+  if (performanceBand === "low" && potentialBand === "low") return "watch";
+  if (potentialBand === "high" && performanceBand === "low") return "needs_development";
+  return "needs_development";
+}
+
 export async function buildTalentSnapshots(databases, options = {}) {
   const cycleFilter = String(options.cycleId || "").trim();
 
@@ -135,6 +143,7 @@ export async function buildTalentSnapshots(databases, options = {}) {
     const performanceBand = toPerformanceBand(latest.scoreX100);
     const potentialBand = toPotentialBand(latest.scoreX100, trend.trendLabel, trend.trendDeltaPercent);
     const readinessBand = toReadinessBand(performanceBand, potentialBand);
+    const successionTag = toSuccessionTag(performanceBand, potentialBand);
 
     snapshots.push({
       employeeId,
@@ -148,6 +157,7 @@ export async function buildTalentSnapshots(databases, options = {}) {
       trendDeltaPercent: trend.trendDeltaPercent,
       performanceBand,
       potentialBand,
+      successionTag,
       readinessBand,
       computedAt: latest.computedAt || latest.$createdAt || null,
     });

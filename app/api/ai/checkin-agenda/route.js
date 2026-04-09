@@ -3,6 +3,7 @@ import { assertAndTrackAiUsage, trackAiUsageCost } from "@/app/api/ai/_lib/aiUsa
 import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildExplainability } from "@/lib/ai/explainability";
 import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildModeSystemSuffix, resolveAiMode } from "@/lib/ai/modes.js";
 
 function safeParse(raw, fallback) {
   try {
@@ -22,6 +23,8 @@ export async function POST(request) {
     const goalTitle = String(body?.goalTitle || "").trim();
     const employeeNotes = String(body?.employeeNotes || "").trim();
     const scheduledAt = String(body?.scheduledAt || "").trim();
+    const rawMode = body?.mode ?? "suggestion";
+    const mode = resolveAiMode(rawMode, profile.role);
 
     if (!cycleId || !goalTitle) {
       return Response.json({ error: "cycleId and goalTitle are required." }, { status: 400 });
@@ -33,12 +36,13 @@ export async function POST(request) {
       cycleId,
       featureType: "checkin_summary",
       userRole: profile.role,
+      resolvedMode: mode,
     });
 
     const messages = [
       {
         role: "system",
-        content: "You are a performance coaching assistant. Return valid JSON only.",
+        content: `You are a performance coaching assistant. Return valid JSON only. ${buildModeSystemSuffix(mode, profile.role)}`,
       },
       {
         role: "user",
@@ -49,7 +53,7 @@ export async function POST(request) {
     const completion = await callOpenRouterWithUsage({
       messages,
       jsonMode: true,
-      maxTokens: 400,
+      maxTokens: mode === "decision_support" ? 2000 : 800,
     });
 
     const parsed = safeParse(completion.content, {});

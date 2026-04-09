@@ -48,6 +48,12 @@ function contributionBand(value: number | null | undefined) {
   return "High";
 }
 
+function contributionBadgeVariant(band: "Low" | "Medium" | "High") {
+  if (band === "Low") return "warning" as const;
+  if (band === "High") return "success" as const;
+  return "info" as const;
+}
+
 function contributionDisplay(value: number | null | undefined) {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
@@ -59,12 +65,18 @@ function contributionDisplay(value: number | null | undefined) {
 function chainLevelTitle(index: number, total: number) {
   if (total <= 1) return "Goal";
   if (index === 0) return "Employee Goal";
-  if (index === total - 1) return "Business Goal / AOP";
+  if (total >= 4 && index === 1) return "Team Objective";
+  if (total >= 4 && index === total - 2) return "Manager Goal";
+  if (index === total - 1) return "Business / AOP Objective";
   return "Manager Goal";
 }
 
 function buildExplanation(chainData: GoalLineageChainData | null) {
   if (!chainData) return "No lineage explanation is available.";
+
+  if (chainData.businessImpact?.explanation) {
+    return chainData.businessImpact.explanation;
+  }
 
   const managerGoal = chainData.parentGoal?.title || "its parent goal";
   const companyObjective = chainData.aopReference || "an identified company objective";
@@ -73,11 +85,17 @@ function buildExplanation(chainData: GoalLineageChainData | null) {
 }
 
 function ChainNode({ node, index, total }: { node: GoalLineageChainNode; index: number; total: number }) {
+  const contributionBandLabel = node.contributionBadge || contributionBand(node.contributionPercent);
+  const progress = toProgress(node.progressPercent);
+
   return (
     <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="body-sm font-medium text-[var(--color-text)]">{node.title || "Untitled goal"}</p>
-        <Badge variant="default">Contribution: {contributionDisplay(node.contributionPercent)}</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={contributionBadgeVariant(contributionBandLabel)}>Contribution: {contributionBandLabel}</Badge>
+          <Badge variant="default">Share: {contributionDisplay(node.contributionPercent)}</Badge>
+        </div>
       </div>
       <p className="caption mt-1">{chainLevelTitle(index, total)}</p>
       <div className="mt-1 flex flex-wrap gap-3">
@@ -86,6 +104,7 @@ function ChainNode({ node, index, total }: { node: GoalLineageChainNode; index: 
         {node.status && <span className="caption">Status: {node.status}</span>}
       </div>
       {node.aopReference && <p className="caption mt-1">AOP: {node.aopReference}</p>}
+      <ProgressBar value={progress} />
     </div>
   );
 }
@@ -103,10 +122,27 @@ function VerticalChainView({ chainData }: { chainData: GoalLineageChainData }) {
         <div key={node.goalId || `chain-${index}`}>
           <ChainNode node={node} index={index} total={chain.length} />
           {index < chain.length - 1 && (
-            <p className="caption px-2 py-1">Downstream contribution: {contributionDisplay(chain[index].contributionPercent)}</p>
+            <p className="caption px-2 py-1">
+              Downstream contribution: {contributionDisplay(chain[index].contributionPercent)}
+            </p>
           )}
         </div>
       ))}
+
+      {chainData.businessImpact && (
+        <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="caption font-medium">Contribution to Business Target</p>
+            <Badge variant={contributionBadgeVariant(chainData.businessImpact.contributionBadge)}>
+              {chainData.businessImpact.contributionBadge}
+            </Badge>
+          </div>
+          <p className="caption mt-1">
+            Current influence: {contributionDisplay(chainData.businessImpact.contributionToBusinessPercent)}
+          </p>
+          <ProgressBar value={toProgress(chainData.businessImpact.movementToBusinessPercent)} />
+        </div>
+      )}
 
       <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
         <p className="caption font-medium">Explanation</p>

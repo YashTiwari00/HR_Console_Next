@@ -12,6 +12,7 @@ import {
 } from "@/lib/matrixReviews";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
+import { buildModeSystemSuffix, resolveAiMode } from "@/lib/ai/modes.js";
 
 function safeParse(raw, fallback) {
   try {
@@ -96,6 +97,8 @@ export async function POST(request) {
     const notes = String(body?.notes || "").trim();
     const goalId = String(body?.goalId || "").trim();
     const employeeIdInput = String(body?.employeeId || "").trim();
+    const rawMode = body?.mode ?? "suggestion";
+    const mode = resolveAiMode(rawMode, profile.role);
 
     if (!cycleId || !notes) {
       return Response.json({ error: "cycleId and notes are required." }, { status: 400 });
@@ -227,12 +230,13 @@ export async function POST(request) {
       cycleId,
       featureType: "checkin_summary",
       userRole: profile.role,
+      resolvedMode: mode,
     });
 
     const messages = [
       {
         role: "system",
-        content: "You are a check-in intelligence assistant. Return valid JSON only.",
+        content: `You are a check-in intelligence assistant. Return valid JSON only. ${buildModeSystemSuffix(mode, profile.role)}`,
       },
       {
         role: "user",
@@ -243,7 +247,7 @@ export async function POST(request) {
     const completion = await callOpenRouterWithUsage({
       messages,
       jsonMode: true,
-      maxTokens: 700,
+      maxTokens: mode === "decision_support" ? 2000 : 800,
     });
 
     const parsed = safeParse(completion.content, {});

@@ -1,4 +1,5 @@
 import { account } from "@/lib/appwrite";
+import type { AiMode } from "@/lib/ai/modes";
 
 export type GoalStatus =
   | "draft"
@@ -63,9 +64,19 @@ export interface GoalLineageChainNode {
   title: string;
   owner: string | null;
   contributionPercent: number | null;
+  contributionBadge: "Low" | "Medium" | "High";
   aopReference: string | null;
   goalLevel: string | null;
   status: string | null;
+  progressPercent: number | null;
+}
+
+export interface GoalLineageBusinessImpact {
+  contributionToBusinessPercent: number | null;
+  movementToBusinessPercent: number | null;
+  currentGoalProgressPercent: number | null;
+  contributionBadge: "Low" | "Medium" | "High";
+  explanation: string;
 }
 
 export interface GoalLineageChainData {
@@ -74,6 +85,7 @@ export interface GoalLineageChainData {
   rootGoal: GoalItem | null;
   aopReference: string | null;
   chain: GoalLineageChainNode[];
+  businessImpact: GoalLineageBusinessImpact | null;
 }
 
 export interface CheckInItem {
@@ -120,6 +132,23 @@ export interface ProgressUpdateItem {
   updateText: string;
   createdAt: string;
   attachmentIds?: string[];
+}
+
+export interface GamificationEventItem {
+  id: string;
+  eventType: string;
+  title: string;
+  message: string;
+  actionUrl?: string;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GamificationStreakData {
+  streak: number;
+  latestQuarter: string | null;
+  quarters: string[];
+  completedCheckIns: number;
 }
 
 export interface UploadedAttachment {
@@ -358,11 +387,13 @@ export interface HrNineBoxEmployeeItem {
   trendDeltaPercent: number;
   performanceBand: "high" | "medium" | "low";
   potentialBand: "high" | "medium" | "low";
+  successionTag?: "ready" | "needs_development" | "watch";
   readinessBand: "ready_now" | "ready_1_2_years" | "emerging";
   computedAt?: string | null;
 }
 
 export interface HrNineBoxSnapshot {
+  currentMode?: AiMode;
   cycleId?: string | null;
   department?: string | null;
   totalEmployees: number;
@@ -378,11 +409,28 @@ export interface HrNineBoxSnapshot {
     count: number;
   }>;
   employees: HrNineBoxEmployeeItem[];
+  decisionSupport?: {
+    riskDepartments: Array<{
+      department: string;
+      totalEmployees: number;
+      benchStrengthPct: number;
+      lowPerformancePct: number;
+    }>;
+    highestDensityCells: Array<{
+      boxKey: string;
+      potentialBand: "high" | "medium" | "low";
+      performanceBand: "high" | "medium" | "low";
+      count: number;
+    }>;
+    recommendations: string[];
+  } | null;
 }
 
 export interface LeadershipSuccessionSnapshot {
   cycleId?: string | null;
   totalEmployees: number;
+  readySuccessorPct?: number;
+  readySoonPct?: number;
   readinessCounts: {
     ready_now: number;
     ready_1_2_years: number;
@@ -408,7 +456,82 @@ export interface LeadershipSuccessionSnapshot {
     readySoon: number;
     readyPct: number;
   }>;
+  criticalRolesWithoutSuccessors?: {
+    totalCriticalRoles: number;
+    withoutSuccessors: number;
+    withoutSuccessorPct: number;
+    byRole: Array<{
+      role: string;
+      totalCriticalRoles: number;
+      withoutSuccessors: number;
+      withoutSuccessorPct: number;
+    }>;
+    byDepartment: Array<{
+      department: string;
+      totalCriticalRoles: number;
+      withoutSuccessors: number;
+      withoutSuccessorPct: number;
+    }>;
+    byBusinessUnit: Array<{
+      businessUnit: string;
+      totalCriticalRoles: number;
+      withoutSuccessors: number;
+      withoutSuccessorPct: number;
+    }>;
+  };
+  topHighPotentialEmployees?: Array<{
+    department: string;
+    businessUnit: string;
+    employeeCount: number;
+    avgReadinessScore: number;
+    readySuccessors: number;
+  }>;
+  groupedByDepartment?: Array<{
+    department: string;
+    totalEmployees: number;
+    readySuccessors: number;
+    readySoon: number;
+    readySuccessorPct: number;
+    highPotential: number;
+    avgReadinessScore: number;
+  }>;
+  groupedByBusinessUnit?: Array<{
+    businessUnit: string;
+    totalEmployees: number;
+    readySuccessors: number;
+    readySoon: number;
+    readySuccessorPct: number;
+    highPotential: number;
+    avgReadinessScore: number;
+  }>;
+  privacy?: {
+    aggregatedOnly: boolean;
+    containsRawEmployeeData: boolean;
+  };
   asOf: string;
+}
+
+export interface HrSuccessionDashboardRow {
+  employeeId: string;
+  name: string;
+  role: string;
+  performanceBand: "high" | "medium" | "low" | null;
+  potentialBand: "high" | "medium" | "low" | null;
+  readinessScore: number | null;
+  successionTag: "ready" | "needs_development" | "watch" | null;
+  readinessReason: string | null;
+  trendLabel: "new" | "stable" | "improving" | "declining" | null;
+}
+
+export interface HrSuccessionDashboardData {
+  filters: {
+    successionTag: "ready" | "needs_development" | "watch" | null;
+    department: string | null;
+    performanceBand: "high" | "medium" | "low" | null;
+    cycleId: string | null;
+  };
+  total: number;
+  rows: HrSuccessionDashboardRow[];
 }
 
 async function getJwtHeader() {
@@ -477,6 +600,10 @@ export interface GoalSuggestion {
   title: string;
   description: string;
   weightage: number;
+  framework?: "OKR" | "MBO" | "HYBRID" | string;
+  frameworkRationale?: string;
+  weightageJustification?: string;
+  aopAlignmentHint?: string;
   rationale?: string;
   source?: string;
   source_type?: "hr" | "leadership" | "manager" | "system" | string;
@@ -860,6 +987,50 @@ export interface EmployeeTrajectoryData {
   cycles: EmployeeTrajectoryCyclePoint[];
   trendLabel: TrajectoryTrendLabel;
   trendDeltaPercent: number;
+}
+
+export type GrowthReadinessBand = "Early Stage" | "Developing" | "Ready" | "Exceeding";
+
+export interface GrowthCareerPathway {
+  summary: string;
+  nextRole: string;
+  actionPlan: string[];
+  timelineHint: string;
+}
+
+export interface GrowthSkillItem {
+  skill: string;
+  why: string;
+  recommendedLearning: string[];
+  practicePlan: string;
+  priority: "High" | "Medium" | "Low";
+}
+
+export interface EmployeeGrowthHubData {
+  cycleId: string | null;
+  careerPathway: GrowthCareerPathway;
+  skillsToDevelop: GrowthSkillItem[];
+  readinessScore: {
+    band: GrowthReadinessBand;
+    rationale: string;
+    focusAreas: string[];
+    source: "talent_snapshot" | "ai" | "fallback";
+  };
+  usage?: {
+    cap: number;
+    limit?: number;
+    used: number;
+    remaining: number;
+    tokensUsed?: number;
+    estimatedCost?: number;
+    nearLimit?: boolean;
+    totalCost?: number;
+    budget?: number | null;
+    nearBudget?: boolean;
+    overBudget?: boolean;
+    featureType: string;
+    cycleId: string;
+  };
 }
 
 export type DecisionRiskLevel = "low" | "medium" | "high";
@@ -1620,6 +1791,39 @@ export async function fetchProgressUpdates(
   return (payload.data || []) as ProgressUpdateItem[];
 }
 
+export async function fetchGamificationEvents(limit = 5) {
+  const safeLimit = Math.max(1, Math.min(25, Number(limit) || 5));
+  const payload = await requestJson(`/api/gamification/events?limit=${safeLimit}`);
+  return (payload?.data || []) as GamificationEventItem[];
+}
+
+export async function acknowledgeGamificationEvents(ids: string[]) {
+  const normalized = Array.from(new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  if (normalized.length === 0) {
+    return { acknowledged: 0 };
+  }
+
+  const payload = await requestJson("/api/gamification/events", {
+    method: "POST",
+    body: JSON.stringify({ ids: normalized }),
+  });
+
+  return {
+    acknowledged: Number(payload?.data?.acknowledged || 0),
+  };
+}
+
+export async function fetchGamificationStreak() {
+  const payload = await requestJson("/api/gamification/streak");
+  const data = (payload?.data || {}) as Partial<GamificationStreakData>;
+  return {
+    streak: Number(data.streak || 0),
+    latestQuarter: data.latestQuarter || null,
+    quarters: Array.isArray(data.quarters) ? data.quarters.map((item) => String(item)) : [],
+    completedCheckIns: Number(data.completedCheckIns || 0),
+  } as GamificationStreakData;
+}
+
 export async function fetchGoalFeedback(
   goalId?: string,
   scope?: ManagerScope,
@@ -1886,10 +2090,11 @@ export async function fetchLeadershipOverview() {
 export async function fetchHrNineBoxSnapshot(input?: {
   cycleId?: string;
   department?: string;
-}) {
+}, mode: AiMode = "suggestion") {
   const params = new URLSearchParams();
   if (input?.cycleId) params.set("cycleId", input.cycleId);
   if (input?.department) params.set("department", input.department);
+  params.set("mode", mode);
 
   const query = params.toString() ? `?${params.toString()}` : "";
   const payload = await requestJson(`/api/hr/9-box${query}`);
@@ -1912,6 +2117,59 @@ export async function fetchLeadershipSuccessionSnapshot(cycleId?: string) {
     riskDepartments: [],
     asOf: new Date().toISOString(),
   }) as LeadershipSuccessionSnapshot;
+}
+
+export async function fetchHrSuccessionDashboard(input?: {
+  successionTag?: "ready" | "needs_development" | "watch";
+  department?: string;
+  performanceBand?: "high" | "medium" | "low";
+  cycleId?: string;
+}) {
+  const params = new URLSearchParams();
+  if (input?.successionTag) params.set("successionTag", input.successionTag);
+  if (input?.department) params.set("department", input.department);
+  if (input?.performanceBand) params.set("performanceBand", input.performanceBand);
+  if (input?.cycleId) params.set("cycleId", input.cycleId);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(`/api/hr/succession${query}`);
+
+  return (payload?.data || {
+    filters: {
+      successionTag: null,
+      department: null,
+      performanceBand: null,
+      cycleId: null,
+    },
+    total: 0,
+    rows: [],
+  }) as HrSuccessionDashboardData;
+}
+
+export async function overrideHrSuccessionTag(
+  employeeId: string,
+  input: {
+    successionTag: "ready" | "needs_development" | "watch";
+    overrideReason: string;
+  }
+) {
+  const payload = await requestJson(`/api/hr/succession/${encodeURIComponent(employeeId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+
+  return payload?.data as {
+    employeeId: string;
+    snapshotId: string;
+    cycleId?: string | null;
+    successionTag: "ready" | "needs_development" | "watch";
+    isOverridden: boolean;
+    overrideReason: string;
+    readinessScore?: number | null;
+    readinessReason?: string | null;
+    updatedBy?: string | null;
+    updatedAt?: string | null;
+  };
 }
 
 export async function fetchHrManagerDetail(managerId: string) {
@@ -2135,10 +2393,10 @@ export async function getGoalSuggestions(input: {
   cycleId: string;
   frameworkType: string;
   prompt?: string;
-}) {
+}, mode: AiMode = "suggestion") {
   const payload = await requestJson("/api/ai/goal-suggestion", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, mode }),
   });
 
   const source = String(payload?.data?.source || payload?.source || "").trim();
@@ -2173,10 +2431,10 @@ export async function getBulkGoalAnalysis(input: {
   goals: BulkGoalInput[];
   role: "manager" | "employee";
   cycleId?: string;
-}) {
+}, mode: AiMode = "suggestion") {
   const payload = await requestJson("/api/ai/analyze-goals", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, mode }),
   });
 
   const goals = Array.isArray(payload?.goals)
@@ -2218,10 +2476,10 @@ export async function getCheckInSummarySuggestion(input: {
   goalTitle?: string;
   goalId?: string;
   employeeId?: string;
-}) {
+}, mode: AiMode = "suggestion") {
   const payload = await requestJson("/api/ai/checkin-summary", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, mode }),
   });
 
   return payload?.data as CheckInSummarySuggestion;
@@ -2254,6 +2512,20 @@ export async function getCheckInIntelligenceSuggestion(input: {
   });
 
   return payload?.data as CheckInIntelligenceSuggestion;
+}
+
+export async function fetchEmployeeGrowthHub(input?: {
+  cycleId?: string;
+}, mode: AiMode = "suggestion") {
+  const payload = await requestJson("/api/ai/growth-hub", {
+    method: "POST",
+    body: JSON.stringify({
+      ...(input || {}),
+      mode,
+    }),
+  });
+
+  return (payload?.data || null) as EmployeeGrowthHubData | null;
 }
 
 export async function fetchAiUsageSnapshot(cycleId?: string) {
@@ -2322,6 +2594,9 @@ export async function fetchGoalLineage(goalId: string) {
 export async function fetchGoalLineageChain(goalId: string) {
   const payload = await requestJson(`/api/goals/lineage?goalId=${encodeURIComponent(goalId)}`);
   const data = payload?.data || {};
+  const rawBusinessImpact = data?.businessImpact && typeof data.businessImpact === "object"
+    ? data.businessImpact as Record<string, unknown>
+    : null;
 
   return {
     currentGoal: (data?.currentGoal || null) as GoalItem | null,
@@ -2338,12 +2613,47 @@ export async function fetchGoalLineageChain(goalId: string) {
             owner: value.owner ? String(value.owner) : null,
             contributionPercent:
               typeof value.contributionPercent === "number" ? value.contributionPercent : null,
+            contributionBadge:
+              String(value.contributionBadge || "").trim() === "Low"
+                ? "Low"
+                : String(value.contributionBadge || "").trim() === "High"
+                  ? "High"
+                  : "Medium",
             aopReference: value.aopReference ? String(value.aopReference) : null,
             goalLevel: value.goalLevel ? String(value.goalLevel) : null,
             status: value.status ? String(value.status) : null,
+            progressPercent:
+              typeof value.progressPercent === "number"
+                ? value.progressPercent
+                : typeof value.processPercent === "number"
+                  ? value.processPercent
+                  : null,
           };
         })
       : [],
+    businessImpact: rawBusinessImpact
+      ? {
+          contributionToBusinessPercent:
+            typeof rawBusinessImpact.contributionToBusinessPercent === "number"
+              ? rawBusinessImpact.contributionToBusinessPercent
+              : null,
+          movementToBusinessPercent:
+            typeof rawBusinessImpact.movementToBusinessPercent === "number"
+              ? rawBusinessImpact.movementToBusinessPercent
+              : null,
+          currentGoalProgressPercent:
+            typeof rawBusinessImpact.currentGoalProgressPercent === "number"
+              ? rawBusinessImpact.currentGoalProgressPercent
+              : null,
+          contributionBadge:
+            String(rawBusinessImpact.contributionBadge || "").trim() === "Low"
+              ? "Low"
+              : String(rawBusinessImpact.contributionBadge || "").trim() === "High"
+                ? "High"
+                : "Medium",
+          explanation: String(rawBusinessImpact.explanation || "").trim(),
+        }
+      : null,
   } as GoalLineageChainData;
 }
 
@@ -2656,13 +2966,14 @@ export async function createCalibrationDecision(
     proposedRating: number;
     finalRating?: number | null;
     rationale: string;
-  }
+  },
+  mode: AiMode = "suggestion"
 ) {
   const payload = await requestJson(
     `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/decisions`,
     {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, mode }),
     }
   );
 

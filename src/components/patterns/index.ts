@@ -27,6 +27,9 @@ export type { CascadeGoalComposerProps } from './CascadeGoalComposer';
 export { default as GoalLineageView } from './GoalLineageView';
 export type { GoalLineageViewProps } from './GoalLineageView';
 
+export { default as GoalLineageCard } from './GoalLineageCard';
+export type { GoalLineageCardProps } from './GoalLineageCard';
+
 export { default as GoalAllocationSuggestionCard } from './GoalAllocationSuggestionCard';
 export type { GoalAllocationSuggestionCardProps } from './GoalAllocationSuggestionCard';
 
@@ -41,3 +44,13 @@ export type { BulkGoalDashboardImportCardProps } from './BulkGoalDashboardImport
 
 export { default as RatingDropWarningSection } from './RatingDropWarningSection';
 export type { RatingDropWarningSectionProps, RatingDropWarningItem } from './RatingDropWarningSection';
+
+export { default as AiModeToggle } from './AiModeToggle';
+
+export { default as MilestoneToastStack } from './MilestoneToastStack';
+
+export { TnaSkillCard } from './TnaSkillCard';
+export type { TnaSkillCardProps } from './TnaSkillCard';
+
+export { CareerPathwayPanel } from './CareerPathwayPanel';
+export type { CareerPathwayPanelProps } from './CareerPathwayPanel';

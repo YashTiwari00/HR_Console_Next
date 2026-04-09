@@ -6,7 +6,6 @@ import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolic
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 import {
-  buildCascadeLineage,
   buildCascadePayload,
   createGoalDocumentCompat,
 } from "@/app/api/goals/_lib/cascade";
@@ -67,6 +66,19 @@ export async function POST(request, context) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }
 
+    if (
+      profile.role === "manager" &&
+      (
+        String(parentGoal?.status || "").trim() !== "approved" ||
+        String(parentGoal?.managerId || "").trim() !== String(profile?.$id || "").trim()
+      )
+    ) {
+      return Response.json(
+        { error: "Cannot cascade: parent goal must be approved and owned by you" },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
     const title = String(body.title || "").trim();
     const description = String(body.description || "").trim();
@@ -74,7 +86,7 @@ export async function POST(request, context) {
     const frameworkTypeInput = String(body.frameworkType || parentGoal.frameworkType || "").trim();
     const weightage = toInt(body.weightage, 0);
     const dueDate = body.dueDate ?? parentGoal.dueDate ?? null;
-    const lineageRef = buildCascadeLineage(parentGoal, body.lineageRef);
+    const lineageRef = parentGoalId;
     const goalLevelInput = typeof body.goalLevel !== "undefined" ? body.goalLevel : parentGoal.goalLevel;
     const goalLevel = normalizeGoalLevel(goalLevelInput, nextGoalLevel(parentGoal.goalLevel));
     const contributionPercent = toInt(body.contributionPercent, Number(parentGoal.contributionPercent || 100));
@@ -187,7 +199,20 @@ export async function POST(request, context) {
       },
     });
 
-    const created = await createGoalDocumentCompat(databases, goalPayload);
+    let created;
+    try {
+      created = await createGoalDocumentCompat(databases, goalPayload);
+    } catch (err) {
+      const message = String(err?.message || "");
+      if (message.includes("lineageRef") || Number(err?.code) === 400) {
+        console.warn("[cascade] lineageRef attribute missing in schema, skipping");
+        const fallbackPayload = { ...goalPayload };
+        delete fallbackPayload.lineageRef;
+        created = await createGoalDocumentCompat(databases, fallbackPayload);
+      } else {
+        throw err;
+      }
+    }
 
     return Response.json(
       {

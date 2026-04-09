@@ -1,6 +1,7 @@
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertAndTrackAiUsage } from "@/app/api/ai/_lib/aiUsage";
 import { callOpenRouterWithUsage } from "@/lib/openrouter";
+import { buildModeSystemSuffix, resolveAiMode } from "@/lib/ai/modes.js";
 
 const MIN_FEEDBACK_LENGTH = 12;
 const VALID_TONES = new Set(["harsh", "neutral", "constructive"]);
@@ -33,6 +34,8 @@ export async function POST(request) {
     const body = await request.json();
     const feedback = String(body?.feedback || "").trim();
     const cycleId = String(body?.cycleId || "").trim();
+    const rawMode = body?.mode ?? "suggestion";
+    const mode = resolveAiMode(rawMode, profile.role);
 
     if (!feedback) {
       return Response.json({ error: "feedback is required." }, { status: 400 });
@@ -55,6 +58,7 @@ export async function POST(request) {
       cycleId,
       featureType: "checkin_summary",
       userRole: profile.role,
+      resolvedMode: mode,
     });
 
     const messages = [
@@ -66,6 +70,7 @@ export async function POST(request) {
           "Use a coaching communication style.",
           "Tone rules for rewritten text: supportive, clear, non-toxic, no HR jargon.",
           "Do not include markdown or extra keys.",
+          buildModeSystemSuffix(mode, profile.role),
         ].join(" "),
       },
       {
@@ -105,7 +110,7 @@ export async function POST(request) {
     const completion = await callOpenRouterWithUsage({
       messages,
       jsonMode: true,
-      maxTokens: 220,
+      maxTokens: mode === "decision_support" ? 2000 : 800,
     });
 
     const parsed = safeParseJson(completion.content);

@@ -45,7 +45,8 @@ export async function POST(request) {
     const cycleId = normalizeCycleId((body.cycleId || "").trim());
     const frameworkTypeInput = (body.frameworkType || "").trim();
     const dueDate = body.dueDate || null;
-    const lineageRef = body.lineageRef || "";
+    const lineageRefInput = String(body.lineageRef ?? "").trim();
+    const lineageRef = lineageRefInput || null;
     const aiSuggested = Boolean(body.aiSuggested);
     const weightage = toInt(body.weightage, 0);
     const parentGoalId = String(body.parentGoalId || "").trim() || null;

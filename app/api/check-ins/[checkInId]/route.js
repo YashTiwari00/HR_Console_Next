@@ -1,7 +1,12 @@
-import { appwriteConfig } from "@/lib/appwrite";
+import { appwriteConfig, milestoneEventsCollectionId } from "@/lib/appwrite";
 import { CHECKIN_STATUSES, GOAL_STATUSES } from "@/lib/appwriteSchema";
-import { Query, databaseId } from "@/lib/appwriteServer";
+import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { computeAndPersistEmployeeCycleScore, getCycleState } from "@/lib/finalRatings";
+import {
+  checkAndCreateMilestone,
+  computeCheckInStreak,
+  MILESTONE_TYPES,
+} from "@/lib/milestones";
 import { parseRatingInput } from "@/lib/ratings";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
@@ -136,6 +141,9 @@ export async function PATCH(request, context) {
     }
 
     let updated = checkIn;
+    const transitionedToCompleted =
+      String(checkIn.status || "").trim() !== CHECKIN_STATUSES.COMPLETED &&
+      nextStatus === CHECKIN_STATUSES.COMPLETED;
 
     if (checkIn.status !== CHECKIN_STATUSES.COMPLETED) {
       const updatePayload = {
@@ -171,6 +179,68 @@ export async function PATCH(request, context) {
 
         throw error;
       }
+    }
+
+    try {
+      const checkInsCollectionId = String(appwriteConfig.checkInsCollectionId || "").trim();
+      const cyclesCollectionId = String(appwriteConfig.goalCyclesCollectionId || "").trim();
+      const requestedCompleted = String(body?.status || "").trim() === CHECKIN_STATUSES.COMPLETED;
+      const employeeIdForMilestones = String(checkIn.employeeId || "").trim();
+
+      if (
+        process.env.NEXT_PUBLIC_ENABLE_GAMIFICATION === "true" &&
+        requestedCompleted &&
+        employeeIdForMilestones &&
+        transitionedToCompleted
+      ) {
+        const streakMilestoneMap = {
+          2: MILESTONE_TYPES.STREAK_2,
+          3: MILESTONE_TYPES.STREAK_3,
+          5: MILESTONE_TYPES.STREAK_5,
+          10: MILESTONE_TYPES.STREAK_10,
+        };
+
+        await Promise.allSettled([
+          checkAndCreateMilestone({
+            db: databases,
+            databaseId,
+            milestoneEventsCollectionId,
+            ID,
+            Query,
+            userId: employeeIdForMilestones,
+            milestoneType: MILESTONE_TYPES.CHECKIN_COMPLETED,
+            referenceId: String(checkInId || "").trim(),
+            cycleId: checkIn.cycleId ?? null,
+          }),
+          (async () => {
+            const { streak } = await computeCheckInStreak({
+              db: databases,
+              databaseId,
+              checkInsCollectionId,
+              cyclesCollectionId,
+              Query,
+              userId: employeeIdForMilestones,
+            });
+
+            if (streakMilestoneMap[streak]) {
+              await checkAndCreateMilestone({
+                db: databases,
+                databaseId,
+                milestoneEventsCollectionId,
+                ID,
+                Query,
+                userId: employeeIdForMilestones,
+                milestoneType: streakMilestoneMap[streak],
+                referenceId: employeeIdForMilestones,
+                cycleId: null,
+                cycleStreak: streak,
+              });
+            }
+          })(),
+        ]);
+      }
+    } catch (error) {
+      console.warn("[check-ins.patch] milestone side-effects failed:", error?.message || error);
     }
 
     if (isFinalCheckIn) {

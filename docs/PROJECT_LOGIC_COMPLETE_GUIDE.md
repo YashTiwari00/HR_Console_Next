@@ -4,7 +4,7 @@
 
 HR Console is a role-based Performance Management System (PMS) built with Next.js App Router and Appwrite.
 
-It supports five core personas:
+It supports four core personas:
 - Employee: create goals, submit progress updates, run check-ins, track timeline.
 - Manager: do own PMS activity plus review and approve team goals/check-ins.
 - HR: govern assignments, monitor quality/cadence, close cycles, enforce policy.
@@ -108,17 +108,22 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - auth/session
 - me
 - goals and approvals
+- goal library governance and search
 - progress updates
 - check-ins and HR check-in approvals
+- self-review lifecycle and reopen controls
 - team and manager assignments
 - HR governance and cycle close
 - analytics insights
+- decision intelligence and rating-drop analysis
 - leadership governance overview
 - attachments
 - AI features
 - Google OAuth token management
 - calendar/freebusy/events retrieval
-- meet request lifecycle and direct meeting creation
+- meet request lifecycle, intelligence, and transcript retrieval
+- notifications orchestration and read state
+- timeline and lifecycle aggregation
 
 ### 4.4 Shared libraries
 - `lib/appwrite.js`: client SDK instances + collection config.
@@ -273,6 +278,29 @@ Fields:
 - schedule: `proposedStartTime`, `proposedEndTime`, `scheduledStartTime`, `scheduledEndTime`, `timezone`
 - context: `title`, `description`, `managerNotes`
 - external links: `meetLink`, `eventId`
+
+## 6.13 goal_self_reviews
+Purpose: one employee self-review per goal per cycle, with draft/submit lifecycle and manager visibility.
+
+Fields:
+- linkage: `reviewKey`, `employeeId`, `goalId`, `cycleId`
+- content: `selfRatingValue`, `selfRatingLabel`, `selfComment`, `achievements`, `challenges`, `evidenceLinks[]`
+- structured content: `achievementsJson`, `challengesJson`
+- workflow: `status` in `{draft, submitted}`, `submittedAt`, `createdAt`, `updatedAt`
+
+Compatibility linkage:
+- goals may carry `selfReviewId`, `selfReviewStatus`, `selfReviewSubmittedAt`
+- final check-ins may carry `goalSelfReviewId`, `goalSelfReviewStatus`
+
+## 6.14 platform support collections (selected)
+Purpose: policy, intelligence, notifications, and governance capabilities.
+
+Examples:
+- `ai_policies`, `framework_policies`, `goal_kpi_library`
+- `rating_drop_insights`, `rating_drop_analysis`, `talent_snapshots`
+- `meeting_metadata`, `meeting_intelligence`, `meeting_intelligence_details`
+- `notification_templates`, `notification_jobs`, `notifications`, `notification_events`
+- `calibration_sessions`, `calibration_decisions`, `import_jobs`, `aop_documents`
 
 ---
 
@@ -634,6 +662,96 @@ Fields:
     - empty or malformed history returns safe default (`cycles: []`, `trendLabel: new`, `trendDeltaPercent: 0`)
     - stable threshold currently uses absolute delta percent <= 3
 
+  ### GET /api/analytics/decision-insights
+  - File: `app/api/analytics/decision-insights/route.js`
+  - Roles: manager, hr, leadership.
+  - Purpose: aggregated decision-intelligence metrics for approvals, check-ins, and execution quality signals.
+
+  ### GET /api/analytics/rating-drops
+  - File: `app/api/analytics/rating-drops/route.js`
+  - Roles: manager, hr, leadership.
+  - Purpose: identifies and summarizes rating-drop patterns and potential execution risks.
+
+## 7.14 Self-review APIs
+
+### GET /api/self-review
+- File: `app/api/self-review/route.js`
+- Roles: employee.
+- Purpose: returns goals + self-review rows for a cycle and editable state.
+
+### POST /api/self-review/save
+- File: `app/api/self-review/save/route.js`
+- Roles: employee.
+- Purpose: saves/updates per-goal self-review draft content with validation.
+- Rules:
+  - requires `cycleId` and `goalId`
+  - at least one meaningful field must be present
+  - submitted reviews are locked from editing
+
+### POST /api/self-review/submit
+- File: `app/api/self-review/submit/route.js`
+- Roles: employee.
+- Purpose: bulk-submits cycle self-review drafts when all required fields are present.
+- Side effects:
+  - marks eligible drafts as submitted
+  - updates goal/check-in linkage fields where schema supports them
+  - triggers manager and employee notifications
+
+## 7.15 Goal library, lineage, and import APIs
+
+### Goal library APIs
+- `/api/goal-library/search`
+- `/api/goal-library/pending`
+- `/api/goal-library/manager-create`
+- `/api/goal-library/leadership-create`
+- `/api/goal-library/hr-create`
+- `/api/goal-library/approve`
+
+### Goal lineage and tree APIs
+- `/api/goals/lineage`
+- `/api/goals/[goalId]/lineage`
+- `/api/goals/[goalId]/tree`
+- `/api/goals/cascade`
+- `/api/goals/[goalId]/cascade`
+- `/api/goals/[goalId]/children`
+
+### Goal import APIs
+- `/api/goals/import/template`
+- `/api/goals/import/preview`
+- `/api/goals/import/commit`
+
+## 7.16 Check-in operational extensions
+
+### Check-in import APIs
+- `/api/check-ins/import/template`
+- `/api/check-ins/import/preview`
+- `/api/check-ins/import/commit`
+
+### Manager check-in approvals
+- `/api/check-ins/manager-approvals`
+
+### Check-in self-review linkage APIs
+- `/api/check-ins/[checkInId]/self-review`
+- `/api/hr/check-ins/[checkInId]/self-review/reopen`
+
+## 7.17 Additional governance and integration APIs
+
+### HR cycle automation and AOP
+- `/api/hr/cycles/[cycleId]/auto-approval`
+- `/api/hr/aop`
+
+### Meeting intelligence and artifacts
+- `/api/meet-requests/[requestId]/chat`
+- `/api/meet-requests/[requestId]/download`
+- `/api/meet-requests/[requestId]/intelligence`
+- `/api/google/meet/transcript-webhook`
+
+### Notifications read-state utility
+- `/api/notifications/read-all`
+
+### Legacy leadership alias API
+- `/api/region-admin/overview`
+
 ---
 
 ## 8. Frontend role modules and their logic
@@ -672,6 +790,9 @@ Fields:
 ### Timeline (`app/employee/timeline/page.tsx`)
 - Lifecycle visualization with status narrative and ordering.
 
+### Matrix feedback (`app/employee/matrix-feedback/page.tsx`)
+- Displays matrix-reviewer feedback summaries and supporting comments.
+
 ## 8.2 Manager module
 
 ### Dashboard (`app/manager/page.tsx`)
@@ -684,6 +805,9 @@ Fields:
 
 ### Team progress/check-ins
 - Dedicated views for cross-team monitoring and action.
+
+### Matrix reviews (`app/manager/matrix-reviews/page.tsx`)
+- Manages reviewer assignments, feedback requests, and blended summary visibility.
 
 ### Meetings and calendar
 - `app/manager/meetings/page.tsx`: handles employee requests and manager direct scheduling.
@@ -710,6 +834,14 @@ Fields:
 
 ### HR check-ins (`app/hr/check-ins/page.tsx`)
 - Cadence and compliance monitoring.
+
+### HR strategic pages
+- `app/hr/9-box/page.tsx`: talent distribution and performance/potential banding.
+- `app/hr/ai-governance/page.tsx`: AI adoption, usage, and policy monitoring.
+- `app/hr/calibration/page.tsx`: calibration session workflows and decision capture.
+- `app/hr/notifications/page.tsx`: notification policy/job/feed management.
+- `app/hr/settings/page.tsx`: HR operational settings and controls.
+- `app/hr/team-analytics/page.tsx`: manager/team-level KPI analytics view.
 
 ### Manager drilldown (`app/hr/managers/[managerId]/page.tsx`)
 - Deep view for one manager's team and cycle health.
@@ -869,14 +1001,19 @@ Logic:
 ## 13.3 Smoke tests
 Commands:
 - `npm run test:trajectory`
+- `npm run test:rating-drop`
 - `npm run smoke:api`
+- `npm run smoke:self-review`
+- `npm run smoke:ai:bulk-goals`
 - `npm run smoke:ui`
 
 Logic:
 - trajectory script validates auth matrix and trend classification edge cases
+- rating-drop script validates analysis and message-generation behavior
 - creates sessions for seeded users
 - verifies happy paths and blocked paths
 - checks route reachability and permission boundaries
+- self-review smoke validates save/submit/reopen flows and compatibility writes
 - UI smoke accepts `/hr/team-assignments` as either direct `200` or redirect `307` based on current route behavior
 
 ---
@@ -900,8 +1037,28 @@ Logic:
 - NEXT_PUBLIC_EMPLOYEE_CYCLE_SCORES_COLLECTION_ID
 - NEXT_PUBLIC_MANAGER_CYCLE_RATINGS_COLLECTION_ID
 - NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID
+- NEXT_PUBLIC_GOAL_SELF_REVIEWS_COLLECTION_ID
+- NEXT_PUBLIC_AI_POLICIES_COLLECTION_ID
+- NEXT_PUBLIC_RATING_DROP_INSIGHTS_COLLECTION_ID
+- NEXT_PUBLIC_RATING_DROP_ANALYSIS_COLLECTION_ID
 - NEXT_PUBLIC_GOOGLE_TOKENS_COLLECTION_ID
 - NEXT_PUBLIC_GOOGLE_MEET_REQUESTS_COLLECTION_ID
+- NEXT_PUBLIC_MEETING_METADATA_COLLECTION_ID
+- NEXT_PUBLIC_MEETING_INTELLIGENCE_COLLECTION_ID
+- NEXT_PUBLIC_MEETING_INTELLIGENCE_DETAILS_COLLECTION_ID
+- NEXT_PUBLIC_NOTIFICATION_TEMPLATES_COLLECTION_ID
+- NEXT_PUBLIC_NOTIFICATION_JOBS_COLLECTION_ID
+- NEXT_PUBLIC_NOTIFICATIONS_COLLECTION_ID
+- NEXT_PUBLIC_NOTIFICATION_EVENTS_COLLECTION_ID
+- NEXT_PUBLIC_CALIBRATION_SESSIONS_COLLECTION_ID
+- NEXT_PUBLIC_CALIBRATION_DECISIONS_COLLECTION_ID
+- NEXT_PUBLIC_MATRIX_REVIEWER_ASSIGNMENTS_COLLECTION_ID
+- NEXT_PUBLIC_MATRIX_REVIEWER_FEEDBACK_COLLECTION_ID
+- NEXT_PUBLIC_FRAMEWORK_POLICIES_COLLECTION_ID
+- NEXT_PUBLIC_GOAL_KPI_LIBRARY_COLLECTION_ID
+- NEXT_PUBLIC_IMPORT_JOBS_COLLECTION_ID
+- NEXT_PUBLIC_TALENT_SNAPSHOTS_COLLECTION_ID
+- NEXT_PUBLIC_AOP_DOCUMENTS_COLLECTION_ID
 - NEXT_PUBLIC_ATTACHMENTS_BUCKET_ID
 
 ### 14.3 OAuth/public client options
@@ -937,6 +1094,7 @@ Logic:
 6. Meet request routes retry after stripping unknown attributes to survive partial schema rollout.
 7. Calendar + token flows surface actionable errors for missing OAuth env variables and missing refresh tokens.
 8. Trajectory endpoint and client normalize malformed score/timeline payloads and fall back to safe empty-state outputs.
+9. Self-review save/submit gracefully handles unknown linkage attributes on goals/check-ins during schema rollout.
 
 This makes deployments resilient while schema migration catches up.
 
@@ -958,14 +1116,23 @@ Use this explanation when presenting the project:
 - `/api/auth/onboarding`
 - `/api/me`
 - `/api/goals`
+- `/api/goals/cascade`
+- `/api/goals/lineage`
 - `/api/goals/[goalId]`
 - `/api/goals/[goalId]/submit`
+- `/api/goals/[goalId]/lineage`
+- `/api/goals/[goalId]/tree`
 - `/api/goals/feedback`
 - `/api/goals/for-employee`
 - `/api/approvals`
 - `/api/progress-updates`
 - `/api/check-ins`
 - `/api/check-ins/[checkInId]`
+- `/api/check-ins/[checkInId]/self-review`
+- `/api/check-ins/import/template`
+- `/api/check-ins/import/preview`
+- `/api/check-ins/import/commit`
+- `/api/check-ins/manager-approvals`
 - `/api/team-members`
 - `/api/team-assignments`
 - `/api/team-assignments/[employeeId]`
@@ -975,25 +1142,40 @@ Use this explanation when presenting the project:
 - `/api/hr/managers/[managerId]`
 - `/api/hr/checkin-approvals`
 - `/api/hr/cycles/[cycleId]/close`
+- `/api/hr/cycles/[cycleId]/auto-approval`
 - `/api/hr/roles/[userId]`
+- `/api/hr/aop`
 - `/api/analytics/employee-trajectory`
+- `/api/analytics/decision-insights`
+- `/api/analytics/rating-drops`
 - `/api/framework-policies`
 - `/api/timeline/[cycleId]`
 - `/api/timeline/lifecycle`
 - `/api/attachments`
 - `/api/attachments/[fileId]/download`
 - `/api/ai/chat`
+- `/api/ai/analyze-goals`
 - `/api/ai/goal-suggestion`
 - `/api/ai/checkin-summary`
 - `/api/ai/conversational-goals`
 - `/api/ai/checkin-agenda`
 - `/api/ai/checkin-intelligence`
+- `/api/ai/manager-feedback-analysis`
 - `/api/ai/usage`
+- `/api/goal-library/search`
+- `/api/goal-library/pending`
+- `/api/goal-library/manager-create`
+- `/api/goal-library/leadership-create`
+- `/api/goal-library/hr-create`
+- `/api/goal-library/approve`
 - `/api/goals/[goalId]/cascade`
 - `/api/goals/[goalId]/children`
 - `/api/goals/import/template`
 - `/api/goals/import/preview`
 - `/api/goals/import/commit`
+- `/api/self-review`
+- `/api/self-review/save`
+- `/api/self-review/submit`
 - `/api/matrix-reviewers/assignments`
 - `/api/matrix-reviewers/feedback`
 - `/api/matrix-reviewers/summary`
@@ -1002,15 +1184,19 @@ Use this explanation when presenting the project:
 - `/api/hr/calibration-sessions`
 - `/api/hr/calibration-sessions/[sessionId]/decisions`
 - `/api/hr/calibration-sessions/[sessionId]/timeline`
+- `/api/hr/check-ins/[checkInId]/self-review/reopen`
 - `/api/notifications/templates`
 - `/api/notifications/jobs`
 - `/api/notifications/scheduler`
 - `/api/notifications/feed`
 - `/api/notifications/events/[eventId]/read`
+- `/api/notifications/read-all`
 - `/api/leadership/overview`
 - `/api/leadership/succession`
+- `/api/region-admin/overview`
 - `/api/google/connect`
 - `/api/google/callback`
+- `/api/google/meet/transcript-webhook`
 - `/api/google/tokens`
 - `/api/google/tokens/status`
 - `/api/google/tokens/admin-upsert`
@@ -1019,6 +1205,9 @@ Use this explanation when presenting the project:
 - `/api/calendar/create-meeting`
 - `/api/meet-requests`
 - `/api/meet-requests/[requestId]`
+- `/api/meet-requests/[requestId]/chat`
+- `/api/meet-requests/[requestId]/download`
+- `/api/meet-requests/[requestId]/intelligence`
 
 ---
 

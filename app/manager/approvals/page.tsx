@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { GoalLineageCard, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Checkbox, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
 import { useManagerRole } from "@/src/lib/auth/useManagerRole";
 import { account } from "@/lib/appwrite";
@@ -318,6 +318,16 @@ export default function ManagerPage() {
                       <span className="caption">
                         Progress: {goal.progressPercent ?? goal.processPercent ?? 0}%
                       </span>
+                    </div>
+
+                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
+                      <p className="caption font-medium text-[var(--color-text)]">Goal Context</p>
+                      <p className="caption mt-1 text-[var(--color-text-muted)]">
+                        Contribution view before decision (read-only)
+                      </p>
+                      <div className="mt-2">
+                        <GoalLineageCard goalId={goal.$id} cycleId={goal.cycleId} compact />
+                      </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">

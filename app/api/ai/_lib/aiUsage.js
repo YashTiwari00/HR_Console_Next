@@ -266,59 +266,170 @@ function normalizeUsageResponse({
   };
 }
 
-async function updateUsageCount(databases, documentId, used) {
-  const payload = {
-    requestCount: used,
-    lastUsedAt: new Date().toISOString(),
-  };
+function buildMetadataWithMode(metadata, resolvedMode) {
+  const base = String(metadata || "{}").trim() || "{}";
+  if (!resolvedMode) return base;
 
   try {
-    await databases.updateDocument(
-      databaseId,
-      appwriteConfig.aiEventsCollectionId,
-      documentId,
-      payload
-    );
-  } catch (error) {
-    if (!isRequestCountTypeError(error)) {
+    const parsed = JSON.parse(base);
+    const next = {
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+      mode: String(resolvedMode || "").trim(),
+    };
+    return JSON.stringify(next);
+  } catch {
+    return JSON.stringify({ mode: String(resolvedMode || "").trim() });
+  }
+}
+
+async function updateUsageCount(databases, documentId, used, resolvedMode) {
+  let payload = {
+    requestCount: used,
+    lastUsedAt: new Date().toISOString(),
+    metadata: buildMetadataWithMode("{}", resolvedMode),
+  };
+
+  if (resolvedMode) {
+    payload.mode = String(resolvedMode || "").trim();
+  }
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await databases.updateDocument(
+        databaseId,
+        appwriteConfig.aiEventsCollectionId,
+        documentId,
+        payload
+      );
+      return;
+    } catch (error) {
+      if (isRequestCountTypeError(error)) {
+        payload = {
+          ...payload,
+          requestCount: String(used),
+        };
+        continue;
+      }
+
+      if (isMissingSchemaAttributeError(error)) {
+        const missingAttribute = getMissingAttributeName(error);
+        if (missingAttribute && missingAttribute in payload) {
+          const reduced = { ...payload };
+          delete reduced[missingAttribute];
+          payload = reduced;
+          continue;
+        }
+      }
+
       throw error;
     }
-
-    await databases.updateDocument(
-      databaseId,
-      appwriteConfig.aiEventsCollectionId,
-      documentId,
-      {
-        ...payload,
-        requestCount: String(used),
-      }
-    );
   }
 }
 
 async function createUsageRow(databases, payload) {
-  try {
-    await databases.createDocument(
-      databaseId,
-      appwriteConfig.aiEventsCollectionId,
-      ID.unique(),
-      payload
-    );
-  } catch (error) {
-    if (!isRequestCountTypeError(error)) {
+  let nextPayload = { ...payload };
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await databases.createDocument(
+        databaseId,
+        appwriteConfig.aiEventsCollectionId,
+        ID.unique(),
+        nextPayload
+      );
+      return;
+    } catch (error) {
+      if (isRequestCountTypeError(error)) {
+        nextPayload = {
+          ...nextPayload,
+          requestCount: String(nextPayload.requestCount),
+        };
+        continue;
+      }
+
+      if (isMissingSchemaAttributeError(error)) {
+        const missingAttribute = getMissingAttributeName(error);
+        if (missingAttribute && missingAttribute in nextPayload) {
+          const reducedPayload = { ...nextPayload };
+          delete reducedPayload[missingAttribute];
+          nextPayload = reducedPayload;
+          continue;
+        }
+      }
+
       throw error;
     }
-
-    await databases.createDocument(
-      databaseId,
-      appwriteConfig.aiEventsCollectionId,
-      ID.unique(),
-      {
-        ...payload,
-        requestCount: String(payload.requestCount),
-      }
-    );
   }
+}
+
+export async function checkUsageAndIncrement({
+  databases,
+  userId,
+  featureType,
+  cycleId,
+  cap = 3,
+}) {
+  const normalizedCap = Math.max(1, Math.floor(Number(cap) || 3));
+  const normalizedUserId = String(userId || "").trim();
+  const normalizedFeatureType = String(featureType || "").trim();
+  const normalizedCycleId = String(cycleId || "").trim();
+
+  if (!normalizedUserId || !normalizedFeatureType || !normalizedCycleId) {
+    return {
+      allowed: false,
+      count: 0,
+      cap: normalizedCap,
+    };
+  }
+
+  const queryResult = await databases.listDocuments(
+    databaseId,
+    appwriteConfig.aiEventsCollectionId,
+    [
+      Query.equal("userId", normalizedUserId),
+      Query.equal("cycleId", normalizedCycleId),
+      Query.equal("featureType", normalizedFeatureType),
+      Query.limit(1),
+    ]
+  );
+
+  const existing = queryResult.documents?.[0] || null;
+  const currentCount = Number(existing?.requestCount || 0);
+
+  if (existing && currentCount >= normalizedCap) {
+    return {
+      allowed: false,
+      count: currentCount,
+      cap: normalizedCap,
+    };
+  }
+
+  if (existing) {
+    const nextCount = currentCount + 1;
+    await updateUsageCount(databases, existing.$id, nextCount);
+    return {
+      allowed: true,
+      count: nextCount,
+      cap: normalizedCap,
+    };
+  }
+
+  await createUsageRow(databases, {
+    userId: normalizedUserId,
+    featureType: normalizedFeatureType,
+    cycleId: normalizedCycleId,
+    requestCount: 1,
+    lastUsedAt: new Date().toISOString(),
+    metadata: "{}",
+    tokensUsed: 0,
+    estimatedCost: 0,
+  });
+
+  return {
+    allowed: true,
+    count: 1,
+    cap: normalizedCap,
+  };
 }
 
 function normalizeCount(value) {
@@ -553,7 +664,7 @@ export async function getAiUsageOverview({ databases, cycleId, role }) {
   return overview;
 }
 
-export async function assertAndTrackAiUsage({ databases, userId, cycleId, featureType, userRole }) {
+export async function assertAndTrackAiUsage({ databases, userId, cycleId, featureType, userRole, resolvedMode }) {
   const policyConfig = await resolveAiPolicyConfig({
     databases,
     featureType,
@@ -584,7 +695,7 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
   if (existing) {
     const used = Number(existing.requestCount || 0) + 1;
 
-    await updateUsageCount(databases, existing.$id, used);
+    await updateUsageCount(databases, existing.$id, used, resolvedMode);
 
     return normalizeUsageResponse({
       cap,
@@ -605,7 +716,8 @@ export async function assertAndTrackAiUsage({ databases, userId, cycleId, featur
     cycleId,
     requestCount: 1,
     lastUsedAt: new Date().toISOString(),
-    metadata: "{}",
+    metadata: buildMetadataWithMode("{}", resolvedMode),
+    ...(resolvedMode ? { mode: String(resolvedMode || "").trim() } : {}),
     tokensUsed: 0,
     estimatedCost: 0,
   });

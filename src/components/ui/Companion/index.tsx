@@ -5,6 +5,8 @@ import Button from "../Button";
 import Card from "../Card";
 import Input from "../Input";
 import Spinner from "../Spinner";
+import AiModeToggle from "@/src/components/patterns/AiModeToggle";
+import { useAiMode } from "@/src/context/AiModeContext";
 
 /* ─── types ───────────────────────────────────────────────────────────── */
 
@@ -306,6 +308,7 @@ export default function Companion({ role, userName, theme = "default" }: Compani
   const t       = theme === "lp" ? LP : DEF;
   const steps   = TUTORIAL[role];
   const apiRole = API_ROLE[role];
+  const aiMode = useAiMode();
 
   /* mode & visibility */
   const [mode,      setMode]     = useState<AppMode>("tutorial");
@@ -405,10 +408,22 @@ export default function Companion({ role, userName, theme = "default" }: Compani
     setStatus("loading");
 
     try {
+      const requestContext = next.slice(-10).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       const res = await fetch("/api/ai/chat", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ messages: next, role: apiRole, userName }),
+        body:    JSON.stringify({
+          message: text,
+          role: apiRole,
+          context: requestContext,
+          mode: aiMode.mode,
+          messages: next,
+          userName,
+        }),
       });
 
       if (!res.body) throw new Error("No stream body");
@@ -703,7 +718,10 @@ export default function Companion({ role, userName, theme = "default" }: Compani
                   </p>
                 </div>
               </div>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <AiModeToggle />
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+              </div>
             </div>
 
             {/* messages */}

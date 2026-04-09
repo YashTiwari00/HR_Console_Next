@@ -7,11 +7,14 @@ import {
   BulkGoalAiReviewPanel,
   ConversationalGoalComposer,
   ExplainabilityDrawer,
+  GoalLineageCard,
   GoalLineageView,
   type GoalAiDraft,
   PageHeader,
 } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
+import { ContributionBadge } from "@/src/components/ui/ContributionBadge";
+import { useAiMode } from "@/src/context/AiModeContext";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
@@ -57,6 +60,7 @@ function getSuggestionSourceBadge(suggestion: GoalSuggestion | null): {
 }
 
 export default function EmployeeGoalsPage() {
+  const aiMode = useAiMode();
   const [mode, setMode] = useState<"form" | "ai">("form");
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -466,7 +470,7 @@ export default function EmployeeGoalsPage() {
         cycleId: goalForm.cycleId,
         frameworkType: goalForm.frameworkType,
         prompt: `${goalForm.title} ${goalForm.description}`.trim(),
-      });
+      }, aiMode.mode);
 
       setAiSuggestion(suggestions[0] || null);
       if (!suggestions[0]) {
@@ -627,6 +631,23 @@ export default function EmployeeGoalsPage() {
                   </div>
                   <p className="caption mt-1">{aiSuggestion.title}</p>
                   <p className="caption mt-1">{aiSuggestion.description}</p>
+                  {aiMode.mode === "decision_support" && (aiSuggestion.framework || aiSuggestion.weightageJustification || aiSuggestion.frameworkRationale) && (
+                    <div className="mt-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-2">
+                      {aiSuggestion.framework && (
+                        <p className="caption">Framework Recommendation: {aiSuggestion.framework}</p>
+                      )}
+                      {aiSuggestion.frameworkRationale && (
+                        <p className="caption mt-1">Framework Rationale: {aiSuggestion.frameworkRationale}</p>
+                      )}
+                      <p className="caption mt-1">Suggested Weightage: {aiSuggestion.weightage}%</p>
+                      {aiSuggestion.weightageJustification && (
+                        <p className="caption mt-1">Weightage Justification: {aiSuggestion.weightageJustification}</p>
+                      )}
+                      {aiSuggestion.aopAlignmentHint && (
+                        <p className="caption mt-1">AOP Alignment Hint: {aiSuggestion.aopAlignmentHint}</p>
+                      )}
+                    </div>
+                  )}
                   {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
                   {aiSuggestion.explainability && (
                     <div className="mt-2">
@@ -846,6 +867,50 @@ export default function EmployeeGoalsPage() {
                         </Button>
                       </>
                     )}
+                  </div>
+
+                  <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <p className="caption font-medium">Contribution to Business Target</p>
+                        <Tooltip
+                          content="Shows how your goal connects to your team and company targets"
+                          position="top"
+                        >
+                          <span
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
+                            aria-label="Contribution section help"
+                          >
+                            i
+                          </span>
+                        </Tooltip>
+                      </div>
+
+                      {(goal.status === "approved" || goal.status === "closed") && (
+                        <ContributionBadge
+                          badge={
+                            typeof goal.contributionPercent === "number"
+                              ? goal.contributionPercent >= 30
+                                ? "High"
+                                : goal.contributionPercent >= 15
+                                  ? "Medium"
+                                  : "Low"
+                              : "Low"
+                          }
+                          contributionPercent={typeof goal.contributionPercent === "number" ? goal.contributionPercent : 0}
+                          size="sm"
+                          showPercent
+                        />
+                      )}
+                    </div>
+
+                    <div className="mt-2">
+                      {(goal.status === "approved" || goal.status === "closed") ? (
+                        <GoalLineageCard goalId={goal.$id} cycleId={goal.cycleId} compact />
+                      ) : (
+                        <Badge variant="default">Contribution visible after approval</Badge>
+                      )}
+                    </div>
                   </div>
 
                   {feedbackByGoal[goal.$id] && (

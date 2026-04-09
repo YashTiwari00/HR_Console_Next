@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { ExplainabilityDrawer, PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, ContributionBadge } from "@/src/components/ui";
+import StreakBadge from "@/src/components/ui/StreakBadge";
 import {
   CheckInItem,
   DecisionInsightsData,
@@ -43,13 +45,26 @@ function toSafeDeltaPercent(value: number) {
 }
 
 export default function EmployeePage() {
+  const router = useRouter();
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [checkIns, setCheckIns] = useState<CheckInItem[]>([]);
+  const [businessImpactBadge, setBusinessImpactBadge] = useState<"Low" | "Medium" | "High" | null>(null);
+  const [businessImpactLinkedCount, setBusinessImpactLinkedCount] = useState(0);
+  const [businessImpactLoading, setBusinessImpactLoading] = useState(false);
+  const [businessImpactError, setBusinessImpactError] = useState("");
   const [trajectory, setTrajectory] = useState<EmployeeTrajectoryData | null>(null);
+  const [streakData, setStreakData] = useState<{ streak: number; cycleNames: string[] }>({
+    streak: 0,
+    cycleNames: [],
+  });
+  const [streakLoading, setStreakLoading] = useState(true);
   const [decisionInsights, setDecisionInsights] = useState<DecisionInsightsData | null>(null);
   const [insightsExplainabilityOpen, setInsightsExplainabilityOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const gamificationEnabled =
+    String(process.env.NEXT_PUBLIC_ENABLE_GAMIFICATION || "").trim().toLowerCase() === "true";
 
   function getPreferredCycleId(goalItems: GoalItem[]) {
     return String(goalItems.find((item) => String(item.cycleId || "").trim())?.cycleId || "").trim();
@@ -64,6 +79,7 @@ export default function EmployeePage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
+    setBusinessImpactError("");
 
     try {
       const [nextGoals, nextCheckIns, nextTrajectory, me] = await Promise.all([
@@ -76,6 +92,61 @@ export default function EmployeePage() {
       setCheckIns(nextCheckIns);
       setTrajectory(nextTrajectory);
 
+      const approvedGoals = nextGoals.filter(
+        (goal) => goal.status === "approved" || goal.status === "closed"
+      );
+
+      if (String(process.env.NEXT_PUBLIC_ENABLE_CONTRIBUTION_BADGE) === "true") {
+        if (approvedGoals.length === 0) {
+          setBusinessImpactBadge(null);
+          setBusinessImpactLinkedCount(0);
+        } else {
+          setBusinessImpactLoading(true);
+
+          const settled = await Promise.allSettled(
+            approvedGoals.map((goal) => fetch(`/api/goals/${encodeURIComponent(goal.$id)}/lineage`))
+          );
+
+          const rank: Record<"Low" | "Medium" | "High", number> = {
+            Low: 1,
+            Medium: 2,
+            High: 3,
+          };
+
+          let highestBadge: "Low" | "Medium" | "High" | null = null;
+          let linkedCount = 0;
+
+          for (const item of settled) {
+            if (item.status !== "fulfilled") continue;
+            if (!item.value.ok) continue;
+
+            try {
+              const payload = (await item.value.json()) as {
+                overallContributionBadge?: "Low" | "Medium" | "High";
+              };
+              const badge = payload?.overallContributionBadge;
+              if (badge === "Low" || badge === "Medium" || badge === "High") {
+                linkedCount += 1;
+                if (!highestBadge || rank[badge] > rank[highestBadge]) {
+                  highestBadge = badge;
+                }
+              }
+            } catch {
+              // Ignore malformed lineage payload and continue aggregation.
+            }
+          }
+
+          setBusinessImpactBadge(highestBadge);
+          setBusinessImpactLinkedCount(linkedCount);
+
+          if (linkedCount === 0) {
+            setBusinessImpactError("Could not load contribution data");
+          }
+
+          setBusinessImpactLoading(false);
+        }
+      }
+
       const employeeId = String(me?.profile?.$id || me?.user?.$id || "").trim();
       const cycleId = getPreferredCycleId(nextGoals);
 
@@ -85,12 +156,42 @@ export default function EmployeePage() {
       } else {
         setDecisionInsights(null);
       }
+
+      if (gamificationEnabled) {
+        setStreakLoading(true);
+        try {
+          const streakResponse = await fetch("/api/milestones/streak", { cache: "no-store" });
+          if (!streakResponse.ok) {
+            throw new Error("Failed to load streak");
+          }
+
+          const streakPayload = (await streakResponse.json()) as {
+            streak?: unknown;
+            cycleNames?: unknown;
+          };
+
+          setStreakData({
+            streak: Number(streakPayload?.streak) || 0,
+            cycleNames: Array.isArray(streakPayload?.cycleNames)
+              ? streakPayload.cycleNames.filter((name): name is string => typeof name === "string")
+              : [],
+          });
+        } catch {
+          setStreakData({ streak: 0, cycleNames: [] });
+        } finally {
+          setStreakLoading(false);
+        }
+      } else {
+        setStreakData({ streak: 0, cycleNames: [] });
+        setStreakLoading(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load employee overview.");
+      setBusinessImpactLoading(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [gamificationEnabled]);
 
   useEffect(() => {
     loadData();
@@ -136,6 +237,40 @@ export default function EmployeePage() {
         <Card title="Average Progress" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
           <p className="heading-xl">{loading ? "..." : `${averageProgress}%`}</p>
         </Card>
+
+        {process.env.NEXT_PUBLIC_ENABLE_GAMIFICATION === "true" && (
+          <Card title="Check-in Streak" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
+            <StreakBadge streak={streakData.streak} cycleNames={streakData.cycleNames} loading={streakLoading} />
+          </Card>
+        )}
+
+        {(() => {
+          if (process.env.NEXT_PUBLIC_ENABLE_CONTRIBUTION_BADGE !== "true") return null;
+
+          return (
+            <Card title="Business Impact" className="bg-[linear-gradient(160deg,var(--color-surface)_0%,var(--color-surface-muted)_100%)]">
+              {loading || businessImpactLoading ? (
+                <p className="heading-xl">...</p>
+              ) : businessImpactBadge ? (
+                <div className="space-y-2">
+                  <ContributionBadge
+                    badge={businessImpactBadge}
+                    contributionPercent={0}
+                    size="lg"
+                  />
+                  <p className="text-xs text-[var(--color-text-muted)]">Across {businessImpactLinkedCount} linked goals</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {businessImpactError && (
+                    <p className="text-xs text-[var(--color-text-muted)]">Could not load contribution data</p>
+                  )}
+                  <p className="text-xs text-[var(--color-text-muted)]">No linked targets yet</p>
+                </div>
+              )}
+            </Card>
+          );
+        })()}
       </Grid>
 
       {TRAJECTORY_CARD_ENABLED && (
@@ -273,6 +408,28 @@ export default function EmployeePage() {
           ))}
         </Stack>
       </Card>
+
+      {process.env.NEXT_PUBLIC_ENABLE_GROWTH_HUB === "true" && (
+        <Card className="rounded-xl border border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-primary-subtle),var(--color-surface-raised))]">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <h3 className="text-base font-semibold text-[var(--color-text)]">Explore your growth pathway</h3>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                See your career trajectory, skill gaps, and readiness for next steps.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => router.push('/employee/growth')}
+            >
+              View My Growth -&gt;
+            </Button>
+          </div>
+        </Card>
+      )}
     </Stack>
   );
 }

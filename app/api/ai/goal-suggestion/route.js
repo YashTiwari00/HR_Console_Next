@@ -6,6 +6,7 @@ import { callOpenRouterWithUsage } from "@/lib/openrouter";
 import { buildAiUsageDelta } from "@/lib/ai/costEstimation";
 import { getAOP } from "@/lib/aop/getAOP";
 import { getGoalLibraryTemplates } from "@/lib/services/goalLibraryService";
+import { buildModeSystemSuffix, resolveAiMode } from "@/lib/ai/modes.js";
 
 const VALID_FRAMEWORKS = Object.values(FRAMEWORK_TYPES);
 const MAX_AOP_PROMPT_CHARS = 4000;
@@ -62,19 +63,112 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-async function buildSuggestions({ databases, cycleId, frameworkType, profile, prompt }) {
+function isSchemaDriftError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("unknown attribute") || message.includes("could not be found") || message.includes("attribute not found in schema");
+}
+
+async function buildWeightageContext(databases, employeeId, cycleId) {
+  try {
+    const result = await databases.listDocuments(databaseId, appwriteConfig.goalsCollectionId, [
+      Query.equal("employeeId", employeeId),
+      Query.equal("cycleId", cycleId),
+      Query.orderDesc("$createdAt"),
+      Query.limit(50),
+    ]);
+
+    const rows = (result.documents || []).map((goal) => ({
+      title: String(goal?.title || "").trim(),
+      frameworkType: String(goal?.frameworkType || "").trim(),
+      weightage: Number(goal?.weightage || 0),
+      status: String(goal?.status || "").trim(),
+    }));
+
+    const numericWeights = rows
+      .map((row) => Number(row.weightage || 0))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    const totalAssignedWeightage = numericWeights.reduce((sum, value) => sum + value, 0);
+    const averageWeightage = numericWeights.length > 0
+      ? totalAssignedWeightage / numericWeights.length
+      : 0;
+
+    return {
+      totalAssignedWeightage: Number(totalAssignedWeightage.toFixed(2)),
+      averageWeightage: Number(averageWeightage.toFixed(2)),
+      existingGoals: rows.slice(0, 8),
+    };
+  } catch {
+    return {
+      totalAssignedWeightage: 0,
+      averageWeightage: 0,
+      existingGoals: [],
+    };
+  }
+}
+
+async function buildDepartmentAopHint(databases, department) {
+  const normalizedDepartment = String(department || "").trim();
+  if (!normalizedDepartment) return null;
+
+  try {
+    const result = await databases.listDocuments(databaseId, appwriteConfig.aopDocumentsCollectionId, [
+      Query.equal("department", normalizedDepartment),
+      Query.orderDesc("$createdAt"),
+      Query.limit(1),
+    ]);
+
+    const doc = result.documents?.[0];
+    if (!doc) return null;
+
+    const title = String(doc?.title || doc?.name || "Department AOP").trim() || "Department AOP";
+    const content = String(doc?.content || "").trim();
+    if (!content) return null;
+
+    const snippet = content.length > 500 ? `${content.slice(0, 500)}...` : content;
+    return `${title}: ${snippet}`;
+  } catch (error) {
+    if (isSchemaDriftError(error)) {
+      return null;
+    }
+    return null;
+  }
+}
+
+async function buildSuggestions({ databases, cycleId, frameworkType, profile, prompt, mode }) {
   const context = prompt?.trim() || "Improve execution quality and delivery confidence";
   const designation = profile.designation || profile.role || "professional";
+  const department = normalizeText(profile?.department);
   const aopContent = await getAOP(databases);
+  const departmentAopHint = await buildDepartmentAopHint(databases, department);
+  const weightageContext = await buildWeightageContext(databases, String(profile?.$id || "").trim(), cycleId);
   const aopPromptContext = buildAopPromptContext(aopContent);
-  const basePrompt = `Generate 3 goal suggestions for an employee with designation "${designation}" using the ${frameworkType} framework. Their intent: "${context}".
-Return ONLY this JSON shape (weightages must sum to 100):
+  const countInstruction = mode === "decision_support"
+    ? "Generate 3-4 goal suggestions"
+    : "Generate 1-2 concise goal suggestions";
+  const basePrompt = mode === "decision_support"
+    ? `${countInstruction} for an employee with designation "${designation}".
+Their intent: "${context}".
+Preferred framework from UI: ${frameworkType}, but you may select OKR/MBO/HYBRID per goal when justified.
+
+Use this cycle weightage context to justify each suggestion's weightage:
+${JSON.stringify(weightageContext, null, 2)}
+
+Department AOP alignment hint (if available):
+${departmentAopHint ? departmentAopHint : "No department-specific AOP document found."}
+
+Return ONLY this JSON shape:
+{"suggestions":[{"title":"...","description":"...","framework":"OKR|MBO|HYBRID","frameworkRationale":"...","weightage":30,"weightageJustification":"...","rationale":"...","aopAlignmentHint":"optional"}]}`
+    : `${countInstruction} for an employee with designation "${designation}" using the ${frameworkType} framework. Their intent: "${context}".
+Return ONLY this JSON shape:
 {"suggestions":[{"title":"...","description":"...","weightage":30,"rationale":"..."}]}`;
+
+  const modeSuffix = buildModeSystemSuffix(mode, profile.role);
 
   const messages = [
     {
       role: "system",
-      content: "You are a performance management expert. Respond with valid JSON only.",
+      content: `You are a performance management expert. Respond with valid JSON only.\n${modeSuffix}`,
     },
     {
       role: "user",
@@ -85,19 +179,38 @@ Return ONLY this JSON shape (weightages must sum to 100):
   const completion = await callOpenRouterWithUsage({
     messages,
     jsonMode: true,
+    maxTokens: mode === "decision_support" ? 2000 : 800,
   });
 
   const parsed = JSON.parse(completion.content);
-  const suggestions = (parsed.suggestions ?? []).map((s) => {
+  const maxSuggestions = mode === "decision_support" ? 4 : 2;
+  const suggestions = (parsed.suggestions ?? []).slice(0, maxSuggestions).map((s) => {
     const alignment = deriveAopAlignment(s, aopContent);
 
+    const framework = normalizeText(s?.framework || frameworkType).toUpperCase();
+    const frameworkValue = VALID_FRAMEWORKS.includes(framework) ? framework : frameworkType;
+    const weightage = Number.parseInt(String(s?.weightage || "0"), 10) || 0;
+
     return {
-      ...s,
+      title: normalizeText(s?.title),
+      description: normalizeText(s?.description),
+      weightage,
+      rationale: normalizeText(s?.rationale),
+      framework: mode === "decision_support" ? frameworkValue : undefined,
+      frameworkRationale: mode === "decision_support" ? normalizeText(s?.frameworkRationale) || undefined : undefined,
+      weightageJustification:
+        mode === "decision_support"
+          ? normalizeText(s?.weightageJustification) || undefined
+          : undefined,
+      aopAlignmentHint:
+        mode === "decision_support"
+          ? normalizeText(s?.aopAlignmentHint || alignment.aopReference) || undefined
+          : undefined,
       explainability: buildExplainability({
         source: "openrouter_llm",
         confidence: "high",
         whyFactors: [
-          s?.rationale,
+          normalizeText(s?.rationale),
           `Mapped to framework ${frameworkType}`,
           "Aligned with role-specific goal phrasing and measurable outcome style.",
           alignment.aopAligned ? alignment.aopReference : "",
@@ -126,10 +239,12 @@ export async function POST(request) {
     const cycleId = normalizeText(body.cycleId);
     const frameworkType = normalizeText(body.frameworkType);
     const prompt = normalizeText(body.prompt);
+    const rawMode = body?.mode ?? "suggestion";
     const contextRole = normalizeText(profile?.role);
     const contextDepartment = normalizeText(body?.department || profile?.department);
     const contextDomain = normalizeText(body?.domain || profile?.domain);
     const contextInputText = prompt;
+    const mode = resolveAiMode(rawMode, profile.role);
 
     if (!cycleId || !frameworkType) {
       return Response.json(
@@ -165,6 +280,7 @@ export async function POST(request) {
       cycleId,
       featureType: "goal_suggestion",
       userRole: profile.role,
+      resolvedMode: mode,
     });
 
     const { suggestions, usageDelta } = await buildSuggestions({
@@ -173,6 +289,7 @@ export async function POST(request) {
       frameworkType,
       profile,
       prompt,
+      mode,
     });
 
     const trackedUsage = await trackAiUsageCost({

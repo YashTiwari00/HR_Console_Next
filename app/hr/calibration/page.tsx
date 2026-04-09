@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { useAiMode } from "@/src/context/AiModeContext";
 import {
   CalibrationDecisionItem,
   CalibrationSessionItem,
@@ -19,6 +20,8 @@ import {
   getCycleIdFromDate,
 } from "@/app/employee/_lib/pmsClient";
 
+const DEEP_MODE_NUDGE_SESSION_KEY = "hr_console_deep_mode_nudge_shown";
+
 function statusVariant(status: string) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "active") return "info" as const;
@@ -32,9 +35,11 @@ function employeeNameById(map: Map<string, TeamMemberItem>, id: string | null | 
 }
 
 export default function HrCalibrationPage() {
+  const aiMode = useAiMode();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showDeepModeNudge, setShowDeepModeNudge] = useState(false);
 
   const [sessions, setSessions] = useState<CalibrationSessionItem[]>([]);
   const [members, setMembers] = useState<TeamMemberItem[]>([]);
@@ -196,6 +201,18 @@ export default function HrCalibrationPage() {
     loadSessionDetail(selectedSessionId);
   }, [selectedSessionId, loadSessionDetail]);
 
+  useEffect(() => {
+    try {
+      const alreadyShown = window.sessionStorage.getItem(DEEP_MODE_NUDGE_SESSION_KEY);
+      if (!alreadyShown && aiMode.mode === "suggestion") {
+        setShowDeepModeNudge(true);
+        window.sessionStorage.setItem(DEEP_MODE_NUDGE_SESSION_KEY, "1");
+      }
+    } catch {
+      // Ignore sessionStorage failures and continue without banner persistence.
+    }
+  }, [aiMode.mode]);
+
   async function handleCreateSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreatingSession(true);
@@ -250,7 +267,7 @@ export default function HrCalibrationPage() {
           ? Number.parseInt(decisionForm.finalRating, 10)
           : null,
         rationale: decisionForm.rationale,
-      });
+      }, aiMode.mode);
 
       setSuccess("Calibration decision recorded.");
       setDecisionForm((prev) => ({
@@ -282,6 +299,14 @@ export default function HrCalibrationPage() {
 
       {error && <Alert variant="error" title="Unable to continue" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
+      {showDeepModeNudge && (
+        <Alert
+          variant="info"
+          title="Deep Analysis Available"
+          description="Deep Analysis Mode gives richer insights on this page. Switch in the AI assistant above."
+          onDismiss={() => setShowDeepModeNudge(false)}
+        />
+      )}
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Create Session" description="Start a new calibration review window.">

@@ -13,7 +13,9 @@ import {
   NotificationBell,
 } from '@/src/components/ui';
 import { SidebarLayout, Stack } from '@/src/components/layout';
+import { MilestoneToastStack } from '@/src/components/patterns/MilestoneToastStack';
 import SidebarThemeToggle from '@/src/components/theme/SidebarThemeToggle';
+import { AiModeProvider } from '@/src/context/AiModeContext';
 import { logout } from '@/services/authService';
 import { fetchCurrentUserContext } from '@/app/employee/_lib/pmsClient';
 
@@ -21,7 +23,7 @@ interface EmployeeLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
+const baseNavItems = [
   { label: 'Dashboard',        href: '/employee',                   route: '/employee',                   tutorialId: 'nav-dashboard'        },
   { label: 'Goals Workspace',  href: '/employee/goals',             route: '/employee/goals',             tutorialId: 'nav-goals'            },
   { label: 'Progress Updates', href: '/employee/progress',          route: '/employee/progress',          tutorialId: 'nav-progress'         },
@@ -32,7 +34,7 @@ const navItems = [
   { label: 'Cycle Timeline',   href: '/employee/timeline',          route: '/employee/timeline',          tutorialId: 'nav-timeline'         },
 ];
 
-const quickActions = [
+const baseQuickActions = [
   { label: 'Create Draft Goal', href: '/employee/goals' },
   { label: 'Submit Progress Update', href: '/employee/progress' },
   { label: 'Plan Check-in', href: '/employee/check-ins' },
@@ -50,6 +52,50 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
   const [userName, setUserName] = useState('Employee User');
   const [userRole, setUserRole] = useState('employee');
   const [userDepartment, setUserDepartment] = useState('Engineering');
+
+  const gamificationEnabled = process.env.NEXT_PUBLIC_ENABLE_GAMIFICATION === 'true';
+  const growthHubEnabled = process.env.NEXT_PUBLIC_ENABLE_GROWTH_HUB === 'true';
+  const navItems = useMemo(() => {
+    const items = [...baseNavItems];
+
+    if (growthHubEnabled) {
+      const timelineIndex = items.findIndex((item) => item.route === '/employee/timeline');
+      const growthNavItem = {
+        label: 'My Growth',
+        href: '/employee/growth',
+        route: '/employee/growth',
+        tutorialId: 'nav-growth',
+        icon: (
+          <svg
+            className="h-5 w-5 shrink-0"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden="true"
+          >
+            <path d="M10 16V9.5M10 9.5c0-2.2 1.8-4 4-4v.8c0 2.2-1.8 4-4 4ZM10 9.5c0-2.2-1.8-4-4-4v.8c0 2.2 1.8 4 4 4Z" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ),
+      };
+
+      if (timelineIndex >= 0) {
+        items.splice(timelineIndex + 1, 0, growthNavItem);
+      } else {
+        items.push(growthNavItem);
+      }
+    }
+
+    return items;
+  }, [growthHubEnabled]);
+  const quickActions = useMemo(() => {
+    if (!growthHubEnabled) return baseQuickActions;
+
+    return [
+      ...baseQuickActions,
+      { label: 'Open Growth Hub', href: '/employee/growth' },
+    ];
+  }, [growthHubEnabled]);
 
   useEffect(() => {
     let active = true;
@@ -140,6 +186,7 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
                 : 'inline-flex w-full items-center justify-start gap-2 rounded-[var(--radius-md)] border border-transparent px-4 py-2 body-sm font-medium transition-colors duration-150 text-[var(--color-text)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'
             }
           >
+            {'icon' in item ? item.icon : null}
             {item.label}
           </Link>
           );
@@ -209,18 +256,21 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
   );
 
   return (
-    <>
-      <SidebarLayout sidebar={sidebar} sidebarWidth="min(300px, 82vw)">
-        <div className="min-h-full bg-[linear-gradient(180deg,var(--color-bg)_0%,var(--color-surface)_100%)]">
-          <div className="mx-auto w-full max-w-7xl px-[var(--space-3)] py-[var(--space-4)] md:px-[var(--space-5)] md:py-[var(--space-5)]">
-            <div className="mb-[var(--space-3)] flex justify-end">
-              <NotificationBell />
+    <AiModeProvider role="employee">
+      <>
+        <SidebarLayout sidebar={sidebar} sidebarWidth="min(300px, 82vw)">
+          <div className="min-h-full bg-[linear-gradient(180deg,var(--color-bg)_0%,var(--color-surface)_100%)]">
+            <div className="mx-auto w-full max-w-7xl px-[var(--space-3)] py-[var(--space-4)] md:px-[var(--space-5)] md:py-[var(--space-5)]">
+              <div className="mb-[var(--space-3)] flex justify-end">
+                <NotificationBell />
+              </div>
+              {children}
+              <MilestoneToastStack enabled={gamificationEnabled} />
             </div>
-            {children}
           </div>
-        </div>
-      </SidebarLayout>
-      <Companion role="employee" userName={userName} />
-    </>
+        </SidebarLayout>
+        <Companion role="employee" userName={userName} />
+      </>
+    </AiModeProvider>
   );
 }

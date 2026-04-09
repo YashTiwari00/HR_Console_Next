@@ -1,6 +1,7 @@
-import { appwriteConfig } from "@/lib/appwrite";
+import { appwriteConfig, milestoneEventsCollectionId } from "@/lib/appwrite";
 import { GOAL_STATUSES, RAG_STATUSES } from "@/lib/appwriteSchema";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
+import { checkAndCreateMilestone, MILESTONE_TYPES } from "@/lib/milestones";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
@@ -179,6 +180,8 @@ export async function POST(request) {
       goalId
     );
 
+    const previousProgressPercent = toInt(goal.progressPercent, 0);
+
     if (goal.employeeId !== profile.$id) {
       return Response.json({ error: "Forbidden for this goal." }, { status: 403 });
     }
@@ -211,6 +214,36 @@ export async function POST(request) {
       goalId,
       goalPatch
     );
+
+    try {
+      if (process.env.NEXT_PUBLIC_ENABLE_GAMIFICATION === "true") {
+        const milestonesCollectionId = String(milestoneEventsCollectionId || "").trim();
+        const thresholds = [25, 50, 75, 100];
+        const previousPct = Number(goal.progressPercent ?? 0);
+        const newPct = Number(body.percentComplete);
+        const crossed = thresholds.filter((t) => previousPct < t && newPct >= t);
+
+        if (milestonesCollectionId && crossed.length > 0) {
+          await Promise.allSettled(
+            crossed.map((threshold) =>
+              checkAndCreateMilestone({
+                db: databases,
+                databaseId,
+                milestoneEventsCollectionId: milestonesCollectionId,
+                ID,
+                Query,
+                userId: profile.$id,
+                milestoneType: MILESTONE_TYPES[`PROGRESS_${threshold}`],
+                referenceId: goalId,
+                cycleId: goal.cycleId,
+              })
+            )
+          );
+        }
+      }
+    } catch (error) {
+      console.warn("[progress-updates.post] milestone side-effect failed:", error?.message || error);
+    }
 
     return Response.json({ data: { progress, goal: updatedGoal } }, { status: 201 });
   } catch (error) {

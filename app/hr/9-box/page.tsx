@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
+import { AiModeToggle, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input } from "@/src/components/ui";
+import { useAiMode } from "@/src/context/AiModeContext";
 import { HrNineBoxSnapshot, fetchHrNineBoxSnapshot } from "@/app/employee/_lib/pmsClient";
+
+const DEEP_MODE_NUDGE_SESSION_KEY = "hr_console_deep_mode_nudge_shown";
 
 const PERFORMANCE_ORDER = ["high", "medium", "low"] as const;
 const POTENTIAL_ORDER = ["high", "medium", "low"] as const;
@@ -16,8 +19,10 @@ function toneForCell(count: number) {
 }
 
 export default function HrNineBoxPage() {
+  const aiMode = useAiMode();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showDeepModeNudge, setShowDeepModeNudge] = useState(false);
   const [cycleId, setCycleId] = useState("");
   const [department, setDepartment] = useState("");
   const [snapshot, setSnapshot] = useState<HrNineBoxSnapshot>({
@@ -35,18 +40,30 @@ export default function HrNineBoxPage() {
       const data = await fetchHrNineBoxSnapshot({
         cycleId: cycleId.trim() || undefined,
         department: department.trim() || undefined,
-      });
+      }, aiMode.mode);
       setSnapshot(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load 9-box snapshot.");
     } finally {
       setLoading(false);
     }
-  }, [cycleId, department]);
+  }, [aiMode.mode, cycleId, department]);
 
   useEffect(() => {
     loadSnapshot();
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    try {
+      const alreadyShown = window.sessionStorage.getItem(DEEP_MODE_NUDGE_SESSION_KEY);
+      if (!alreadyShown && aiMode.mode === "suggestion") {
+        setShowDeepModeNudge(true);
+        window.sessionStorage.setItem(DEEP_MODE_NUDGE_SESSION_KEY, "1");
+      }
+    } catch {
+      // Ignore sessionStorage failures and continue without banner persistence.
+    }
+  }, [aiMode.mode]);
 
   const matrixMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -69,6 +86,27 @@ export default function HrNineBoxPage() {
       />
 
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
+
+      <Card
+        title="AI Analysis Mode"
+        description="Switch analysis depth for this page without opening the AI assistant panel."
+      >
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="caption">
+            Current mode: <span className="font-medium text-[var(--color-text)]">{aiMode.mode === "decision_support" ? "Deep Analysis" : "Suggestion"}</span>
+          </p>
+          <AiModeToggle />
+        </div>
+      </Card>
+
+      {showDeepModeNudge && (
+        <Alert
+          variant="info"
+          title="Deep Analysis Available"
+          description="Deep Analysis Mode gives richer insights on this page. Use the AI Analysis Mode switch above."
+          onDismiss={() => setShowDeepModeNudge(false)}
+        />
+      )}
 
       <Card title="Filters" description="Optional cycle and department filters.">
         <div className="grid gap-3 md:grid-cols-3">
@@ -104,6 +142,54 @@ export default function HrNineBoxPage() {
           <p className="heading-xl">{loading ? "..." : snapshot.readinessCounts.emerging}</p>
         </Card>
       </Grid>
+
+      {aiMode.mode === "decision_support" && snapshot.decisionSupport && (
+        <Card
+          title="Deep Analysis Insights"
+          description="Decision-support signals generated for HR calibration and succession planning."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <p className="caption mb-2">Risk Departments</p>
+              <div className="space-y-2">
+                {(snapshot.decisionSupport.riskDepartments || []).slice(0, 5).map((row) => (
+                  <div key={row.department} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-2">
+                    <p className="body-sm font-medium text-[var(--color-text)]">{row.department}</p>
+                    <p className="caption">Bench Strength: {row.benchStrengthPct}%</p>
+                    <p className="caption">Low Performance: {row.lowPerformancePct}%</p>
+                  </div>
+                ))}
+                {(snapshot.decisionSupport.riskDepartments || []).length === 0 && (
+                  <p className="caption">No high-risk departments detected for current filter.</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="caption mb-2">Highest Density Cells</p>
+              <div className="space-y-2">
+                {(snapshot.decisionSupport.highestDensityCells || []).map((row) => (
+                  <div key={row.boxKey} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] p-2">
+                    <p className="body-sm font-medium text-[var(--color-text)]">{row.boxKey.replace("_", " / ")}</p>
+                    <p className="caption">Count: {row.count}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="caption mb-2">Recommended Actions</p>
+              <div className="space-y-2">
+                {(snapshot.decisionSupport.recommendations || []).map((item) => (
+                  <p key={item} className="caption rounded-[var(--radius-sm)] border border-[var(--color-border)] p-2">
+                    {item}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card title="9-Box Matrix" description="Potential by performance distribution.">
         <div className="overflow-x-auto">

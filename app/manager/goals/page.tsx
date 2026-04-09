@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
 import { BulkGoalAiReviewPanel, ExplainabilityDrawer, GoalLineageView, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
+import { useAiMode } from "@/src/context/AiModeContext";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
@@ -31,6 +32,7 @@ const frameworkOptions = [
 ];
 
 export default function ManagerGoalsPage() {
+  const aiMode = useAiMode();
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -537,7 +539,7 @@ export default function ManagerGoalsPage() {
         cycleId: goalForm.cycleId,
         frameworkType: goalForm.frameworkType,
         prompt: `${goalForm.title} ${goalForm.description}`.trim(),
-      });
+      }, aiMode.mode);
 
       setAiSuggestion(suggestions[0] || null);
       if (!suggestions[0]) {
@@ -642,6 +644,23 @@ export default function ManagerGoalsPage() {
                 <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
                 <p className="caption mt-1">{aiSuggestion.title}</p>
                 <p className="caption mt-1">{aiSuggestion.description}</p>
+                {aiMode.mode === "decision_support" && (aiSuggestion.framework || aiSuggestion.weightageJustification || aiSuggestion.frameworkRationale) && (
+                  <div className="mt-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-2">
+                    {aiSuggestion.framework && (
+                      <p className="caption">Framework Recommendation: {aiSuggestion.framework}</p>
+                    )}
+                    {aiSuggestion.frameworkRationale && (
+                      <p className="caption mt-1">Framework Rationale: {aiSuggestion.frameworkRationale}</p>
+                    )}
+                    <p className="caption mt-1">Suggested Weightage: {aiSuggestion.weightage}%</p>
+                    {aiSuggestion.weightageJustification && (
+                      <p className="caption mt-1">Weightage Justification: {aiSuggestion.weightageJustification}</p>
+                    )}
+                    {aiSuggestion.aopAlignmentHint && (
+                      <p className="caption mt-1">AOP Alignment Hint: {aiSuggestion.aopAlignmentHint}</p>
+                    )}
+                  </div>
+                )}
                 {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
                 {aiSuggestion.explainability && (
                   <div className="mt-2">

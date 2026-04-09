@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import TrainingNeedsSummaryCard from "@/src/components/patterns/TrainingNeedsSummaryCard";
+import TrainingNeedsTable from "@/src/components/patterns/TrainingNeedsTable";
 import { Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader, RatingDropWarningSection } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
@@ -58,6 +60,7 @@ export default function HrDashboardPage() {
   const [error, setError] = useState("");
   const [pendingTemplates, setPendingTemplates] = useState<PendingKpiTemplateItem[]>([]);
   const [approvingTemplateId, setApprovingTemplateId] = useState("");
+  const [showTNA, setShowTNA] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -147,6 +150,57 @@ export default function HrDashboardPage() {
       ),
     [rows]
   );
+
+  const tnaSummary = useMemo(() => {
+    const scopedGoals = (() => {
+      if (!selectedManager) {
+        return orgGoals;
+      }
+
+      const teamIds = new Set(selectedManager.teamMembers.map((member) => String(member.$id || "").trim()));
+      if (teamIds.size === 0) {
+        return [] as OrgGoalItem[];
+      }
+
+      return orgGoals.filter((goal) => {
+        const employeeId = String(goal.employeeId || "").trim();
+        return employeeId ? teamIds.has(employeeId) : false;
+      });
+    })();
+
+    const weakGoals = scopedGoals.filter((goal) => {
+      const rating = Number(goal.managerFinalRating || 0);
+      return rating === 1 || rating === 2;
+    });
+
+    const impactedEmployees = new Set(
+      weakGoals.map((goal) => String(goal.employeeId || "").trim()).filter(Boolean)
+    );
+
+    const areaCounts = new Map<string, number>();
+    weakGoals.forEach((goal) => {
+      const area = String(goal.frameworkType || "").trim() || "General Development";
+      areaCounts.set(area, (areaCounts.get(area) || 0) + 1);
+    });
+
+    const topWeakArea = Array.from(areaCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "Not enough data yet";
+
+    const cycleCounts = new Map<string, number>();
+    weakGoals.forEach((goal) => {
+      const cycle = String(goal.cycleId || "").trim();
+      if (!cycle) return;
+      cycleCounts.set(cycle, (cycleCounts.get(cycle) || 0) + 1);
+    });
+
+    const cycleLabel = Array.from(cycleCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || undefined;
+
+    return {
+      totalEmployees: impactedEmployees.size,
+      totalWeakGoals: weakGoals.length,
+      topWeakArea,
+      cycleLabel,
+    };
+  }, [orgGoals, selectedManager]);
 
   const columns = useMemo<DataTableColumn<HrManagerRow>[]>(
     () => [
@@ -522,6 +576,31 @@ export default function HrDashboardPage() {
         items={orgRatingDropInsights}
         initialVisibleCount={4}
       />
+
+      <section className="mt-8">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-[var(--color-text)]">Training Needs Analysis</h2>
+          <Button variant="secondary" size="sm" onClick={() => setShowTNA((prev) => !prev)}>
+            {showTNA ? "Hide Analysis" : "View Full Analysis"}
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-[var(--space-3)]">
+          <TrainingNeedsSummaryCard
+            totalEmployees={tnaSummary.totalEmployees}
+            totalWeakGoals={tnaSummary.totalWeakGoals}
+            cycleLabel={tnaSummary.cycleLabel}
+            topWeakArea={tnaSummary.topWeakArea}
+            onViewFullAnalysis={() => setShowTNA(true)}
+          />
+          {showTNA ? (
+            <TrainingNeedsTable
+              cycleId={undefined}
+              managerId={selectedManagerId || undefined}
+            />
+          ) : null}
+        </div>
+      </section>
 
       <Card title="Organization Progress Heat Map" description="Latest RAG state by employee and goal across all departments (including managers).">
         <Stack gap="3">

@@ -5,6 +5,7 @@ const DEFAULT_CAPS = {
   goal_suggestion: 3,
   checkin_summary: 3,
   goal_analysis: 3,
+  growth_hub: 3,
   meeting_intelligence: 8,
   meeting_qa: 20,
 };

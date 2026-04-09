@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { PCDLoader } from "three/addons/loaders/PCDLoader.js";
 import ChatBot from "@/src/components/ui/ChatBot";
+import { AiModeProvider } from "@/src/context/AiModeContext";
 
 /* ─── styles ─────────────────────────────────────────────────────────────── */
 
@@ -876,7 +877,9 @@ export default function Home() {
       <div ref={dotRef} className="lp-cursor-dot" />
       <div ref={ringRef} className="lp-cursor-ring" />
     </div>
-    <ChatBot role="guest" theme="lp" />
+    <AiModeProvider role="guest">
+      <ChatBot role="guest" theme="lp" />
+    </AiModeProvider>
     </>
   );
 }
