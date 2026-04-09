@@ -1,0 +1,57 @@
+name: hr-console
+
+services:
+
+  # ─── Development ────────────────────────────────────────────────────────────
+  dev:
+    profiles: [dev]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      - .:/app                      # live source sync → hot reload
+      - node_modules:/app/node_modules  # keep container's node_modules isolated
+    restart: unless-stopped
+
+  # ─── Production ─────────────────────────────────────────────────────────────
+  prod:
+    profiles: [prod]
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        # NEXT_PUBLIC_* must be baked into the bundle at build time
+        NEXT_PUBLIC_APPWRITE_ENDPOINT: ${NEXT_PUBLIC_APPWRITE_ENDPOINT}
+        NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${NEXT_PUBLIC_APPWRITE_PROJECT_ID}
+        NEXT_PUBLIC_DATABASE_ID: ${NEXT_PUBLIC_DATABASE_ID}
+        NEXT_PUBLIC_USERS_COLLECTION_ID: ${NEXT_PUBLIC_USERS_COLLECTION_ID}
+        NEXT_PUBLIC_GOALS_COLLECTION_ID: ${NEXT_PUBLIC_GOALS_COLLECTION_ID}
+        NEXT_PUBLIC_GOAL_APPROVALS_COLLECTION_ID: ${NEXT_PUBLIC_GOAL_APPROVALS_COLLECTION_ID}
+        NEXT_PUBLIC_CHECK_INS_COLLECTION_ID: ${NEXT_PUBLIC_CHECK_INS_COLLECTION_ID}
+        NEXT_PUBLIC_PROGRESS_UPDATES_COLLECTION_ID: ${NEXT_PUBLIC_PROGRESS_UPDATES_COLLECTION_ID}
+        NEXT_PUBLIC_GOAL_CYCLES_COLLECTION_ID: ${NEXT_PUBLIC_GOAL_CYCLES_COLLECTION_ID}
+        NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID: ${NEXT_PUBLIC_AI_EVENTS_COLLECTION_ID}
+        NEXT_PUBLIC_ATTACHMENTS_BUCKET_ID: ${NEXT_PUBLIC_ATTACHMENTS_BUCKET_ID}
+        NEXT_PUBLIC_OAUTH_SUCCESS_URL: ${NEXT_PUBLIC_OAUTH_SUCCESS_URL}
+        NEXT_PUBLIC_OAUTH_FAILURE_URL: ${NEXT_PUBLIC_OAUTH_FAILURE_URL}
+        NEXT_PUBLIC_APP_ORIGIN: ${NEXT_PUBLIC_APP_ORIGIN}
+    ports:
+      - "3000:3000"
+    environment:
+      # Server-side secrets — injected at runtime, never baked into the image
+      - APPWRITE_API_KEY=${APPWRITE_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  node_modules:
