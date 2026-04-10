@@ -2,7 +2,7 @@
 
 This runbook helps you finish two prerequisites:
 1. Connect Google Calendar for seeded users.
-2. Enable Resend for notification emails.
+2. Enable Gmail SMTP for notification emails.
 
 ## 1) Required environment variables
 
@@ -15,11 +15,9 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/google/callback
 NEXT_PUBLIC_APP_ORIGIN=http://localhost:3000
 
-# Resend Email
-RESEND_API_KEY=...
-NOTIFICATION_EMAIL_FROM=Times HR <onboarding@your-domain.com>
-# Optional:
-NOTIFICATION_EMAIL_REPLY_TO=hr@your-domain.com
+# Notification Email (Gmail SMTP)
+EMAIL_USER=your-gmail-account@gmail.com
+EMAIL_PASS=your-gmail-app-password
 ```
 
 ## 2) Google Cloud Console setup
@@ -61,13 +59,13 @@ npm run smoke:api
    - `POST /api/notifications/scheduler`
 3. Check notification jobs in HR Notifications page:
    - status should move from `pending` to `sent`.
-4. Check inbox and/or Resend dashboard for delivered email.
+4. Check inbox for delivered email.
 
 ## Common failures
 
 - `Google Calendar is not connected...`
   - User has not completed OAuth flow for that account.
-- `Resend delivery failed` in notification jobs:
-  - Check `RESEND_API_KEY`, sender domain verification, and `NOTIFICATION_EMAIL_FROM`.
+- `Email delivery failed` in notification jobs:
+   - Check `EMAIL_USER` and `EMAIL_PASS` and verify Gmail app-password access is enabled.
 - No emails sent but in-app notifications appear:
   - Ensure scheduler is being run and email jobs exist in `notification_jobs`.

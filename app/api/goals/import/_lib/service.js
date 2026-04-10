@@ -62,6 +62,34 @@ function validateNormalizedRow(input) {
   return errors;
 }
 
+async function getExistingCycleNames(databases, cycleIds) {
+  const validNames = new Set();
+  const uniqueCycleIds = Array.from(
+    new Set((Array.isArray(cycleIds) ? cycleIds : []).map((item) => String(item || "").trim()).filter(Boolean))
+  );
+
+  for (const cycleId of uniqueCycleIds) {
+    try {
+      const result = await databases.listDocuments(databaseId, appwriteConfig.goalCyclesCollectionId, [
+        Query.equal("name", cycleId),
+        Query.limit(1),
+      ]);
+
+      if ((result.documents || []).length > 0) {
+        validNames.add(cycleId);
+      }
+    } catch (error) {
+      const err = new Error(
+        String(error?.message || "Unable to validate cycleId against goal cycles.")
+      );
+      err.statusCode = Number(error?.statusCode || error?.code || 500);
+      throw err;
+    }
+  }
+
+  return validNames;
+}
+
 export function getImportTemplateCsv() {
   const sample = [
     "seed.employee.01-id,Improve customer retention by 8%,Deliver measurable retention outcomes for key segment,OKR,30,Q2-2026,2026-06-20T00:00:00.000Z,team-objective-1,true,",
@@ -83,12 +111,20 @@ export async function previewImportRows({ databases, profile, rows, fallbackCycl
   const normalizedRows = (Array.isArray(rows) ? rows : []).map((row) =>
     normalizeRow(row, fallbackCycleId)
   );
+  const existingCycleNames = await getExistingCycleNames(
+    databases,
+    normalizedRows.map((row) => row.cycleId)
+  );
 
   const previewRows = [];
 
   for (let index = 0; index < normalizedRows.length; index += 1) {
     const row = normalizedRows[index];
     const errors = validateNormalizedRow(row);
+
+    if (row.cycleId && !existingCycleNames.has(row.cycleId)) {
+      errors.push("cycleId is invalid");
+    }
 
     if (row.frameworkType) {
       try {
@@ -277,6 +313,8 @@ export async function createImportJob({
   templateVersion,
   previewResult,
   commitResult,
+  sourceType,
+  sourceUrl,
 }) {
   return createImportJobCompat(databases, {
     createdBy: String(profile?.$id || "").trim(),
@@ -296,6 +334,8 @@ export async function createImportJob({
       },
       commit: commitResult || null,
     }),
+    sourceType: String(sourceType || "").trim() || undefined,
+    sourceUrl: String(sourceUrl || "").trim() || undefined,
     createdAt: new Date().toISOString(),
     committedAt: status === IMPORT_JOB_STATUSES.COMMITTED ? new Date().toISOString() : null,
   });

@@ -14,19 +14,39 @@ function normalizedIdempotencyKey(request, body) {
   return fromHeader || fromBody;
 }
 
+function normalizeSourceType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "excel" || raw === "google_sheet") return raw;
+  return null;
+}
+
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
     requireRole(profile, ["employee", "manager", "hr"]);
     const body = await request.json().catch(() => ({}));
 
-    const rows = Array.isArray(body?.rows) ? body.rows : [];
+    const rows = Array.isArray(body?.rows)
+      ? body.rows
+      : Array.isArray(body?.data)
+      ? body.data
+      : [];
     const cycleId = String(body?.cycleId || "").trim();
     const idempotencyKey = normalizedIdempotencyKey(request, body);
+    const sourceType = normalizeSourceType(body?.sourceType);
+    const sourceUrl = String(body?.sourceUrl || "").trim();
 
     if (!idempotencyKey) {
       return NextResponse.json(
         { error: "x-idempotency-key header (or idempotencyKey body field) is required" },
+        { status: 400 }
+      );
+    }
+
+    if (sourceType === null) {
+      return NextResponse.json(
+        { error: "sourceType must be one of: excel, google_sheet" },
         { status: 400 }
       );
     }
@@ -84,6 +104,8 @@ export async function POST(request) {
       templateVersion: String(body?.templateVersion || "v1"),
       previewResult: preview,
       commitResult,
+      sourceType: sourceType || undefined,
+      sourceUrl: sourceUrl || undefined,
     });
 
     return NextResponse.json(

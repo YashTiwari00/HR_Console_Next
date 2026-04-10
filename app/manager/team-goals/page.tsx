@@ -5,24 +5,23 @@ import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Grid, Stack } from "@/src/components/layout";
 import {
-  BulkGoalAiReviewPanel,
   GoalLineageCard,
   GoalLineageView,
-  type GoalAiDraft,
   PageHeader,
 } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import {
-  BulkGoalAnalysisItem,
-  BulkGoalInput,
-  createTeamGoal,
+  commitBulkGoalsImport,
+  type BulkGoalImportPreviewRow,
+  type BulkGoalImportRowInput,
   fetchGoals,
   fetchMe,
   fetchTeamMembers,
   getCycleIdFromDate,
-  getBulkGoalAnalysis,
   GoalItem,
   goalStatusVariant,
+  previewGoalsImport,
+  previewBulkGoalsImport,
   TeamMemberItem,
   updateGoal,
 } from "@/app/employee/_lib/pmsClient";
@@ -38,6 +37,8 @@ interface TeamBulkGoalRow {
   description: string;
   weight: number;
 }
+
+type BulkImportSource = "excel" | "google_sheet";
 
 const frameworkOptions = [
   { value: "OKR", label: "OKR" },
@@ -63,14 +64,16 @@ export default function ManagerTeamGoalsPage() {
   const [bulkCycleId, setBulkCycleId] = useState(getCycleIdFromDate());
   const [bulkFrameworkType, setBulkFrameworkType] = useState("OKR");
   const [bulkDueDate, setBulkDueDate] = useState("");
+  const [bulkSourceType, setBulkSourceType] = useState<BulkImportSource>("excel");
+  const [bulkGoogleSheetUrl, setBulkGoogleSheetUrl] = useState("");
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkFileName, setBulkFileName] = useState("");
-  const [bulkFallbackUsed, setBulkFallbackUsed] = useState(false);
   const [bulkError, setBulkError] = useState("");
-  const [bulkSourceRows, setBulkSourceRows] = useState<TeamBulkGoalRow[]>([]);
-  const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
-  const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [bulkPreviewRows, setBulkPreviewRows] = useState<BulkGoalImportPreviewRow[]>([]);
+  const [bulkCommitRows, setBulkCommitRows] = useState<BulkGoalImportRowInput[]>([]);
+  const [bulkPreviewMeta, setBulkPreviewMeta] = useState({ total: 0, valid: 0, invalid: 0 });
   const [currentUserId, setCurrentUserId] = useState("");
 
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
@@ -174,6 +177,15 @@ export default function ManagerTeamGoalsPage() {
       .filter((item) => item.employeeId && item.title && item.description);
   }
 
+  function isGoogleSheetUrl(url: string) {
+    try {
+      const parsed = new URL(String(url || "").trim());
+      return parsed.hostname.toLowerCase() === "docs.google.com" && parsed.pathname.includes("/spreadsheets");
+    } catch {
+      return false;
+    }
+  }
+
   async function readTeamRowsFromWorkbook(file: File) {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: "array" });
@@ -189,127 +201,116 @@ export default function ManagerTeamGoalsPage() {
     return parseTeamGoalRows(rows);
   }
 
-  function buildDrafts(analysis: BulkGoalAnalysisItem[], sourceRows: TeamBulkGoalRow[]) {
-    return analysis.map((item, index) => ({
-      title: item.improvedTitle || sourceRows[index]?.title || "",
-      description: item.improvedDescription || sourceRows[index]?.description || "",
-      metrics: item.suggestedMetrics || "",
-      weight: sourceRows[index]?.weight || 10,
-      allocationSplitText: Array.isArray(item.allocationSuggestions?.[0]?.split)
-        ? item.allocationSuggestions[0].split.join("/")
-        : "",
-    }));
-  }
-
-  async function analyzeWorkbookRows(sourceRows: TeamBulkGoalRow[]) {
-    if (sourceRows.length === 0) {
-      throw new Error("No valid rows found. Required columns: employeeId, title, description, weight or weightage.");
-    }
-
-    if (sourceRows.length > 10) {
-      throw new Error("Upload contains more than 10 goals. Please reduce rows to 10 or fewer.");
-    }
-
-    const allowedEmployeeIds = new Set(teamMembers.map((member) => String(member.$id || "").trim()));
-    const invalidEmployeeRow = sourceRows.find((row) => !allowedEmployeeIds.has(String(row.employeeId || "").trim()));
-    if (invalidEmployeeRow) {
-      throw new Error(`employeeId ${invalidEmployeeRow.employeeId} is not part of your team scope.`);
-    }
-
-    const inputGoals: BulkGoalInput[] = sourceRows.map((row) => ({
-      title: row.title,
-      description: row.description,
-      weight: row.weight,
-    }));
-
-    const analysis = await getBulkGoalAnalysis({
-      goals: inputGoals,
-      role: "manager",
-      cycleId: bulkCycleId,
-    });
-
-    setBulkAnalysis(analysis.goals);
-    setBulkDrafts(buildDrafts(analysis.goals, sourceRows));
-    setBulkFallbackUsed(analysis.fallbackUsed);
-  }
-
   async function handleBulkFileUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null;
     if (!file) return;
 
+    setBulkFile(file);
     setBulkFileName(file.name);
     setBulkError("");
+    setBulkPreviewRows([]);
+    setBulkCommitRows([]);
+    setBulkPreviewMeta({ total: 0, valid: 0, invalid: 0 });
+    event.target.value = "";
+  }
+
+  async function handlePreviewBulkGoals() {
     setBulkLoading(true);
+    setBulkError("");
+    setSuccess("");
+    setBulkPreviewRows([]);
+    setBulkCommitRows([]);
+    setBulkPreviewMeta({ total: 0, valid: 0, invalid: 0 });
 
     try {
-      const sourceRows = await readTeamRowsFromWorkbook(file);
-      setBulkSourceRows(sourceRows);
-      await analyzeWorkbookRows(sourceRows);
-      setSuccess("Bulk team goals analyzed with AI.");
+      const preview =
+        bulkSourceType === "google_sheet"
+          ? await (async () => {
+              if (!isGoogleSheetUrl(bulkGoogleSheetUrl)) {
+                throw new Error("Enter a valid Google Sheet URL from docs.google.com/spreadsheets.");
+              }
+              return previewGoalsImport({
+                googleSheetUrl: bulkGoogleSheetUrl,
+                cycleId: bulkCycleId,
+              });
+            })()
+          : await (async () => {
+              if (!bulkFile) {
+                throw new Error("Upload an Excel file before preview.");
+              }
+
+              const sourceRows = await readTeamRowsFromWorkbook(bulkFile);
+              if (sourceRows.length === 0) {
+                throw new Error("No valid rows found. Required columns: employeeId, title, description, weight or weightage.");
+              }
+
+              const allowedEmployeeIds = new Set(teamMembers.map((member) => String(member.$id || "").trim()));
+              const invalidEmployeeRow = sourceRows.find(
+                (row) => !allowedEmployeeIds.has(String(row.employeeId || "").trim())
+              );
+              if (invalidEmployeeRow) {
+                throw new Error(`employeeId ${invalidEmployeeRow.employeeId} is not part of your team scope.`);
+              }
+
+              const rows: BulkGoalImportRowInput[] = sourceRows.map((row) => ({
+                employeeId: row.employeeId,
+                title: row.title,
+                description: row.description,
+                frameworkType: bulkFrameworkType,
+                weightage: row.weight,
+                cycleId: bulkCycleId,
+                dueDate: bulkDueDate || null,
+                lineageRef: "",
+                aiSuggested: true,
+                managerId: currentUserId || "",
+              }));
+
+              return previewBulkGoalsImport({ rows, cycleId: bulkCycleId });
+            })();
+
+      setBulkPreviewRows(preview.rows || []);
+      setBulkCommitRows((preview.rows || []).map((row) => row.normalized));
+      setBulkPreviewMeta({
+        total: Number(preview.totalRows || 0),
+        valid: Number(preview.validRows || 0),
+        invalid: Number(preview.invalidRows || 0),
+      });
+      setSuccess(`Preview complete: ${preview.validRows} valid, ${preview.invalidRows} invalid.`);
     } catch (err) {
-      setBulkAnalysis([]);
-      setBulkDrafts([]);
-      setBulkFallbackUsed(false);
-      setBulkError(err instanceof Error ? err.message : "Failed to process team upload.");
+      setBulkError(err instanceof Error ? err.message : "Failed to preview team bulk goals.");
     } finally {
       setBulkLoading(false);
-      event.target.value = "";
     }
   }
 
-  function handleBulkDraftChange(index: number, draft: GoalAiDraft) {
-    setBulkDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? draft : item)));
-  }
-
-  function handleApplyBulkSuggestion(index: number) {
-    if (!bulkDrafts[index]) return;
-    setSuccess(`Applied suggestion from row ${index + 1}.`);
-  }
-
-  function handleApplyAllBulkSuggestions() {
-    if (bulkDrafts.length === 0) return;
-    setSuccess("Applied all AI suggestions for team assignment.");
-  }
-
   async function handleSaveBulkGoals() {
-    if (bulkDrafts.length === 0 || bulkSourceRows.length === 0) return;
+    if (bulkCommitRows.length === 0) {
+      setBulkError("Run preview before saving.");
+      return;
+    }
 
     setBulkSaving(true);
     setBulkError("");
     setSuccess("");
 
     try {
-      let createdCount = 0;
-      const failures: string[] = [];
+      const idempotencyKey =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      for (let index = 0; index < bulkDrafts.length; index += 1) {
-        const draft = bulkDrafts[index];
-        const source = bulkSourceRows[index];
-        if (!source) continue;
+      const result = await commitBulkGoalsImport({
+        data: bulkCommitRows,
+        cycleId: bulkCycleId,
+        idempotencyKey,
+        templateVersion: "v1",
+        sourceType: bulkSourceType,
+        sourceUrl: bulkSourceType === "google_sheet" ? String(bulkGoogleSheetUrl || "").trim() : undefined,
+      });
 
-        try {
-          await createTeamGoal({
-            employeeId: source.employeeId,
-            title: draft.title,
-            description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
-            cycleId: bulkCycleId,
-            frameworkType: bulkFrameworkType,
-            weightage: draft.weight,
-            dueDate: bulkDueDate || null,
-            aiSuggested: true,
-          });
-          createdCount += 1;
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : "unknown error";
-          failures.push(`Row ${index + 1} (${source.employeeId}): ${reason}`);
-        }
-      }
-
-      if (failures.length > 0) {
-        setBulkError(`Created ${createdCount} goal(s). Failures: ${failures.slice(0, 4).join(" | ")}`);
-      } else {
-        setSuccess(`Created ${createdCount} team draft goal(s) from bulk upload.`);
-      }
+      const successRows = Number(result?.summary?.successRows || 0);
+      const failedRows = Number(result?.summary?.failedRows || 0);
+      setSuccess(`Saved ${successRows} team goal(s). Failed: ${failedRows}.`);
 
       await loadPage();
     } catch (err) {
@@ -375,14 +376,49 @@ export default function ManagerTeamGoalsPage() {
       )}
 
       <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Bulk Team Goal Assignment" description="Upload an Excel file and assign team goals in bulk with AI review.">
+        <Card title="Bulk Team Goal Assignment" description="Upload Excel or use a Google Sheet link, preview, then save in bulk.">
           <Stack gap="3">
-            <Input
-              type="file"
-              label="Upload Excel (.xlsx, .xls)"
-              accept=".xlsx,.xls"
-              onChange={handleBulkFileUpload}
-            />
+            <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={bulkSourceType === "excel" ? undefined : "secondary"}
+                onClick={() => setBulkSourceType("excel")}
+              >
+                Upload Excel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={bulkSourceType === "google_sheet" ? undefined : "secondary"}
+                onClick={() => setBulkSourceType("google_sheet")}
+              >
+                Google Sheet Link
+              </Button>
+            </div>
+
+            {bulkSourceType === "excel" ? (
+              <Input
+                key="bulk-source-excel"
+                type="file"
+                label="Upload Excel (.xlsx, .xls)"
+                accept=".xlsx,.xls"
+                onChange={handleBulkFileUpload}
+              />
+            ) : (
+              <Input
+                key="bulk-source-google-sheet"
+                label="Google Sheet URL"
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                value={bulkGoogleSheetUrl}
+                onChange={(event) => setBulkGoogleSheetUrl(event.target.value)}
+              />
+            )}
+
+            {bulkSourceType === "google_sheet" && bulkGoogleSheetUrl && !isGoogleSheetUrl(bulkGoogleSheetUrl) && (
+              <p className="caption text-[var(--color-danger,#b91c1c)]">URL must include docs.google.com/spreadsheets.</p>
+            )}
+
             <Grid cols={1} colsMd={3} gap="2">
               <Input
                 label="Cycle ID"
@@ -407,39 +443,61 @@ export default function ManagerTeamGoalsPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => analyzeWorkbookRows(bulkSourceRows)}
+                onClick={handlePreviewBulkGoals}
                 loading={bulkLoading}
-                disabled={bulkSourceRows.length === 0}
+                disabled={bulkLoading || bulkSaving}
               >
-                Re-run AI Analysis
+                {bulkSourceType === "google_sheet" && bulkLoading ? "Fetching sheet..." : "Preview Import"}
               </Button>
               <Button
                 type="button"
                 onClick={handleSaveBulkGoals}
                 loading={bulkSaving}
-                disabled={bulkDrafts.length === 0}
+                disabled={bulkPreviewRows.length === 0 || bulkLoading || bulkSaving}
               >
                 Save Team Goals
               </Button>
             </div>
 
             <p className="caption">
-              Required columns in first sheet: employeeId, title, description, weight or weightage. Max 10 rows per upload.
+              Excel expected columns: employeeId, title, description, weight or weightage.
             </p>
             {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
 
-            <BulkGoalAiReviewPanel
-              role="manager"
-              items={bulkAnalysis}
-              drafts={bulkDrafts}
-              loading={bulkLoading}
-              fallbackUsed={bulkFallbackUsed}
-              error={bulkError}
-              onDraftChange={handleBulkDraftChange}
-              onApplySuggestion={handleApplyBulkSuggestion}
-              onApplyAll={handleApplyAllBulkSuggestions}
-              onDismissError={() => setBulkError("")}
-            />
+            {bulkPreviewRows.length > 0 && (
+              <div className="space-y-2">
+                <p className="caption">
+                  Preview: {bulkPreviewMeta.valid} valid, {bulkPreviewMeta.invalid} invalid, total {bulkPreviewMeta.total}.
+                </p>
+                <div className="overflow-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-[var(--color-surface-muted)]">
+                      <tr>
+                        <th className="px-3 py-2">Row</th>
+                        <th className="px-3 py-2">Employee</th>
+                        <th className="px-3 py-2">Title</th>
+                        <th className="px-3 py-2">Weightage</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPreviewRows.slice(0, 12).map((row) => (
+                        <tr key={row.rowNumber} className="border-t border-[var(--color-border)]">
+                          <td className="px-3 py-2">{row.rowNumber}</td>
+                          <td className="px-3 py-2">{row.normalized?.employeeId || "-"}</td>
+                          <td className="px-3 py-2">{row.normalized?.title || "-"}</td>
+                          <td className="px-3 py-2">{row.normalized?.weightage ?? "-"}</td>
+                          <td className="px-3 py-2">{row.valid ? "Valid" : "Invalid"}</td>
+                          <td className="px-3 py-2">{row.errors?.join("; ") || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {bulkPreviewRows.length > 12 && <p className="caption">Showing first 12 rows only.</p>}
+              </div>
+            )}
           </Stack>
         </Card>
 

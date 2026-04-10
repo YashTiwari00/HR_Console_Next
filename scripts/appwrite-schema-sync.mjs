@@ -542,6 +542,8 @@ const required = {
     { key: "idempotencyKey", type: "string", size: 128, required: true },
     { key: "status", type: "enum", required: true, elements: ["previewed", "committed", "failed"] },
     { key: "templateVersion", type: "string", size: 32, required: false },
+    { key: "sourceType", type: "string", size: 64, required: false },
+    { key: "sourceUrl", type: "string", size: 2048, required: false },
     { key: "totalRows", type: "integer", required: true, min: 0, max: 10000 },
     { key: "validRows", type: "integer", required: true, min: 0, max: 10000 },
     { key: "successRows", type: "integer", required: true, min: 0, max: 10000 },

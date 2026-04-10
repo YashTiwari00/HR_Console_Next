@@ -156,7 +156,7 @@ export async function dispatchNotification({ databases, job, template }) {
       title,
       message,
       actionUrl,
-      provider: emailResult.provider || "resend",
+      provider: emailResult.provider || "nodemailer",
       reason: null,
     };
   }

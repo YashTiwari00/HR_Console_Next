@@ -705,6 +705,54 @@ export interface BulkCheckInCommitSummary {
   failedRows: number;
 }
 
+export interface BulkGoalImportRowInput {
+  employeeId: string;
+  title: string;
+  description: string;
+  frameworkType: string;
+  weightage: number;
+  cycleId: string;
+  dueDate?: string | null;
+  lineageRef?: string;
+  aiSuggested?: boolean | string;
+  managerId?: string;
+}
+
+export interface BulkGoalImportPreviewRow {
+  rowNumber: number;
+  valid: boolean;
+  errors: string[];
+  normalized: {
+    employeeId: string;
+    title: string;
+    description: string;
+    frameworkType: string;
+    weightage: number;
+    cycleId: string;
+    dueDate: string | null;
+    lineageRef: string;
+    aiSuggested: boolean;
+    managerId: string;
+  };
+}
+
+export interface BulkGoalImportPreviewResponse {
+  ok: boolean;
+  role: string;
+  policy?: unknown;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: BulkGoalImportPreviewRow[];
+}
+
+export interface BulkGoalImportCommitSummary {
+  successes: Array<{ rowNumber: number; goalId: string }>;
+  failures: Array<{ rowNumber: number; reason: string }>;
+  successRows: number;
+  failedRows: number;
+}
+
 export interface ManagerCheckInApprovalItemInput {
   checkInId: string;
   managerNotes?: string;
@@ -1431,7 +1479,12 @@ function normalizeMeetRequestItem(input: unknown): MeetRequestItem {
 export async function requestJson(url: string, init?: RequestInit) {
   const jwtHeader = await getJwtHeader();
   const headers = new Headers(init?.headers);
-  headers.set("Content-Type", "application/json");
+  const isFormDataBody =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
+
+  if (!isFormDataBody) {
+    headers.set("Content-Type", "application/json");
+  }
 
   Object.entries(jwtHeader).forEach(([key, value]) => {
     headers.set(key, value);
@@ -2366,6 +2419,78 @@ export async function commitBulkCheckIns(input: {
     importJobId: string;
     status: string;
     summary: BulkCheckInCommitSummary;
+  };
+}
+
+export async function previewBulkGoalsImport(input: {
+  rows?: BulkGoalImportRowInput[];
+  googleSheetUrl?: string;
+  cycleId?: string;
+}) {
+  const payload = await requestJson("/api/goals/import/preview", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return payload as BulkGoalImportPreviewResponse;
+}
+
+export async function previewGoalsImport(input: {
+  file?: File | null;
+  googleSheetUrl?: string;
+  cycleId?: string;
+}) {
+  const safeGoogleSheetUrl = String(input?.googleSheetUrl || "").trim();
+  const safeCycleId = String(input?.cycleId || "").trim();
+
+  if (safeGoogleSheetUrl) {
+    return previewBulkGoalsImport({
+      googleSheetUrl: safeGoogleSheetUrl,
+      cycleId: safeCycleId || undefined,
+    });
+  }
+
+  if (input?.file) {
+    const formData = new FormData();
+    formData.append("file", input.file);
+    if (safeCycleId) {
+      formData.append("cycleId", safeCycleId);
+    }
+
+    const payload = await requestJson("/api/goals/import/preview", {
+      method: "POST",
+      body: formData,
+    });
+
+    return payload as BulkGoalImportPreviewResponse;
+  }
+
+  throw new Error("Provide either file or googleSheetUrl for preview.");
+}
+
+export async function commitBulkGoalsImport(input: {
+  rows?: BulkGoalImportRowInput[];
+  data?: BulkGoalImportRowInput[];
+  idempotencyKey: string;
+  templateVersion?: string;
+  sourceType?: "excel" | "google_sheet";
+  sourceUrl?: string;
+  cycleId?: string;
+}) {
+  const payload = await requestJson("/api/goals/import/commit", {
+    method: "POST",
+    headers: {
+      "x-idempotency-key": input.idempotencyKey,
+    },
+    body: JSON.stringify(input),
+  });
+
+  return payload as {
+    ok: boolean;
+    replayed: boolean;
+    importJobId: string;
+    status: string;
+    summary: BulkGoalImportCommitSummary;
   };
 }
 
