@@ -124,6 +124,9 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - meet request lifecycle, intelligence, and transcript retrieval
 - notifications orchestration and read state
 - timeline and lifecycle aggregation
+- growth summaries and career-path intelligence
+- gamification and milestone events
+- succession planning and training-needs governance
 
 ### 4.4 Shared libraries
 - `lib/appwrite.js`: client SDK instances + collection config.
@@ -146,6 +149,10 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - `scripts/test-employee-trajectory.mjs`: focused auth + trend checks for trajectory endpoint.
 - `scripts/smoke-api-routes.mjs`: API smoke checks with seeded users.
 - `scripts/smoke-ui-pages.mjs`: route reachability smoke checks.
+- `scripts/smoke-gamification.mjs`: validates contribution badge, streaks, and milestone event paths.
+- `scripts/smoke-ai-modes.mjs`: validates AI mode payload compatibility across AI endpoints.
+- `scripts/smoke-contribution-badge.mjs`: validates contribution badge logic and exposure.
+- `scripts/smoke-growth-hub.mjs`: validates growth summary and career-pathway endpoints.
 
 ---
 
@@ -549,6 +556,18 @@ Examples:
 - File: `app/api/ai/checkin-summary/route.js`
 - Generates check-in summary artifacts with usage cap checks.
 
+### POST /api/ai/growth-hub
+- File: `app/api/ai/growth-hub/route.js`
+- Generates growth summary insights using role-aware context and policy checks.
+
+### POST /api/ai/growth-pathway
+- File: `app/api/ai/growth-pathway/route.js`
+- Suggests role-aware pathway recommendations for growth planning.
+
+### POST /api/ai/training-suggestions
+- File: `app/api/ai/training-suggestions/route.js`
+- Produces skill and training suggestions, including HR training-needs workflows.
+
 ### AI usage helper
 - File: `app/api/ai/_lib/aiUsage.js`
 - Enforces per-user-per-cycle cap for feature families.
@@ -752,6 +771,21 @@ Examples:
 ### Legacy leadership alias API
 - `/api/region-admin/overview`
 
+### Growth, gamification, and milestones APIs
+- `/api/growth/summary`
+- `/api/gamification/events`
+- `/api/gamification/streak`
+- `/api/milestones`
+- `/api/milestones/streak`
+
+### Succession and training-needs APIs
+- `/api/hr/succession`
+- `/api/hr/succession/evaluate`
+- `/api/hr/succession/[employeeId]`
+- `/api/hr/training-needs`
+- `/api/hr/training-needs/export`
+- `/api/hr/training-needs/bulk-ai`
+
 ---
 
 ## 8. Frontend role modules and their logic
@@ -789,6 +823,9 @@ Examples:
 
 ### Timeline (`app/employee/timeline/page.tsx`)
 - Lifecycle visualization with status narrative and ordering.
+
+### Growth hub (`app/employee/growth/page.tsx`)
+- Consolidates AI growth summary, contribution, and pathway signals for employee development tracking.
 
 ### Matrix feedback (`app/employee/matrix-feedback/page.tsx`)
 - Displays matrix-reviewer feedback summaries and supporting comments.
@@ -841,6 +878,8 @@ Examples:
 - `app/hr/calibration/page.tsx`: calibration session workflows and decision capture.
 - `app/hr/notifications/page.tsx`: notification policy/job/feed management.
 - `app/hr/settings/page.tsx`: HR operational settings and controls.
+- `app/hr/succession/page.tsx`: succession pipeline, readiness review, and override workflows.
+- `app/hr/training-needs/page.tsx`: team-level training needs analysis and export actions.
 - `app/hr/team-analytics/page.tsx`: manager/team-level KPI analytics view.
 
 ### Manager drilldown (`app/hr/managers/[managerId]/page.tsx`)
@@ -1003,8 +1042,12 @@ Commands:
 - `npm run test:trajectory`
 - `npm run test:rating-drop`
 - `npm run smoke:api`
+- `npm run smoke:gamification`
 - `npm run smoke:self-review`
 - `npm run smoke:ai:bulk-goals`
+- `npm run smoke:ai:modes`
+- `npm run smoke:contribution-badge`
+- `npm run smoke:growth-hub`
 - `npm run smoke:ui`
 
 Logic:
@@ -1013,6 +1056,8 @@ Logic:
 - creates sessions for seeded users
 - verifies happy paths and blocked paths
 - checks route reachability and permission boundaries
+- gamification smoke validates streak and milestone event integrity
+- AI modes smoke validates role-compatible AI mode handling
 - self-review smoke validates save/submit/reopen flows and compatibility writes
 - UI smoke accepts `/hr/team-assignments` as either direct `200` or redirect `307` based on current route behavior
 
@@ -1068,6 +1113,9 @@ Logic:
 
 ### 14.4 Feature flags
 - NEXT_PUBLIC_ENABLE_EMPLOYEE_TRAJECTORY
+- NEXT_PUBLIC_ENABLE_GAMIFICATION
+- NEXT_PUBLIC_ENABLE_GROWTH_HUB
+- NEXT_PUBLIC_ENABLE_CONTRIBUTION_BADGE
 
 ### 14.5 AI settings
 - OPENROUTER_API_KEY
@@ -1081,6 +1129,10 @@ Logic:
 ### 14.7 Script/runtime extras
 - SMOKE_BASE_URL
 - SEED_AUTH_PASSWORD
+
+### 14.8 Email/notification settings
+- EMAIL_USER
+- EMAIL_PASS
 
 ---
 
@@ -1161,6 +1213,9 @@ Use this explanation when presenting the project:
 - `/api/ai/checkin-agenda`
 - `/api/ai/checkin-intelligence`
 - `/api/ai/manager-feedback-analysis`
+- `/api/ai/growth-hub`
+- `/api/ai/growth-pathway`
+- `/api/ai/training-suggestions`
 - `/api/ai/usage`
 - `/api/goal-library/search`
 - `/api/goal-library/pending`
@@ -1184,6 +1239,12 @@ Use this explanation when presenting the project:
 - `/api/hr/calibration-sessions`
 - `/api/hr/calibration-sessions/[sessionId]/decisions`
 - `/api/hr/calibration-sessions/[sessionId]/timeline`
+- `/api/hr/succession`
+- `/api/hr/succession/evaluate`
+- `/api/hr/succession/[employeeId]`
+- `/api/hr/training-needs`
+- `/api/hr/training-needs/export`
+- `/api/hr/training-needs/bulk-ai`
 - `/api/hr/check-ins/[checkInId]/self-review/reopen`
 - `/api/notifications/templates`
 - `/api/notifications/jobs`
@@ -1191,6 +1252,11 @@ Use this explanation when presenting the project:
 - `/api/notifications/feed`
 - `/api/notifications/events/[eventId]/read`
 - `/api/notifications/read-all`
+- `/api/growth/summary`
+- `/api/gamification/events`
+- `/api/gamification/streak`
+- `/api/milestones`
+- `/api/milestones/streak`
 - `/api/leadership/overview`
 - `/api/leadership/succession`
 - `/api/region-admin/overview`
@@ -1296,6 +1362,20 @@ This update extends the project from a core PMS flow into a policy-driven, timel
 - Expanded smoke UI matrix to include leadership route and additional HR pages.
 - Added focused trajectory regression script (`scripts/test-employee-trajectory.mjs`).
 - Added stable local dev launcher (`scripts/dev-stable.ps1`) to clean stale Next dev process/lock scenarios.
+
+### K) Growth hub and gamification rollout
+- Added growth-focused AI endpoints (`/api/ai/growth-hub`, `/api/ai/growth-pathway`, `/api/ai/training-suggestions`) and employee growth UI (`app/employee/growth/page.tsx`).
+- Added gamification and milestone endpoints (`/api/gamification/events`, `/api/gamification/streak`, `/api/milestones`, `/api/milestones/streak`) with shared utilities in `lib/gamification.js`, `lib/milestones.js`, and `lib/goalContribution.js`.
+- Added contribution/streak/milestone UI components including `src/components/ui/ContributionBadge.tsx`, `src/components/ui/StreakBadge.tsx`, and `src/components/ui/MilestoneToast.tsx`.
+
+### L) Succession and training-needs expansion
+- Added succession APIs (`/api/hr/succession`, `/api/hr/succession/evaluate`, `/api/hr/succession/[employeeId]`) with readiness helper support.
+- Added HR training-needs APIs (`/api/hr/training-needs`, `/api/hr/training-needs/export`, `/api/hr/training-needs/bulk-ai`) and HR pages for succession/training operations.
+
+### M) Goal import and notification delivery enhancements
+- Goal bulk import now supports both file-based rows and Google Sheet URL ingestion in preview/commit workflows.
+- Goal import commit persists source metadata (`sourceType` in `excel | google_sheet`, plus optional source URL) with idempotent replay handling.
+- Notification email delivery now uses Nodemailer (Gmail SMTP via `EMAIL_USER` and `EMAIL_PASS`) while preserving existing scheduler and dedupe semantics.
 
 ---
 
