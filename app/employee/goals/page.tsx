@@ -21,12 +21,15 @@ import {
   createGoal,
   fetchAiUsageSnapshot,
   fetchGoalFeedback,
+  fetchGoalRatings,
   fetchGoals,
   fetchMe,
   getBulkGoalAnalysis,
   getCycleIdFromDate,
   getGoalSuggestions,
   GoalItem,
+  GoalRatingItem,
+  GoalRatingsResponse,
   GoalSuggestion,
   goalStatusVariant,
   submitGoal,
@@ -86,6 +89,23 @@ export default function EmployeeGoalsPage() {
 
   const [managerResolved, setManagerResolved] = useState(false);
   const [feedbackByGoal, setFeedbackByGoal] = useState<Record<string, string>>({});
+  const [goalRatings, setGoalRatings] = useState<Record<string, GoalRatingsResponse>>({});
+  const [loadingRatingsFor, setLoadingRatingsFor] = useState<Set<string>>(new Set());
+
+  async function loadGoalRatings(goalId: string) {
+    if (goalRatings[goalId] || loadingRatingsFor.has(goalId)) return;
+    setLoadingRatingsFor((prev) => new Set(prev).add(goalId));
+    try {
+      const data = await fetchGoalRatings(goalId);
+      if (data.ratings.length > 1) {
+        setGoalRatings((prev) => ({ ...prev, [goalId]: data }));
+      }
+    } catch {
+      // non-critical — silently skip
+    } finally {
+      setLoadingRatingsFor((prev) => { const next = new Set(prev); next.delete(goalId); return next; });
+    }
+  }
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -746,7 +766,13 @@ export default function EmployeeGoalsPage() {
         <Stack gap="2">
           {loading && <p className="caption">Loading goals...</p>}
           {!loading && goals.length === 0 && <p className="caption">No goals yet. Create your first goal.</p>}
-          {goals.map((goal) => (
+          {goals.map((goal) => {
+            // Lazily load ratings for closed/approved goals that have a final rating
+            if (goal.managerFinalRating != null && !goalRatings[goal.$id]) {
+              loadGoalRatings(goal.$id);
+            }
+            const ratingsData: GoalRatingsResponse | undefined = goalRatings[goal.$id];
+            return (
             <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -938,10 +964,31 @@ export default function EmployeeGoalsPage() {
                       </div>
                     </div>
                   )}
+
+                  {ratingsData && ratingsData.ratings.length > 1 && (
+                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                      <p className="caption font-medium text-[var(--color-text)]">
+                        Final Rating: {ratingsData.finalRatingLabel ?? "—"} ({ratingsData.finalRating ?? "—"})
+                      </p>
+                      <div className="mt-2 space-y-1">
+                        {(ratingsData.ratings as GoalRatingItem[]).map((r) => (
+                          <div key={r.$id} className="flex items-center justify-between gap-2">
+                            <p className="caption text-[var(--color-text-muted)]">
+                              {r.managerName || r.managerId}
+                            </p>
+                            <p className="caption text-[var(--color-text)]">
+                              {r.ratingLabel} ({r.rating}) × {r.weightPercent}%
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
         </Stack>
       </Card>
 

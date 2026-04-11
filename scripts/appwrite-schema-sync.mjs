@@ -67,6 +67,10 @@ const collections = {
     process.env.NEXT_PUBLIC_SUCCESSION_OVERRIDES_COLLECTION_ID || "succession_overrides",
   aop_documents:
     process.env.NEXT_PUBLIC_AOP_DOCUMENTS_COLLECTION_ID || "aop_documents",
+  manager_assignments:
+    process.env.NEXT_PUBLIC_MANAGER_ASSIGNMENTS_COLLECTION_ID || "manager_assignments",
+  goal_ratings:
+    process.env.NEXT_PUBLIC_GOAL_RATINGS_COLLECTION_ID || "goal_ratings",
 };
 
 const required = {
@@ -592,6 +596,29 @@ const required = {
     { key: "createdAt", type: "datetime", required: true },
     { key: "updatedAt", type: "datetime", required: true },
   ],
+  // Dual-reporting: replaces single managerId on users with weighted assignments
+  [collections.manager_assignments]: [
+    { key: "employeeId",    type: "string",   size: 64,  required: true  },
+    { key: "managerId",     type: "string",   size: 64,  required: true  },
+    { key: "weightPercent", type: "integer",  required: true, min: 1, max: 100 },
+    { key: "isPrimary",     type: "boolean",  required: true, default: false },
+    { key: "assignedAt",    type: "datetime", required: true },
+    { key: "assignedBy",    type: "string",   size: 64,  required: true  },
+    { key: "effectiveFrom", type: "string",   size: 32,  required: false },
+    { key: "notes",         type: "string",   size: 1024, required: false },
+  ],
+  // Per-manager ratings on a goal — weighted average produces finalRating on the goal
+  [collections.goal_ratings]: [
+    { key: "goalId",        type: "string",   size: 64,  required: true  },
+    { key: "employeeId",    type: "string",   size: 64,  required: true  },
+    { key: "managerId",     type: "string",   size: 64,  required: true  },
+    { key: "cycleId",       type: "string",   size: 32,  required: true  },
+    { key: "weightPercent", type: "integer",  required: true, min: 1, max: 100 },
+    { key: "rating",        type: "integer",  required: true, min: 1, max: 5 },
+    { key: "ratingLabel",   type: "enum",     required: true, elements: ["EE", "DE", "ME", "SME", "NI"] },
+    { key: "ratedAt",       type: "datetime", required: true },
+    { key: "notes",         type: "string",   size: 2048, required: false },
+  ],
 };
 
 const requiredIndexes = {
@@ -623,6 +650,18 @@ const requiredIndexes = {
     { key: "idx_rdi_cycle_risk", type: "key", attributes: ["cycleId", "riskLevel"] },
     { key: "idx_rdi_cycle_created", type: "key", attributes: ["cycleId", "createdAt"] },
     { key: "idx_rdi_created", type: "key", attributes: ["createdAt"] },
+  ],
+  [collections.manager_assignments]: [
+    { key: "idx_ma_employee",   type: "key",    attributes: ["employeeId"] },
+    { key: "idx_ma_manager",    type: "key",    attributes: ["managerId"] },
+    { key: "idx_ma_emp_mgr",    type: "unique", attributes: ["employeeId", "managerId"] },
+  ],
+  [collections.goal_ratings]: [
+    { key: "idx_gr_goal",          type: "key",    attributes: ["goalId"] },
+    { key: "idx_gr_manager",       type: "key",    attributes: ["managerId"] },
+    { key: "idx_gr_employee",      type: "key",    attributes: ["employeeId"] },
+    { key: "idx_gr_goal_manager",  type: "unique", attributes: ["goalId", "managerId"] },
+    { key: "idx_gr_cycle",         type: "key",    attributes: ["cycleId"] },
   ],
 };
 
