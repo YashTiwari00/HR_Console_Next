@@ -12,6 +12,7 @@ import {
   fetchCheckIns,
   fetchDecisionInsights,
   fetchGoals,
+  fetchDualReportingAssignments,
   fetchProgressUpdates,
   fetchRatingDropInsights,
   fetchTeamMembers,
@@ -33,6 +34,7 @@ export default function ManagerPage() {
   const [teamUpdates, setTeamUpdates] = useState<ProgressUpdateItem[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMemberItem[]>([]);
   const [ratingDropInsights, setRatingDropInsights] = useState<RatingDropInsightItem[]>([]);
+  const [dualReportEmployeeIds, setDualReportEmployeeIds] = useState<Set<string>>(new Set());
   const [ragFilter, setRagFilter] = useState<HeatMapFilter>("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [lineageGoalId, setLineageGoalId] = useState("");
@@ -86,6 +88,20 @@ export default function ManagerPage() {
       setTeamUpdates(nextTeamUpdates);
       setTeamMembers(nextTeamMembers);
       setRatingDropInsights(nextRatingDrops.rows || []);
+
+      // Detect dual-report employees: fetch assignments for each team member in parallel
+      const dualIds = new Set<string>();
+      await Promise.all(
+        (nextTeamMembers as TeamMemberItem[]).map(async (member) => {
+          try {
+            const assignments = await fetchDualReportingAssignments(member.$id);
+            if (assignments.length > 1) dualIds.add(member.$id);
+          } catch {
+            // ignore — not critical for dashboard render
+          }
+        })
+      );
+      setDualReportEmployeeIds(dualIds);
 
       const target = pickInsightTarget(nextTeamGoals as TeamGoalItem[]);
       if (target?.employeeId && target?.cycleId) {
@@ -159,6 +175,7 @@ export default function ManagerPage() {
           employeeId,
           employeeName: employee?.name || (employeeId === "unassigned" ? "Unassigned Employee" : employeeId),
           department: employee?.department || "Unassigned",
+          isDualReport: dualReportEmployeeIds.has(employeeId),
           goals: goals
             .slice()
             .sort((a, b) => a.title.localeCompare(b.title))
@@ -621,7 +638,12 @@ export default function ManagerPage() {
                     className="grid grid-cols-[220px_minmax(0,1fr)] items-start gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] p-2"
                   >
                     <div>
-                      <p className="body-sm font-medium text-[var(--color-text)]">{row.employeeName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="body-sm font-medium text-[var(--color-text)]">{row.employeeName}</p>
+                        {row.isDualReport && (
+                          <Badge variant="info">Shared</Badge>
+                        )}
+                      </div>
                       <p className="caption text-[var(--color-text-muted)]">{row.department}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">

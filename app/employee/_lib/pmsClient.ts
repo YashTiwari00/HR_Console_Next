@@ -3152,3 +3152,92 @@ export function getCycleIdFromDate(input?: string | Date) {
   const quarter = Math.floor(safeDate.getUTCMonth() / 3) + 1;
   return `Q${quarter}-${year}`;
 }
+
+// ---------------------------------------------------------------------------
+// Dual Reporting
+// ---------------------------------------------------------------------------
+
+export interface ManagerAssignment {
+  assignmentId: string;
+  employeeId: string;
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  weightPercent: number;
+  isPrimary: boolean;
+  assignedAt: string;
+  notes: string | null;
+}
+
+export interface AssignmentInput {
+  managerId: string;
+  weightPercent: number;
+  notes?: string;
+}
+
+export interface GoalRatingItem {
+  $id: string;
+  goalId: string;
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  weightPercent: number;
+  rating: number;
+  ratingLabel: "EE" | "DE" | "ME" | "SME" | "NI";
+  ratedAt: string;
+  notes: string | null;
+}
+
+export interface GoalRatingsResponse {
+  ratings: GoalRatingItem[];
+  finalRating: number | null;
+  finalRatingLabel: string | null;
+  ratingsComplete: boolean;
+}
+
+/** Get dual-reporting assignments for an employee (hits /api/dual-reporting). */
+export async function fetchDualReportingAssignments(employeeId: string): Promise<ManagerAssignment[]> {
+  const payload = await requestJson(`/api/dual-reporting?employeeId=${encodeURIComponent(employeeId)}`);
+  return (payload.data || []) as ManagerAssignment[];
+}
+
+/** HR only — set/replace all dual-reporting assignments for an employee. */
+export async function setManagerAssignments(
+  employeeId: string,
+  assignments: AssignmentInput[]
+): Promise<ManagerAssignment[]> {
+  const payload = await requestJson("/api/dual-reporting", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employeeId, assignments }),
+  });
+  return (payload.data || []) as ManagerAssignment[];
+}
+
+/** HR only — remove all dual-reporting assignments for an employee. */
+export async function clearManagerAssignments(employeeId: string): Promise<{ deleted: number }> {
+  const payload = await requestJson(
+    `/api/dual-reporting?employeeId=${encodeURIComponent(employeeId)}`,
+    { method: "DELETE" }
+  );
+  return payload.data as { deleted: number };
+}
+
+/** Manager/HR — submit a rating for a goal. */
+export async function submitGoalRating(
+  goalId: string,
+  input: { rating?: number; ratingLabel?: string; notes?: string }
+): Promise<{ finalRating: number | null; finalRatingLabel: string | null; ratingsComplete: boolean }> {
+  const payload = await requestJson(`/api/goals/${encodeURIComponent(goalId)}/rate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+}
+
+/** Employee/Manager/HR — fetch all per-manager ratings for a goal plus computed final. */
+export async function fetchGoalRatings(goalId: string): Promise<GoalRatingsResponse> {
+  const payload = await requestJson(`/api/goals/${encodeURIComponent(goalId)}/ratings`);
+  return payload.data as GoalRatingsResponse;
+}

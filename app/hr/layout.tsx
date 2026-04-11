@@ -17,7 +17,8 @@ interface HrLayoutProps {
 
 const navItems = [
   { label: "Dashboard",            href: "/hr",                route: "/hr",                tutorialId: "nav-dashboard"      },
-  { label: "HR Settings",          href: "/hr/settings",       route: "/hr/settings",       tutorialId: "nav-hr-settings"    },
+  { label: "HR Settings",          href: "/hr/settings",          route: "/hr/settings",          tutorialId: "nav-hr-settings"       },
+  { label: "Dual Reporting",       href: "/hr/team-assignments",  route: "/hr/team-assignments",  tutorialId: "nav-team-assignments"  },
   { label: "Team Ranking & Graph", href: "/hr/team-analytics", route: "/hr/team-analytics", tutorialId: "nav-team-analytics" },
   { label: "Check-in Monitoring",  href: "/hr/check-ins",      route: "/hr/check-ins",      tutorialId: "nav-checkins"       },
   { label: "AI Governance",        href: "/hr/ai-governance",  route: "/hr/ai-governance",  tutorialId: "nav-ai-governance"  },
