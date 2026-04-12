@@ -326,9 +326,121 @@ export default function EmployeeCheckInsPage() {
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
 
-      <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Bulk Check-in Upload" description="Upload one Excel sheet to create check-ins for multiple goals.">
+      <Grid cols={1} colsLg={10} gap="3">
+        <Card title="Check-in Activity" description="Planned and completed sessions." className="lg:col-span-7">
           <Stack gap="3">
+            {loading && <p className="caption">Loading check-ins...</p>}
+            {!loading && checkIns.length === 0 && (
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center">
+                <Stack gap="1">
+                  <p className="body-sm text-[var(--color-text-muted)]">No check-ins yet.</p>
+                  <p className="caption text-[var(--color-text-muted)]">Plan your first check-in.</p>
+                </Stack>
+              </div>
+            )}
+            {checkIns.map((checkIn) => (
+              <Card key={checkIn.$id}>
+                <Stack gap="3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="body-sm font-medium text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
+                    <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>
+                  </div>
+
+                  <Stack gap="1">
+                    <p className="caption font-medium text-[var(--color-text-muted)]">Goal</p>
+                    <p className="body-sm text-[var(--color-text)]">
+                      {goals.find((goal) => goal.$id === checkIn.goalId)?.title || checkIn.goalId}
+                    </p>
+                    <p className="caption">Goal ID: {checkIn.goalId}</p>
+                  </Stack>
+
+                  <div className="rounded-[var(--radius-sm)] border-l-2 border-[var(--color-border)] pl-3">
+                    <Stack gap="2">
+                      {checkIn.employeeNotes && <p className="caption">{checkIn.employeeNotes}</p>}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant={checkIn.managerReviewStatus === "reviewed" ? "success" : "info"}
+                        >
+                          Manager review: {checkIn.managerReviewStatus || (checkIn.status === "completed" ? "reviewed" : "pending")}
+                        </Badge>
+                        {checkIn.managerReviewedAt && (
+                          <span className="caption">Reviewed: {formatDate(checkIn.managerReviewedAt)}</span>
+                        )}
+                      </div>
+
+                      <p className="caption text-[var(--color-text-muted)]">
+                        Manager notes: {checkIn.managerNotes || checkIn.managerReviewComments || "Not provided."}
+                      </p>
+                    </Stack>
+                  </div>
+
+                  {(() => {
+                    const linkedMeetings = meetingsByGoal[checkIn.goalId] || [];
+                    return linkedMeetings.length > 0 ? (
+                      <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                        <Stack gap="1">
+                          <p className="caption font-medium">Meeting intelligence context</p>
+                          {linkedMeetings.slice(0, 2).map((meeting) => (
+                            <div key={meeting.$id}>
+                              <p className="caption">
+                                {meeting.title || "Goal-linked meeting"}
+                                {meeting.scheduledStartTime ? ` (${formatDate(meeting.scheduledStartTime)})` : ""}
+                              </p>
+                              <p className="caption text-[var(--color-text-muted)]">
+                                {meeting.intelligenceSummary || meeting.transcriptText || "Meeting notes available."}
+                              </p>
+                            </div>
+                          ))}
+                        </Stack>
+                      </div>
+                    ) : null;
+                  })()}
+
+                  {checkIn.attachmentIds && checkIn.attachmentIds.length > 0 && (
+                    <Stack gap="1">
+                      <p className="caption">Attachments: {checkIn.attachmentIds.length}</p>
+                      {checkIn.attachmentIds.map((fileId) => (
+                        <a
+                          key={fileId}
+                          href={getAttachmentDownloadPath(fileId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="caption text-[var(--color-primary)] hover:underline"
+                        >
+                          Open attachment {fileId.slice(0, 8)}
+                        </a>
+                      ))}
+                    </Stack>
+                  )}
+
+                  {checkIn.status === "completed" && checkIn.transcriptText && (
+                    <p className="caption text-[var(--color-text-muted)]">Transcript summary: {checkIn.transcriptText}</p>
+                  )}
+
+                  {checkIn.status === "completed" && checkIn.isFinalCheckIn && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="success">Final check-in</Badge>
+                      {typeof checkIn.managerRating === "number" && (
+                        <span className="caption">Manager rating: {checkIn.managerRating}/5</span>
+                      )}
+                      {typeof checkIn.managerRating !== "number" && (
+                        <span className="caption">Final rating unlocks after HR closes the cycle.</span>
+                      )}
+                    </div>
+                  )}
+                </Stack>
+              </Card>
+            ))}
+          </Stack>
+        </Card>
+
+        <Card className="lg:col-span-3 bg-[var(--color-surface-muted)]">
+          <Stack gap="2">
+            <div>
+              <p className="caption font-medium text-[var(--color-text)]">Bulk Check-in Upload</p>
+              <p className="caption">Upload one Excel sheet to create check-ins for multiple goals.</p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/api/check-ins/import/template"
@@ -339,7 +451,7 @@ export default function EmployeeCheckInsPage() {
               <span className="caption">Only approved goals are accepted.</span>
             </div>
 
-            <div className="space-y-2">
+            <Stack gap="1">
               <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="bulk-checkin-sheet">
                 Upload check-in sheet (.xlsx/.csv)
               </label>
@@ -351,9 +463,9 @@ export default function EmployeeCheckInsPage() {
                 onChange={handleBulkFileUpload}
               />
               {bulkFileName && <p className="caption">Loaded file: {bulkFileName}</p>}
-            </div>
+            </Stack>
 
-            <div className="space-y-2">
+            <Stack gap="1">
               <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="bulk-checkin-attachments">
                 Attachment files for attachmentFileNames column (optional)
               </label>
@@ -371,19 +483,19 @@ export default function EmployeeCheckInsPage() {
               {attachmentFiles.length > 0 && (
                 <p className="caption">Selected attachments: {attachmentFiles.map((file) => file.name).join(", ")}</p>
               )}
-            </div>
+            </Stack>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={handlePreview} loading={submitting || bulkLoading} disabled={bulkRows.length === 0}>
+              <Button variant="secondary" size="sm" onClick={handlePreview} loading={submitting || bulkLoading} disabled={bulkRows.length === 0}>
                 Preview Upload
               </Button>
-              <Button onClick={handleCommit} loading={submitting} disabled={bulkRows.length === 0 || bulkLoading}>
+              <Button variant="secondary" size="sm" onClick={handleCommit} loading={submitting} disabled={bulkRows.length === 0 || bulkLoading}>
                 Commit Upload
               </Button>
             </div>
 
             {bulkRows.length > 0 && (
-              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-2">
                 <p className="caption">Rows parsed: {bulkRows.length}</p>
                 <p className="caption">Approved-goal rows in sheet: {bulkRows.filter((row) => approvedGoals.has(row.goalId)).length}</p>
                 <p className="caption">Preview valid rows: {previewCounts.valid} / {previewCounts.total}</p>
@@ -391,10 +503,10 @@ export default function EmployeeCheckInsPage() {
             )}
 
             {previewRows.length > 0 && (
-              <div className="space-y-2">
+              <Stack gap="1">
                 <p className="caption font-medium">Preview details</p>
                 {previewRows.slice(0, 12).map((row) => (
-                  <div key={`preview-${row.rowNumber}`} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+                  <div key={`preview-${row.rowNumber}`} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="caption">Row {row.rowNumber}</p>
                       <Badge variant={row.valid ? "success" : "danger"}>{row.valid ? "valid" : "invalid"}</Badge>
@@ -403,103 +515,8 @@ export default function EmployeeCheckInsPage() {
                   </div>
                 ))}
                 {previewRows.length > 12 && <p className="caption">Showing first 12 rows only.</p>}
-              </div>
+              </Stack>
             )}
-          </Stack>
-        </Card>
-
-        <Card title="Check-in Activity" description="Planned and completed sessions.">
-          <Stack gap="2">
-            {loading && <p className="caption">Loading check-ins...</p>}
-            {!loading && checkIns.length === 0 && <p className="caption">No check-ins yet.</p>}
-            {checkIns.map((checkIn) => (
-              <div key={checkIn.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-                {(() => {
-                  const linkedMeetings = meetingsByGoal[checkIn.goalId] || [];
-                  return linkedMeetings.length > 0 ? (
-                    <div className="mb-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                      <p className="caption font-medium">Meeting intelligence context</p>
-                      {linkedMeetings.slice(0, 2).map((meeting) => (
-                        <div key={meeting.$id} className="mt-1">
-                          <p className="caption">
-                            {meeting.title || "Goal-linked meeting"}
-                            {meeting.scheduledStartTime ? ` (${formatDate(meeting.scheduledStartTime)})` : ""}
-                          </p>
-                          <p className="caption text-[var(--color-text-muted)]">
-                            {meeting.intelligenceSummary || meeting.transcriptText || "Meeting notes available."}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null;
-                })()}
-
-                <div className="flex items-center justify-between gap-2">
-                  <p className="body-sm text-[var(--color-text)]">{formatDate(checkIn.scheduledAt)}</p>
-                  <Badge variant={checkInStatusVariant(checkIn.status)}>{checkIn.status}</Badge>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={checkIn.managerReviewStatus === "reviewed" ? "success" : "info"}
-                  >
-                    Manager review: {checkIn.managerReviewStatus || (checkIn.status === "completed" ? "reviewed" : "pending")}
-                  </Badge>
-                  {checkIn.managerReviewedAt && (
-                    <span className="caption">Reviewed: {formatDate(checkIn.managerReviewedAt)}</span>
-                  )}
-                </div>
-
-                <p className="caption mt-2">Goal: {checkIn.goalId}</p>
-                {checkIn.employeeNotes && <p className="caption mt-2">{checkIn.employeeNotes}</p>}
-                {checkIn.attachmentIds && checkIn.attachmentIds.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <p className="caption">Attachments: {checkIn.attachmentIds.length}</p>
-                    {checkIn.attachmentIds.map((fileId) => (
-                      <a
-                        key={fileId}
-                        href={getAttachmentDownloadPath(fileId)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="caption text-[var(--color-primary)] hover:underline"
-                      >
-                        Open attachment {fileId.slice(0, 8)}
-                      </a>
-                    ))}
-                  </div>
-                )}
-
-                {checkIn.status === "completed" && (
-                  <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                    {checkIn.managerNotes ? (
-                      <p className="caption">Manager notes: {checkIn.managerNotes}</p>
-                    ) : (
-                      <p className="caption">Manager notes: Not provided.</p>
-                    )}
-
-                    {checkIn.managerReviewComments && !checkIn.managerNotes && (
-                      <p className="caption mt-1">Manager review: {checkIn.managerReviewComments}</p>
-                    )}
-
-                    {checkIn.transcriptText && (
-                      <p className="caption mt-1">Transcript summary: {checkIn.transcriptText}</p>
-                    )}
-
-                    {checkIn.isFinalCheckIn && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge variant="success">Final check-in</Badge>
-                        {typeof checkIn.managerRating === "number" && (
-                          <span className="caption">Manager rating: {checkIn.managerRating}/5</span>
-                        )}
-                        {typeof checkIn.managerRating !== "number" && (
-                          <span className="caption">Final rating unlocks after HR closes the cycle.</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
           </Stack>
         </Card>
       </Grid>

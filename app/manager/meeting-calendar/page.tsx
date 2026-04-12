@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Grid, Stack } from "@/src/components/layout";
+import { Container, Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Checkbox, Input, Select, Textarea } from "@/src/components/ui";
 import {
@@ -609,430 +609,435 @@ export default function ManagerMeetingCalendarDashboardPage() {
   );
 
   return (
-    <Stack gap="4">
-      <PageHeader
-        title="Meeting & Calendar Dashboard"
-        subtitle="Manage team meeting assignments, calendar visibility, ranking, and approvals in one place."
-        actions={
-          <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
-            Refresh
-          </Button>
-        }
-      />
-
-      {error && (
-        <Alert
-          variant="error"
-          title="Unable to continue"
-          description={error}
-          onDismiss={() => setError("")}
+    <Container>
+      <Stack gap="5">
+        <PageHeader
+          title="Meeting & Calendar Dashboard"
+          subtitle="Manage team meeting assignments, calendar visibility, ranking, and approvals in one place."
+          actions={
+            <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
+              Refresh
+            </Button>
+          }
         />
-      )}
-      {success && (
-        <Alert
-          variant="success"
-          title="Success"
-          description={success}
-          onDismiss={() => setSuccess("")}
-        />
-      )}
 
-      {!managerGoogleConnected && (
-        <Card title="Connect Google Calendar" description="Your manager account must be connected to continue with calendar availability and scheduling.">
+        {error && (
+          <Alert
+            variant="error"
+            title="Unable to continue"
+            description={error}
+            onDismiss={() => setError("")}
+          />
+        )}
+        {success && (
+          <Alert
+            variant="success"
+            title="Success"
+            description={success}
+            onDismiss={() => setSuccess("")}
+          />
+        )}
+
+        <Grid cols={1} colsMd={3} gap="3">
+          <Card title="Team Members">
+            <p className="heading-xl">{loading ? "..." : stats.totalEmployees}</p>
+          </Card>
+          <Card title="Google Connected">
+            <p className="heading-xl">
+              {loading ? "..." : `${stats.connectedEmployees}/${stats.totalEmployees}`}
+            </p>
+          </Card>
+          <Card title="Pending Approvals">
+            <p className="heading-xl">{loading ? "..." : stats.totalPending}</p>
+          </Card>
+        </Grid>
+
+        <Card title="Google Connection" description="Your manager account must be connected to continue with calendar availability and scheduling.">
           <Stack gap="2">
-            <p className="caption">Google account is not connected for this user.</p>
+            <p className="caption">
+              {managerGoogleConnected
+                ? "Google account connected."
+                : "Google account is not connected for this user."}
+            </p>
             <Button variant="secondary" onClick={handleConnectGoogle} disabled={connectingGoogle}>
-              {connectingGoogle ? "Redirecting..." : "Connect Google Calendar"}
+              {connectingGoogle ? "Redirecting..." : managerGoogleConnected ? "Reconnect Google Calendar" : "Connect Google Calendar"}
             </Button>
           </Stack>
         </Card>
-      )}
 
-      <Grid cols={1} colsMd={3} gap="3">
-        <Card title="Team Members">
-          <p className="heading-xl">{loading ? "..." : stats.totalEmployees}</p>
-        </Card>
-        <Card title="Google Connected">
-          <p className="heading-xl">
-            {loading ? "..." : `${stats.connectedEmployees}/${stats.totalEmployees}`}
-          </p>
-        </Card>
-        <Card title="Pending Approvals">
-          <p className="heading-xl">{loading ? "..." : stats.totalPending}</p>
-        </Card>
-      </Grid>
-
-      <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Team Goal Assignment" description="Google Calendar connection status for each team member.">
-          <Stack gap="2">
-            {!loading && teamMembers.length === 0 && <p className="caption">No team members found.</p>}
-            {teamMembers.map((member) => {
-              const connected = Boolean(connectionByEmployeeId[member.$id]);
-              return (
-                <div
-                  key={member.$id}
-                  className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
+        <Grid cols={1} gap="5" className="lg:grid-cols-[2fr_1fr]">
+          <Stack gap="3">
+            <Card title="Schedule Meeting" description="Check availability and schedule with existing calendar APIs.">
+              <Stack gap="3">
+                <Select
+                  label="Employee"
+                  options={employeeOptions}
+                  value={selectedEmployeeId}
+                  onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                  placeholder="Select employee"
+                  disabled={teamMembers.length === 0 || loading}
+                />
+                <Input
+                  label="Availability start"
+                  type="datetime-local"
+                  value={availabilityStart}
+                  onChange={(event) => setAvailabilityStart(event.target.value)}
+                />
+                <Input
+                  label="Availability end"
+                  type="datetime-local"
+                  value={availabilityEnd}
+                  onChange={(event) => setAvailabilityEnd(event.target.value)}
+                />
+                <Button
+                  variant="secondary"
+                  onClick={handleCheckAvailability}
+                  loading={checkingAvailability}
+                  disabled={!selectedEmployeeId || !managerGoogleConnected}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="body-sm text-[var(--color-text)]">{member.name || member.email || member.$id}</p>
-                    <Badge variant={connected ? "success" : "warning"}>
-                      {connected ? "Connected" : "Not Connected"}
-                    </Badge>
-                  </div>
+                  Check Availability
+                </Button>
+
+                <div className="space-y-2">
+                  <p className="body-sm text-[var(--color-text)]">Select Time Slot</p>
+                  <AvailabilityCalendar
+                    busySlots={busySlots}
+                    selectedSlot={selectedSlot}
+                    loading={checkingAvailability}
+                    range={availabilityRange}
+                    onSelectSlot={handleSelectSlot}
+                  />
                 </div>
-              );
-            })}
-          </Stack>
-        </Card>
 
-        <Card title="Team Progress Overview" description="Meeting pipeline status across your team.">
-          <Stack gap="2">
-            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-              <p className="caption">Pending requests</p>
-              <p className="body-sm">{loading ? "..." : stats.totalPending}</p>
-            </div>
-            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-              <p className="caption">Scheduled meetings</p>
-              <p className="body-sm">{loading ? "..." : stats.totalScheduled}</p>
-            </div>
-            <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-              <p className="caption">Connected members</p>
-              <p className="body-sm">{loading ? "..." : `${stats.connectedEmployees}/${stats.totalEmployees}`}</p>
-            </div>
-          </Stack>
-        </Card>
+                {availableSlotCount !== null && (
+                  <p className="caption">Available one-hour slots: {availableSlotCount}</p>
+                )}
 
-        <Card title="Team Ranking & Graph" description="Ranking by scheduled meetings with quick visual bars.">
-          <Stack gap="2">
-            {!loading && stats.ranking.length === 0 && <p className="caption">No ranking data yet.</p>}
-            {stats.ranking.map((entry) => {
-              const member = teamMembers.find((item) => item.$id === entry.employeeId);
-              const label = member?.name || member?.email || entry.employeeId;
-              const widthPercent = Math.max(8, Math.round((entry.scheduled / rankingMax) * 100));
+                <Input
+                  label="Meeting title"
+                  value={meetingTitle}
+                  onChange={(event) => setMeetingTitle(event.target.value)}
+                />
+                <Select
+                  label="Meeting type"
+                  value={meetingType}
+                  onChange={(event) => setMeetingType(event.target.value === "group" ? "group" : "individual")}
+                  options={[
+                    { value: "individual", label: "Individual" },
+                    { value: "group", label: "Group" },
+                  ]}
+                />
 
-              return (
-                <div
-                  key={entry.employeeId}
-                  className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="body-sm text-[var(--color-text)]">{label}</p>
-                    <p className="caption">{entry.scheduled} scheduled</p>
-                  </div>
-                  <div className="mt-2 h-2 w-full rounded-full bg-[var(--color-border)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-primary)]"
-                      style={{ width: `${widthPercent}%` }}
+                <div className="space-y-2">
+                  <p className="body-sm text-[var(--color-text)]">Link goals to this meeting</p>
+                  {employeeGoals.length === 0 && (
+                    <p className="caption">No approved/submitted goals found for selected employee.</p>
+                  )}
+                  {employeeGoals.map((goal) => (
+                    <Checkbox
+                      key={goal.$id}
+                      label={goal.title}
+                      description={`Progress ${goal.progressPercent || 0}%`}
+                      checked={linkedGoalIds.includes(goal.$id)}
+                      onChange={(event) => {
+                        setLinkedGoalIds((current) =>
+                          event.target.checked
+                            ? Array.from(new Set([...current, goal.$id]))
+                            : current.filter((id) => id !== goal.$id)
+                        );
+                      }}
                     />
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
-          </Stack>
-        </Card>
 
-        <Card title="Team Approvals" description="Approve or reject pending meeting requests.">
-          <Stack gap="2">
-            {!loading && pendingApprovals.length === 0 && (
-              <p className="caption">No pending meeting approvals.</p>
-            )}
-            {pendingApprovals.map((request) => (
-              <div
-                key={request.$id}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="body-sm text-[var(--color-text)]">{request.title}</p>
-                  <Badge variant="info">pending</Badge>
+                <div className="space-y-2">
+                  <p className="body-sm text-[var(--color-text)]">Additional participants</p>
+                  {teamMembers
+                    .filter((member) => member.$id !== selectedEmployeeId)
+                    .map((member) => (
+                      <Checkbox
+                        key={member.$id}
+                        label={member.name || member.email || member.$id}
+                        checked={participantIds.includes(member.$id)}
+                        onChange={(event) => {
+                          setParticipantIds((current) =>
+                            event.target.checked
+                              ? Array.from(new Set([...current, member.$id]))
+                              : current.filter((id) => id !== member.$id)
+                          );
+                        }}
+                      />
+                    ))}
                 </div>
-                <p className="caption mt-1">Requested: {formatDate(request.requestedAt)}</p>
-                <p className="caption mt-1">Meeting type: {request.meetingType || "individual"}</p>
-                <p className="caption mt-1">Linked goals: {request.linkedGoalIds?.length || 0}</p>
-                {request.proposedStartTime && request.proposedEndTime && (
-                  <p className="caption mt-1">
-                    Proposed: {formatDate(request.proposedStartTime)} to {formatDate(request.proposedEndTime)}
+                <Input
+                  label="Meeting start"
+                  type="datetime-local"
+                  value={meetingStart}
+                  onChange={(event) => setMeetingStart(event.target.value)}
+                />
+                <Input
+                  label="Meeting end"
+                  type="datetime-local"
+                  value={meetingEnd}
+                  onChange={(event) => setMeetingEnd(event.target.value)}
+                />
+                <Button
+                  onClick={handleCreateMeeting}
+                  loading={savingMeeting}
+                  disabled={!selectedEmployeeId || !managerGoogleConnected}
+                >
+                  Schedule Meeting
+                </Button>
+              </Stack>
+            </Card>
+
+            <Card title="Team Calendar" description="Selected employee events for the next 7 days.">
+              <Stack gap="3">
+                {!managerGoogleConnected && (
+                  <p className="caption">Connect your Google account to view employee calendars.</p>
+                )}
+
+                {loadingEvents && <p className="caption">Loading events...</p>}
+                {!loadingEvents && selectedEmployeeId && employeeEvents.length === 0 && (
+                  <p className="caption">
+                    {selectedEmployeeConnected
+                      ? "No events in next 7 days."
+                      : "Selected employee has not connected Google Calendar yet."}
                   </p>
                 )}
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleApproveRequest(request)}
-                    disabled={processingApprovalId === request.$id}
+
+                {employeeEvents.map((event) => (
+                  <div
+                    key={event.eventId || `${event.title}-${event.startTime}`}
+                    className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
                   >
-                    Approve
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRejectRequest(request)}
-                    disabled={processingApprovalId === request.$id}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </Stack>
-        </Card>
-      </Grid>
-
-      <Grid cols={1} colsLg={2} gap="3">
-        <Card title="Team Calendar" description="Selected employee events for the next 7 days.">
-          <Stack gap="3">
-            <Select
-              label="Employee"
-              options={employeeOptions}
-              value={selectedEmployeeId}
-              onChange={(event) => setSelectedEmployeeId(event.target.value)}
-              placeholder="Select employee"
-              disabled={teamMembers.length === 0 || loading}
-            />
-
-            {!managerGoogleConnected && (
-              <p className="caption">Connect your Google account to view employee calendars.</p>
-            )}
-
-            {loadingEvents && <p className="caption">Loading events...</p>}
-            {!loadingEvents && selectedEmployeeId && employeeEvents.length === 0 && (
-              <p className="caption">
-                {selectedEmployeeConnected
-                  ? "No events in next 7 days."
-                  : "Selected employee has not connected Google Calendar yet."}
-              </p>
-            )}
-
-            {employeeEvents.map((event) => (
-              <div
-                key={event.eventId || `${event.title}-${event.startTime}`}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="body-sm text-[var(--color-text)]">{event.title || "Untitled event"}</p>
-                  <Badge variant="info">{formatTimeRange(event.startTime, event.endTime)}</Badge>
-                </div>
-                {event.meetLink && (
-                  <a
-                    className="caption mt-2 inline-block text-[var(--color-primary)] underline"
-                    href={event.meetLink}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open Google Meet
-                  </a>
-                )}
-              </div>
-            ))}
-          </Stack>
-        </Card>
-
-        <Card title="Schedule Meeting" description="Check availability and schedule with existing calendar APIs.">
-          <Stack gap="3">
-            <Input
-              label="Availability start"
-              type="datetime-local"
-              value={availabilityStart}
-              onChange={(event) => setAvailabilityStart(event.target.value)}
-            />
-            <Input
-              label="Availability end"
-              type="datetime-local"
-              value={availabilityEnd}
-              onChange={(event) => setAvailabilityEnd(event.target.value)}
-            />
-            <Button
-              variant="secondary"
-              onClick={handleCheckAvailability}
-              loading={checkingAvailability}
-              disabled={!selectedEmployeeId || !managerGoogleConnected}
-            >
-              Check Availability
-            </Button>
-
-            <div className="space-y-2">
-              <p className="body-sm text-[var(--color-text)]">Select Time Slot</p>
-              <AvailabilityCalendar
-                busySlots={busySlots}
-                selectedSlot={selectedSlot}
-                loading={checkingAvailability}
-                range={availabilityRange}
-                onSelectSlot={handleSelectSlot}
-              />
-            </div>
-
-            {availableSlotCount !== null && (
-              <p className="caption">Available one-hour slots: {availableSlotCount}</p>
-            )}
-
-            <Input
-              label="Meeting title"
-              value={meetingTitle}
-              onChange={(event) => setMeetingTitle(event.target.value)}
-            />
-            <Select
-              label="Meeting type"
-              value={meetingType}
-              onChange={(event) => setMeetingType(event.target.value === "group" ? "group" : "individual")}
-              options={[
-                { value: "individual", label: "Individual" },
-                { value: "group", label: "Group" },
-              ]}
-            />
-
-            <div className="space-y-2">
-              <p className="body-sm text-[var(--color-text)]">Link goals to this meeting</p>
-              {employeeGoals.length === 0 && (
-                <p className="caption">No approved/submitted goals found for selected employee.</p>
-              )}
-              {employeeGoals.map((goal) => (
-                <Checkbox
-                  key={goal.$id}
-                  label={goal.title}
-                  description={`Progress ${goal.progressPercent || 0}%`}
-                  checked={linkedGoalIds.includes(goal.$id)}
-                  onChange={(event) => {
-                    setLinkedGoalIds((current) =>
-                      event.target.checked
-                        ? Array.from(new Set([...current, goal.$id]))
-                        : current.filter((id) => id !== goal.$id)
-                    );
-                  }}
-                />
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <p className="body-sm text-[var(--color-text)]">Additional participants</p>
-              {teamMembers
-                .filter((member) => member.$id !== selectedEmployeeId)
-                .map((member) => (
-                  <Checkbox
-                    key={member.$id}
-                    label={member.name || member.email || member.$id}
-                    checked={participantIds.includes(member.$id)}
-                    onChange={(event) => {
-                      setParticipantIds((current) =>
-                        event.target.checked
-                          ? Array.from(new Set([...current, member.$id]))
-                          : current.filter((id) => id !== member.$id)
-                      );
-                    }}
-                  />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="body-sm text-[var(--color-text)]">{event.title || "Untitled event"}</p>
+                      <Badge variant="info">{formatTimeRange(event.startTime, event.endTime)}</Badge>
+                    </div>
+                    {event.meetLink && (
+                      <a
+                        className="caption mt-2 inline-block text-[var(--color-primary)] underline"
+                        href={event.meetLink}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open Google Meet
+                      </a>
+                    )}
+                  </div>
                 ))}
-            </div>
-            <Input
-              label="Meeting start"
-              type="datetime-local"
-              value={meetingStart}
-              onChange={(event) => setMeetingStart(event.target.value)}
-            />
-            <Input
-              label="Meeting end"
-              type="datetime-local"
-              value={meetingEnd}
-              onChange={(event) => setMeetingEnd(event.target.value)}
-            />
-            <Button
-              onClick={handleCreateMeeting}
-              loading={savingMeeting}
-              disabled={!selectedEmployeeId || !managerGoogleConnected}
-            >
-              Schedule Meeting
-            </Button>
+              </Stack>
+            </Card>
           </Stack>
-        </Card>
 
-        <Card title="Meeting Intelligence" description="Capture transcript, generate structured intelligence, ask questions, and download report.">
           <Stack gap="3">
-            <Select
-              label="Scheduled meeting"
-              value={selectedMeetingId}
-              onChange={(event) => setSelectedMeetingId(event.target.value)}
-              options={scheduledMeetingOptions}
-              placeholder="Select scheduled meeting"
-            />
-            {loadingReport && <p className="caption">Loading meeting intelligence...</p>}
+            <Card title="Team Goal Assignment" description="Google Calendar connection status for each team member.">
+              <Stack gap="2">
+                {!loading && teamMembers.length === 0 && <p className="caption">No team members found.</p>}
+                {teamMembers.map((member) => {
+                  const connected = Boolean(connectionByEmployeeId[member.$id]);
+                  return (
+                    <div
+                      key={member.$id}
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="body-sm text-[var(--color-text)]">{member.name || member.email || member.$id}</p>
+                        <Badge variant={connected ? "success" : "warning"}>
+                          {connected ? "Connected" : "Not Connected"}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </Stack>
+            </Card>
 
-            <Textarea
-              label="Transcript"
-              rows={5}
-              value={transcriptText}
-              onChange={(event) => setTranscriptText(event.target.value)}
-              placeholder="Paste Google Meet transcript or integrated transcript source"
-            />
-            <Button
-              variant="secondary"
-              onClick={handleGenerateMeetingIntelligence}
-              loading={generatingReport}
-              disabled={!selectedMeetingId}
-            >
-              Generate AI Meeting Intelligence
-            </Button>
+            <Card title="Team Progress Overview" description="Meeting pipeline status across your team.">
+              <Stack gap="2">
+                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
+                  <p className="caption">Pending requests</p>
+                  <p className="body-sm">{loading ? "..." : stats.totalPending}</p>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
+                  <p className="caption">Scheduled meetings</p>
+                  <p className="body-sm">{loading ? "..." : stats.totalScheduled}</p>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
+                  <p className="caption">Connected members</p>
+                  <p className="body-sm">{loading ? "..." : `${stats.connectedEmployees}/${stats.totalEmployees}`}</p>
+                </div>
+              </Stack>
+            </Card>
 
-            {meetingReport && (
-              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
-                <p className="body-sm font-medium text-[var(--color-text)]">Summary</p>
-                <p className="caption mt-1">{meetingReport.summary}</p>
-                {meetingReport.keyTakeaways?.length > 0 && (
-                  <div className="mt-2">
-                    <p className="body-sm text-[var(--color-text)]">Key takeaways</p>
-                    <ul className="mt-1 list-disc pl-5 caption">
-                      {meetingReport.keyTakeaways.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
+            <Card title="Team Ranking & Graph" description="Ranking by scheduled meetings with quick visual bars.">
+              <Stack gap="2">
+                {!loading && stats.ranking.length === 0 && <p className="caption">No ranking data yet.</p>}
+                {stats.ranking.map((entry) => {
+                  const member = teamMembers.find((item) => item.$id === entry.employeeId);
+                  const label = member?.name || member?.email || entry.employeeId;
+                  const widthPercent = Math.max(8, Math.round((entry.scheduled / rankingMax) * 100));
+
+                  return (
+                    <div
+                      key={entry.employeeId}
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="body-sm text-[var(--color-text)]">{label}</p>
+                        <p className="caption">{entry.scheduled} scheduled</p>
+                      </div>
+                      <div className="mt-2 h-2 w-full rounded-full bg-[var(--color-border)]">
+                        <div
+                          className="h-full rounded-full bg-[var(--color-primary)]"
+                          style={{ width: `${widthPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </Stack>
+            </Card>
+
+            <Card title="Team Approvals" description="Approve or reject pending meeting requests.">
+              <Stack gap="2">
+                {!loading && pendingApprovals.length === 0 && (
+                  <p className="caption">No pending meeting approvals.</p>
+                )}
+                {pendingApprovals.map((request) => (
+                  <div
+                    key={request.$id}
+                    className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="body-sm text-[var(--color-text)]">{request.title}</p>
+                      <Badge variant="info">pending</Badge>
+                    </div>
+                    <p className="caption mt-1">Requested: {formatDate(request.requestedAt)}</p>
+                    <p className="caption mt-1">Meeting type: {request.meetingType || "individual"}</p>
+                    <p className="caption mt-1">Linked goals: {request.linkedGoalIds?.length || 0}</p>
+                    {request.proposedStartTime && request.proposedEndTime && (
+                      <p className="caption mt-1">
+                        Proposed: {formatDate(request.proposedStartTime)} to {formatDate(request.proposedEndTime)}
+                      </p>
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleApproveRequest(request)}
+                        disabled={processingApprovalId === request.$id}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRejectRequest(request)}
+                        disabled={processingApprovalId === request.$id}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </Stack>
+            </Card>
+
+            <Card title="Meeting Intelligence" description="Capture transcript, generate structured intelligence, ask questions, and download report.">
+              <Stack gap="3">
+                <Select
+                  label="Scheduled meeting"
+                  value={selectedMeetingId}
+                  onChange={(event) => setSelectedMeetingId(event.target.value)}
+                  options={scheduledMeetingOptions}
+                  placeholder="Select scheduled meeting"
+                />
+                {loadingReport && <p className="caption">Loading meeting intelligence...</p>}
+
+                <Textarea
+                  label="Transcript"
+                  rows={5}
+                  value={transcriptText}
+                  onChange={(event) => setTranscriptText(event.target.value)}
+                  placeholder="Paste Google Meet transcript or integrated transcript source"
+                />
+                <Button
+                  variant="secondary"
+                  onClick={handleGenerateMeetingIntelligence}
+                  loading={generatingReport}
+                  disabled={!selectedMeetingId}
+                >
+                  Generate AI Meeting Intelligence
+                </Button>
+
+                {meetingReport && (
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                    <p className="body-sm font-medium text-[var(--color-text)]">Summary</p>
+                    <p className="caption mt-1">{meetingReport.summary}</p>
+                    {meetingReport.keyTakeaways?.length > 0 && (
+                      <div className="mt-2">
+                        <p className="body-sm text-[var(--color-text)]">Key takeaways</p>
+                        <ul className="mt-1 list-disc pl-5 caption">
+                          {meetingReport.keyTakeaways.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {meetingReport.actionItems?.length > 0 && (
+                      <div className="mt-2">
+                        <p className="body-sm text-[var(--color-text)]">Action items</p>
+                        <ul className="mt-1 list-disc pl-5 caption">
+                          {meetingReport.actionItems.map((item, index) => (
+                            <li key={`${item.owner}-${item.action}-${index}`}>
+                              {item.owner}: {item.action}
+                              {item.dueDate ? ` (due ${formatDate(item.dueDate)})` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
-                {meetingReport.actionItems?.length > 0 && (
-                  <div className="mt-2">
-                    <p className="body-sm text-[var(--color-text)]">Action items</p>
-                    <ul className="mt-1 list-disc pl-5 caption">
-                      {meetingReport.actionItems.map((item, index) => (
-                        <li key={`${item.owner}-${item.action}-${index}`}>
-                          {item.owner}: {item.action}
-                          {item.dueDate ? ` (due ${formatDate(item.dueDate)})` : ""}
-                        </li>
-                      ))}
-                    </ul>
+
+                <Input
+                  label="Ask meeting AI"
+                  value={meetingQuestion}
+                  onChange={(event) => setMeetingQuestion(event.target.value)}
+                  placeholder="e.g. What were my action items?"
+                />
+                <Button
+                  variant="secondary"
+                  onClick={handleAskQuestion}
+                  loading={askingQuestion}
+                  disabled={!selectedMeetingId}
+                >
+                  Ask AI
+                </Button>
+
+                {meetingAnswer && (
+                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+                    <p className="body-sm text-[var(--color-text)]">{meetingAnswer}</p>
+                    {meetingCitations.length > 0 && (
+                      <ul className="mt-2 list-disc pl-5 caption">
+                        {meetingCitations.map((citation) => (
+                          <li key={citation}>{citation}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            <Input
-              label="Ask meeting AI"
-              value={meetingQuestion}
-              onChange={(event) => setMeetingQuestion(event.target.value)}
-              placeholder="e.g. What were my action items?"
-            />
-            <Button
-              variant="secondary"
-              onClick={handleAskQuestion}
-              loading={askingQuestion}
-              disabled={!selectedMeetingId}
-            >
-              Ask AI
-            </Button>
-
-            {meetingAnswer && (
-              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
-                <p className="body-sm text-[var(--color-text)]">{meetingAnswer}</p>
-                {meetingCitations.length > 0 && (
-                  <ul className="mt-2 list-disc pl-5 caption">
-                    {meetingCitations.map((citation) => (
-                      <li key={citation}>{citation}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
-              Download Meeting Report
-            </Button>
+                <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
+                  Download Meeting Report
+                </Button>
+              </Stack>
+            </Card>
           </Stack>
-        </Card>
-      </Grid>
-    </Stack>
+        </Grid>
+      </Stack>
+    </Container>
   );
 }

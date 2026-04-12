@@ -281,7 +281,7 @@ Files under `app/region-admin/*` remain as compatibility/alias surfaces and shou
 - `app/employee/check-ins/page.tsx`
 - `app/employee/matrix-feedback/page.tsx`
 - `app/employee/meetings/page.tsx`
-- `app/employee/meeting-calendar/page.tsx`
+- `app/employee/meetings/page.tsx`
 - `app/employee/timeline/page.tsx`
 - `app/employee/growth/page.tsx`
 

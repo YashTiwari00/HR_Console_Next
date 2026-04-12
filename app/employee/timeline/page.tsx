@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Stack } from "@/src/components/layout";
+import { Container, Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input, Textarea } from "@/src/components/ui";
 import {
@@ -479,7 +479,7 @@ export default function EmployeeTimelinePage() {
       {
         label: "Self Review",
         done: hasFinalCheckIn && !hasPendingSelfReview,
-        locked: !hasFinalCheckIn || hasPendingSelfReview,
+        locked: !hasFinalCheckIn,
         details: "Submit self review after final check-in completion.",
       },
       {
@@ -505,10 +505,18 @@ export default function EmployeeTimelinePage() {
       "Manager Review",
     ];
 
-    return sections.map((section) => ({
-      section,
-      events: timelineEvents.filter((event) => event.section === section),
-    }));
+    return sections
+      .map((section) => ({
+        section,
+        events: timelineEvents
+          .filter((event) => event.section === section)
+          .sort((a, b) => {
+            const left = new Date(a.timestamp).getTime();
+            const right = new Date(b.timestamp).getTime();
+            return right - left;
+          }),
+      }))
+      .filter((group) => group.events.length > 0);
   }, [timelineEvents]);
 
   const insights = useMemo(() => {
@@ -612,7 +620,7 @@ export default function EmployeeTimelinePage() {
       }
 
       if (actionType === "submit_self_review") {
-        document.getElementById("self-review-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("self-review-step")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     },
     [router]
@@ -730,306 +738,390 @@ export default function EmployeeTimelinePage() {
 
   const allSubmitted = completion.total > 0 && completion.completed === completion.total;
 
+  const hasCycleGoals = useMemo(
+    () => goals.some((goal) => String(goal?.cycleId || "") === cycleId),
+    [goals, cycleId]
+  );
+
+  const primaryCta = useMemo(() => {
+    if (!hasCycleGoals) {
+      return {
+        label: "Create Goals",
+        actionType: "create_goal" as WorkflowActionType,
+      };
+    }
+
+    if (nextAction.actionType === "start_checkin") {
+      return {
+        label: "Plan Check-in",
+        actionType: "start_checkin" as WorkflowActionType,
+      };
+    }
+
+    return {
+      label: "Continue Workflow",
+      actionType: nextAction.actionType,
+    };
+  }, [hasCycleGoals, nextAction.actionType]);
+
+  const activeTimelineStepLabel = useMemo(() => {
+    const nextPendingStep = nodes.find((node) => !node.done && !node.locked);
+    return nextPendingStep?.label || "";
+  }, [nodes]);
+
+  const handlePrimaryCta = useCallback(() => {
+    if (primaryCta.actionType) {
+      openAction(primaryCta.actionType);
+      return;
+    }
+
+    document.getElementById("unified-lifecycle-section")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [openAction, primaryCta.actionType]);
+
   return (
-    <Stack gap="4">
-      <PageHeader
-        title="Cycle Timeline"
-        subtitle="Single lifecycle path for this performance cycle."
-        actions={
-          <Button variant="secondary" onClick={loadData} disabled={loading}>
-            Refresh
-          </Button>
-        }
-      />
-
-      {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
-
-      {selfReviewMessage && (
-        <Alert
-          variant="success"
-          title="Self Review"
-          description={selfReviewMessage}
-          onDismiss={() => setSelfReviewMessage("")}
+    <Container maxWidth="xl">
+      <Stack gap="5">
+        <PageHeader
+          title="Cycle Timeline"
+          subtitle="Track your performance lifecycle"
+          actions={
+            <div className="flex items-center gap-2">
+              <Button onClick={handlePrimaryCta} disabled={loading}>
+                {primaryCta.label}
+              </Button>
+              <Button variant="secondary" onClick={loadData} disabled={loading}>
+                Refresh
+              </Button>
+            </div>
+          }
         />
-      )}
 
-      <Card title="Insights" description="Rule-based guidance for this cycle.">
-        <Stack gap="2">
-          {insights.map((insight, index) => {
-            const variant = insight.type === "risk"
-              ? "warning"
-              : insight.type === "positive"
-                ? "success"
-                : "info";
+        {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
 
-            return (
-              <Alert
-                key={`${insight.type}-${index}`}
-                variant={variant}
-                title={insight.priority === "high" ? "High Priority" : insight.priority === "medium" ? "Medium Priority" : "Low Priority"}
-                description={insight.message}
-              />
-            );
-          })}
-        </Stack>
-      </Card>
+        {selfReviewMessage && (
+          <Alert
+            variant="success"
+            title="Self Review"
+            description={selfReviewMessage}
+            onDismiss={() => setSelfReviewMessage("")}
+          />
+        )}
 
-      <Card title="Pending Notifications" description="In-app nudges and reminders for your workflow.">
-        <Stack gap="2">
-          {notificationsLoading && <p className="caption">Loading notifications...</p>}
+        <Grid cols={12} gap="5">
+          <div className="col-span-12 lg:col-span-8">
+            <Card title="Timeline Nodes" description="Nodes lock/unlock based on actual workflow state.">
+              <Stack gap="4">
+                {loading && <p className="caption">Loading timeline...</p>}
+                {nodes.map((node, index) => {
+                  const isLast = index === nodes.length - 1;
+                  const statusClass = node.done
+                    ? "bg-emerald-500"
+                    : node.locked
+                      ? "bg-amber-500"
+                      : "bg-slate-400";
+                  const isActiveStep = activeTimelineStepLabel === node.label;
+                  const hasPendingSelfReviewAction =
+                    sectionActionState["Self Review"].actionType === "submit_self_review";
+                  const isSelfReviewActive =
+                    node.label === "Self Review" && (isActiveStep || hasPendingSelfReviewAction);
 
-          {!notificationsLoading && notifications.length === 0 && (
-            <p className="caption">No unread notifications right now.</p>
-          )}
-
-          {!notificationsLoading &&
-            notifications.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="body-sm font-medium text-[var(--color-text)]">{item.title}</p>
-                  <Badge variant="warning">Pending</Badge>
-                </div>
-                <p className="caption mt-2">{item.message}</p>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <p className="caption">{formatDate(item.createdAt)}</p>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleMarkRead(item.id)}
-                    loading={markingReadId === item.id}
-                    disabled={markingReadId === item.id}
-                  >
-                    Mark Read
-                  </Button>
-                </div>
-              </div>
-            ))}
-        </Stack>
-      </Card>
-
-      <Card title="Timeline Nodes" description="Nodes lock/unlock based on actual workflow state.">
-        <Stack gap="2">
-          {loading && <p className="caption">Loading timeline...</p>}
-          {nodes.map((node) => (
-            <div key={node.label} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="body-sm font-medium text-[var(--color-text)]">{node.label}</p>
-                <Badge variant={node.done ? "success" : node.locked ? "warning" : "default"}>
-                  {node.done ? "Done" : node.locked ? "Locked" : "Pending"}
-                </Badge>
-              </div>
-              <p className="caption mt-2">{node.details}</p>
-            </div>
-          ))}
-        </Stack>
-      </Card>
-
-      <Card title="Self Review" description="A short conversation with each goal before manager review.">
-        <Stack gap="3">
-          <div id="self-review-section" className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="body-sm font-medium text-[var(--color-text)]">Completion</p>
-              <Badge variant={allSubmitted ? "success" : "warning"}>
-                {completion.completed}/{completion.total || 0} goals submitted
-              </Badge>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
-              <div
-                className="h-full bg-[var(--color-primary)] transition-all"
-                style={{
-                  width: completion.total > 0 ? `${Math.round((completion.completed / completion.total) * 100)}%` : "0%",
-                }}
-              />
-            </div>
-          </div>
-
-          {selfReviewLoading && <p className="caption">Loading self-review goals...</p>}
-
-          {!selfReviewLoading && selfReviewRows.length === 0 && (
-            <p className="caption">No goals found for this cycle yet.</p>
-          )}
-
-          {!selfReviewLoading &&
-            selfReviewRows.map((row) => {
-              const goalId = row.goal.$id;
-              const draft = selfReviewDrafts[goalId] || buildDraft(row);
-              const submitted = normalize(row.selfReview?.status) === "submitted";
-              const locked = submitted || !row.editable;
-              const expanded = Boolean(expandedGoalIds[goalId]);
-
-              return (
-                <div key={goalId} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="body-sm font-semibold text-[var(--color-text)]">{row.goal.title}</p>
-                      <p className="caption">{row.goal.description}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Badge variant="default">Progress {row.goal.progressPercent}%</Badge>
-                        <Badge variant={submitted ? "success" : "warning"}>
-                          {submitted ? "Submitted" : "Draft"}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        setExpandedGoalIds((prev) => ({
-                          ...prev,
-                          [goalId]: !prev[goalId],
-                        }))
-                      }
-                    >
-                      {expanded ? "Collapse" : "Expand"}
-                    </Button>
-                  </div>
-
-                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
-                    <div className="h-full bg-[var(--color-accent)]" style={{ width: `${row.goal.progressPercent}%` }} />
-                  </div>
-
-                  {expanded && (
-                    <div className="mt-3 space-y-3">
-                      <Textarea
-                        label="Achievements"
-                        placeholder="What moved forward for this goal?"
-                        value={draft.achievements}
-                        onChange={(event) => updateDraft(goalId, { achievements: event.target.value })}
-                        disabled={locked}
-                      />
-
-                      <Textarea
-                        label="Challenges faced"
-                        placeholder="What slowed progress, and why?"
-                        value={draft.challenges}
-                        onChange={(event) => updateDraft(goalId, { challenges: event.target.value })}
-                        disabled={locked}
-                      />
-
-                      <label className="block text-xs font-medium text-[var(--color-text-muted)]">
-                        Self rating
-                        <select
-                          className="mt-1 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-                          value={draft.selfRating}
-                          onChange={(event) => updateDraft(goalId, { selfRating: event.target.value })}
-                          disabled={locked}
-                        >
-                          <option value="">Select rating</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                          <option value="4">4</option>
-                          <option value="5">5</option>
-                          <option value="EE">EE</option>
-                          <option value="DE">DE</option>
-                          <option value="ME">ME</option>
-                          <option value="SME">SME</option>
-                          <option value="NI">NI</option>
-                        </select>
-                      </label>
-
-                      <Textarea
-                        label="Additional comments"
-                        placeholder="Anything else your manager should know?"
-                        value={draft.additionalComments}
-                        onChange={(event) => updateDraft(goalId, { additionalComments: event.target.value, selfComment: event.target.value })}
-                        disabled={locked}
-                      />
-
-                      <Input
-                        label="Evidence links or attachment IDs (comma-separated)"
-                        value={draft.evidenceLinksText}
-                        onChange={(event) =>
-                          updateDraft(goalId, {
-                            evidenceLinksText: event.target.value,
-                            evidenceLinks: splitEvidenceLinks(event.target.value),
-                          })
-                        }
-                        disabled={locked}
-                      />
-
-                      {!locked && (
-                        <div>
-                          <label className="caption block mb-1">Evidence upload (optional)</label>
-                          <input
-                            type="file"
-                            multiple
-                            disabled={uploadingGoalId === goalId}
-                            onChange={(event) => handleEvidenceUpload(goalId, event.target.files)}
-                            className="caption block w-full"
+                  return (
+                    <Card key={node.label}>
+                      <div className="flex items-start gap-4">
+                        <div className="flex flex-col items-center self-stretch">
+                          <div className={`h-3 w-3 rounded-full ${statusClass}`} />
+                          <div
+                            className={`mt-1 w-px flex-1 bg-[var(--color-border)] ${isLast ? "opacity-0" : "opacity-100"}`}
                           />
                         </div>
-                      )}
 
-                      {splitEvidenceLinks(draft.evidenceLinksText).length > 0 && (
-                        <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
-                          <p className="caption">Evidence items: {splitEvidenceLinks(draft.evidenceLinksText).length}</p>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {splitEvidenceLinks(draft.evidenceLinksText).map((item) => (
-                              isUrl(item) ? (
-                                <a
-                                  key={item}
-                                  href={item}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="caption underline"
-                                >
-                                  {item}
-                                </a>
-                              ) : (
-                                <a
-                                  key={item}
-                                  href={getAttachmentDownloadPath(item)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="caption underline"
-                                >
-                                  {item}
-                                </a>
-                              )
-                            ))}
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="body-sm font-medium text-[var(--color-text)]">{node.label}</h4>
+                            <Badge variant={node.done ? "success" : node.locked ? "warning" : "default"}>
+                              {node.done ? "Done" : node.locked ? "Locked" : "Pending"}
+                            </Badge>
                           </div>
+
+                          <p className="caption mt-2">{node.details}</p>
+
+                          {isSelfReviewActive && (
+                            <div id="self-review-step" className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
+                              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="body-sm font-medium text-[var(--color-text)]">Completion</p>
+                                  <Badge variant={allSubmitted ? "success" : "warning"}>
+                                    {completion.completed}/{completion.total || 0} goals submitted
+                                  </Badge>
+                                </div>
+                                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
+                                  <div
+                                    className="h-full bg-[var(--color-primary)] transition-all"
+                                    style={{
+                                      width: completion.total > 0 ? `${Math.round((completion.completed / completion.total) * 100)}%` : "0%",
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {selfReviewLoading && <p className="caption">Loading self-review goals...</p>}
+
+                              {!selfReviewLoading && selfReviewRows.length === 0 && (
+                                <p className="caption">No goals found for this cycle yet.</p>
+                              )}
+
+                              {!selfReviewLoading &&
+                                selfReviewRows.map((row) => {
+                                  const goalId = row.goal.$id;
+                                  const draft = selfReviewDrafts[goalId] || buildDraft(row);
+                                  const submitted = normalize(row.selfReview?.status) === "submitted";
+                                  const locked = submitted || !row.editable;
+                                  const expanded = Boolean(expandedGoalIds[goalId]);
+
+                                  return (
+                                    <div key={goalId} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="space-y-1">
+                                          <p className="body-sm font-semibold text-[var(--color-text)]">{row.goal.title}</p>
+                                          <p className="caption">{row.goal.description}</p>
+                                          <div className="mt-2 flex items-center gap-2">
+                                            <Badge variant="default">Progress {row.goal.progressPercent}%</Badge>
+                                            <Badge variant={submitted ? "success" : "warning"}>
+                                              {submitted ? "Submitted" : "Draft"}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          variant="secondary"
+                                          onClick={() =>
+                                            setExpandedGoalIds((prev) => ({
+                                              ...prev,
+                                              [goalId]: !prev[goalId],
+                                            }))
+                                          }
+                                        >
+                                          {expanded ? "Collapse" : "Expand"}
+                                        </Button>
+                                      </div>
+
+                                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
+                                        <div className="h-full bg-[var(--color-accent)]" style={{ width: `${row.goal.progressPercent}%` }} />
+                                      </div>
+
+                                      {expanded && (
+                                        <div className="mt-3 space-y-3">
+                                          <Textarea
+                                            label="Achievements"
+                                            placeholder="What moved forward for this goal?"
+                                            value={draft.achievements}
+                                            onChange={(event) => updateDraft(goalId, { achievements: event.target.value })}
+                                            disabled={locked}
+                                          />
+
+                                          <Textarea
+                                            label="Challenges faced"
+                                            placeholder="What slowed progress, and why?"
+                                            value={draft.challenges}
+                                            onChange={(event) => updateDraft(goalId, { challenges: event.target.value })}
+                                            disabled={locked}
+                                          />
+
+                                          <label className="block text-xs font-medium text-[var(--color-text-muted)]">
+                                            Self rating
+                                            <select
+                                              className="mt-1 w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+                                              value={draft.selfRating}
+                                              onChange={(event) => updateDraft(goalId, { selfRating: event.target.value })}
+                                              disabled={locked}
+                                            >
+                                              <option value="">Select rating</option>
+                                              <option value="1">1</option>
+                                              <option value="2">2</option>
+                                              <option value="3">3</option>
+                                              <option value="4">4</option>
+                                              <option value="5">5</option>
+                                              <option value="EE">EE</option>
+                                              <option value="DE">DE</option>
+                                              <option value="ME">ME</option>
+                                              <option value="SME">SME</option>
+                                              <option value="NI">NI</option>
+                                            </select>
+                                          </label>
+
+                                          <Textarea
+                                            label="Additional comments"
+                                            placeholder="Anything else your manager should know?"
+                                            value={draft.additionalComments}
+                                            onChange={(event) => updateDraft(goalId, { additionalComments: event.target.value, selfComment: event.target.value })}
+                                            disabled={locked}
+                                          />
+
+                                          <Input
+                                            label="Evidence links or attachment IDs (comma-separated)"
+                                            value={draft.evidenceLinksText}
+                                            onChange={(event) =>
+                                              updateDraft(goalId, {
+                                                evidenceLinksText: event.target.value,
+                                                evidenceLinks: splitEvidenceLinks(event.target.value),
+                                              })
+                                            }
+                                            disabled={locked}
+                                          />
+
+                                          {!locked && (
+                                            <div>
+                                              <label className="caption block mb-1">Evidence upload (optional)</label>
+                                              <input
+                                                type="file"
+                                                multiple
+                                                disabled={uploadingGoalId === goalId}
+                                                onChange={(event) => handleEvidenceUpload(goalId, event.target.files)}
+                                                className="caption block w-full"
+                                              />
+                                            </div>
+                                          )}
+
+                                          {splitEvidenceLinks(draft.evidenceLinksText).length > 0 && (
+                                            <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2">
+                                              <p className="caption">Evidence items: {splitEvidenceLinks(draft.evidenceLinksText).length}</p>
+                                              <div className="mt-1 flex flex-wrap gap-2">
+                                                {splitEvidenceLinks(draft.evidenceLinksText).map((item) => (
+                                                  isUrl(item) ? (
+                                                    <a
+                                                      key={item}
+                                                      href={item}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="caption underline"
+                                                    >
+                                                      {item}
+                                                    </a>
+                                                  ) : (
+                                                    <a
+                                                      key={item}
+                                                      href={getAttachmentDownloadPath(item)}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="caption underline"
+                                                    >
+                                                      {item}
+                                                    </a>
+                                                  )
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          <div className="flex items-center gap-2 pt-1">
+                                            <Button
+                                              size="sm"
+                                              variant="secondary"
+                                              disabled={locked || savingGoalId === goalId}
+                                              loading={savingGoalId === goalId}
+                                              onClick={() => handleSaveDraft(goalId)}
+                                            >
+                                              Save Draft
+                                            </Button>
+                                            {submitted && <Badge variant="success">Submitted</Badge>}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                              <div className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+                                <p className="caption">
+                                  Once submitted, self review fields become read-only.
+                                </p>
+                                <Button
+                                  onClick={handleSubmitSelfReview}
+                                  loading={submittingSelfReview}
+                                  disabled={submittingSelfReview || selfReviewRows.length === 0 || allSubmitted}
+                                >
+                                  Submit Self Review
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={locked || savingGoalId === goalId}
-                          loading={savingGoalId === goalId}
-                          onClick={() => handleSaveDraft(goalId)}
-                        >
-                          Save Draft
-                        </Button>
-                        {submitted && <Badge variant="success">Submitted</Badge>}
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-            <p className="caption">
-              Once submitted, self review fields become read-only.
-            </p>
-            <Button
-              onClick={handleSubmitSelfReview}
-              loading={submittingSelfReview}
-              disabled={submittingSelfReview || selfReviewRows.length === 0 || allSubmitted}
-            >
-              Submit Self Review
-            </Button>
+                    </Card>
+                  );
+                })}
+              </Stack>
+            </Card>
           </div>
-        </Stack>
-      </Card>
 
-      <Card title="Unified Lifecycle" description="Single event feed across goals, progress, and check-ins.">
-        <Stack gap="3">
+          <div className="col-span-12 lg:col-span-4">
+            <Stack gap="4">
+              <Card title="Insights" description="Rule-based guidance for this cycle.">
+                <Stack gap="2">
+                  {insights.map((insight, index) => {
+                    const variant = insight.type === "risk"
+                      ? "warning"
+                      : insight.type === "positive"
+                        ? "success"
+                        : "info";
+
+                    return (
+                      <Alert
+                        key={`${insight.type}-${index}`}
+                        variant={variant}
+                        title={insight.priority === "high" ? "High Priority" : insight.priority === "medium" ? "Medium Priority" : "Low Priority"}
+                        description={insight.message}
+                      />
+                    );
+                  })}
+                </Stack>
+              </Card>
+
+              <Card title="Notifications" description="In-app nudges and reminders for your workflow.">
+                <Stack gap="2">
+                  {notificationsLoading && <p className="caption">Loading notifications...</p>}
+
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <p className="caption">No unread notifications right now.</p>
+                  )}
+
+                  {!notificationsLoading &&
+                    notifications.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="body-sm font-medium text-[var(--color-text)]">{item.title}</p>
+                          <Badge variant="warning">Pending</Badge>
+                        </div>
+                        <p className="caption mt-2">{item.message}</p>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <p className="caption">{formatDate(item.createdAt)}</p>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleMarkRead(item.id)}
+                            loading={markingReadId === item.id}
+                            disabled={markingReadId === item.id}
+                          >
+                            Mark Read
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </Stack>
+              </Card>
+            </Stack>
+          </div>
+        </Grid>
+
+        <div id="unified-lifecycle-section">
+          <Card title="Recent Activity" description="Chronological feed grouped by stage.">
+            <Stack gap="4">
           {!eventsLoading && (
             <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
               <div className="flex items-center justify-between gap-2">
@@ -1069,31 +1161,31 @@ export default function EmployeeTimelinePage() {
                   )}
                 </div>
 
-                {group.events.length === 0 ? (
-                  <p className="caption">No events in this section.</p>
-                ) : (
-                  <div className="relative ml-2 border-l border-[var(--color-border)] pl-4">
-                    {group.events.map((event) => (
-                      <div key={event.id} className="relative mb-4 last:mb-0">
-                        <span className="absolute -left-[22px] inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[10px] font-medium text-[var(--color-text)]">
+                <div className="space-y-2">
+                  {group.events.map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[var(--color-border)] text-[10px] font-medium text-[var(--color-text)]">
                           {iconForEventType(event.eventType)}
                         </span>
-
-                        <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="body-sm font-medium text-[var(--color-text)]">{event.title}</p>
-                            <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
-                          </div>
-                          <p className="caption mt-1">{formatDate(event.timestamp)}</p>
+                        <div className="min-w-0">
+                          <p className="body-sm truncate font-medium text-[var(--color-text)]">{event.title}</p>
+                          <p className="caption">{formatDate(event.timestamp)}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
-        </Stack>
-      </Card>
-    </Stack>
+            </Stack>
+          </Card>
+        </div>
+      </Stack>
+    </Container>
   );
 }

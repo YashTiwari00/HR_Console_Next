@@ -26,7 +26,29 @@ export async function GET(request) {
     ]);
 
     const goals = goalsResult.documents || [];
-    const goalIds = goals.map((goal) => normalize(goal.$id)).filter(Boolean);
+    const cycleGoalIds = goals.map((goal) => normalize(goal.$id)).filter(Boolean);
+
+    let eligibleGoalIds = new Set();
+    if (cycleGoalIds.length > 0) {
+      const finalCheckInsResult = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.checkInsCollectionId,
+        [
+          Query.equal("employeeId", profile.$id),
+          Query.equal("goalId", cycleGoalIds),
+          Query.equal("isFinalCheckIn", true),
+          Query.equal("status", "completed"),
+          Query.limit(500),
+        ]
+      );
+
+      eligibleGoalIds = new Set(
+        (finalCheckInsResult.documents || []).map((item) => normalize(item.goalId)).filter(Boolean)
+      );
+    }
+
+    const eligibleGoals = goals.filter((goal) => eligibleGoalIds.has(normalize(goal.$id)));
+    const goalIds = eligibleGoals.map((goal) => normalize(goal.$id)).filter(Boolean);
 
     let reviews = [];
     try {
@@ -53,7 +75,7 @@ export async function GET(request) {
       reviewByGoalId.set(normalize(review.goalId), review);
     }
 
-    const data = goals.map((goal) => {
+    const data = eligibleGoals.map((goal) => {
       const goalId = normalize(goal.$id);
       const review = reviewByGoalId.get(goalId) || null;
 
@@ -96,7 +118,8 @@ export async function GET(request) {
       data,
       meta: {
         cycleId,
-        totalGoals: goals.length,
+        totalGoals: eligibleGoals.length,
+        cycleGoals: goals.length,
         reviewedGoals: data.filter((item) => Boolean(item.selfReview)).length,
         submittedGoals: data.filter((item) => normalize(item.selfReview?.status) === "submitted").length,
         goalIds,

@@ -1,12 +1,23 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/src/components/ui";
 import { useTheme } from "@/src/theme/ThemeProvider";
 
 export default function SidebarThemeToggle() {
   const { effectiveTheme, toggleTheme } = useTheme();
-  const isDarkTheme = effectiveTheme === "dark";
-  const actionLabel = isDarkTheme ? "Switch to light theme" : "Switch to dark theme";
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDarkTheme = mounted && effectiveTheme === "dark";
+  const actionLabel = mounted
+    ? isDarkTheme
+      ? "Switch to light theme"
+      : "Switch to dark theme"
+    : "Toggle theme";
 
   return (
     <Button

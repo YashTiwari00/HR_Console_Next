@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Grid, Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { Container, Grid, Stack } from "@/src/components/layout";
+import { FormSection, PageHeader } from "@/src/components/patterns";
+import { Alert, Badge, Button, Card, Divider, Dropdown, Input, Skeleton, Textarea } from "@/src/components/ui";
 import { MILESTONE_MESSAGES } from "@/lib/milestones";
 import {
   createProgressUpdate,
@@ -133,156 +133,307 @@ export default function EmployeeProgressPage() {
   }
 
   return (
-    <Stack gap="4">
-      <PageHeader
-        title="Progress Updates"
-        subtitle="Log progress continuously and keep goals on track."
-        actions={
-          <Button variant="secondary" onClick={loadData} disabled={loading || submitting}>
-            Refresh
-          </Button>
-        }
-      />
+    <Container maxWidth="xl">
+      <Stack gap="6">
+        <PageHeader
+          title="Progress Updates"
+          subtitle="Log progress continuously and keep goals on track"
+          actions={
+            <Button variant="secondary" onClick={loadData} disabled={loading || submitting}>
+              Refresh
+            </Button>
+          }
+        />
 
-      {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
-      {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
+        {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
+        {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
 
-      <Grid cols={1} colsMd={3} gap="3">
-        <Card title="Goals Tracked">
-          <p className="heading-xl">{loading ? "..." : goals.length}</p>
-        </Card>
-        <Card title="Average Progress">
-          <p className="heading-xl">{loading ? "..." : `${average}%`}</p>
-        </Card>
-        <Card title="Updates Logged">
-          <p className="heading-xl">{loading ? "..." : updates.length}</p>
-        </Card>
-      </Grid>
-
-      <Card title="Create Progress Update" description="Capture blockers, wins, and current status.">
-        <form className="space-y-3" onSubmit={handleSubmit}>
-          <Dropdown
-            label="Goal"
-            value={form.goalId}
-            onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
-            options={goals.map((goal) => ({ value: goal.$id, label: goal.title }))}
-            placeholder={goals.length ? undefined : "Create a goal first"}
-            disabled={goals.length === 0}
-          />
-
-          <Grid cols={1} colsMd={2} gap="2">
-            <Input
-              label="Percent Complete"
-              type="number"
-              min={0}
-              max={100}
-              value={form.percentComplete}
-              onChange={(event) => setForm((prev) => ({ ...prev, percentComplete: event.target.value }))}
-              required
-            />
-            <Dropdown
-              label="RAG Status"
-              value={form.ragStatus}
-              onChange={(ragStatus) => setForm((prev) => ({ ...prev, ragStatus }))}
-              options={ragOptions}
-            />
+        <Stack gap="4">
+          <Grid cols={1} colsMd={3} gap="3">
+            <Card className="hover:shadow-[var(--shadow-md)]">
+              <Stack gap="2">
+                <div className="flex items-start justify-between gap-[var(--space-2)]">
+                  <p className="caption">Goals Tracked</p>
+                  <span
+                    aria-hidden="true"
+                    className="h-[var(--space-4)] w-[var(--space-4)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)]"
+                  />
+                </div>
+                {loading ? (
+                  <Skeleton variant="rect" className="h-[var(--space-5)] w-[72px]" />
+                ) : (
+                  <p className="heading-xl font-bold text-[var(--color-text)]">{goals.length}</p>
+                )}
+              </Stack>
+            </Card>
+            <Card className="hover:shadow-[var(--shadow-md)]">
+              <Stack gap="2">
+                <div className="flex items-start justify-between gap-[var(--space-2)]">
+                  <p className="caption">Average Progress</p>
+                  <span
+                    aria-hidden="true"
+                    className="h-[var(--space-4)] w-[var(--space-4)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)]"
+                  />
+                </div>
+                {loading ? (
+                  <Skeleton variant="rect" className="h-[var(--space-5)] w-[88px]" />
+                ) : (
+                  <p className="heading-xl font-bold text-[var(--color-text)]">{`${average}%`}</p>
+                )}
+              </Stack>
+            </Card>
+            <Card className="hover:shadow-[var(--shadow-md)]">
+              <Stack gap="2">
+                <div className="flex items-start justify-between gap-[var(--space-2)]">
+                  <p className="caption">Updates Logged</p>
+                  <span
+                    aria-hidden="true"
+                    className="h-[var(--space-4)] w-[var(--space-4)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)]"
+                  />
+                </div>
+                {loading ? (
+                  <Skeleton variant="rect" className="h-[var(--space-5)] w-[72px]" />
+                ) : (
+                  <p className="heading-xl font-bold text-[var(--color-text)]">{updates.length}</p>
+                )}
+              </Stack>
+            </Card>
           </Grid>
 
-          <Textarea
-            label="Update"
-            value={form.updateText}
-            onChange={(event) => setForm((prev) => ({ ...prev, updateText: event.target.value }))}
-            required
-          />
+          <Divider label="Workspace" />
 
-          <div className="flex flex-col gap-2">
-            <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="proof-files">
-              Proof Attachments (optional)
-            </label>
-            <input
-              key={fileInputKey}
-              id="proof-files"
-              type="file"
-              multiple
-              accept=".png,.jpg,.jpeg,.pdf,.eml"
-              className="body-sm"
-              onChange={(event) => {
-                const files = event.target.files ? Array.from(event.target.files) : [];
-                setSelectedFiles(files);
-              }}
-            />
-            {selectedFiles.length > 0 && (
-              <p className="caption">Selected files: {selectedFiles.map((file) => file.name).join(", ")}</p>
-            )}
-          </div>
+          <Grid cols={1} colsLg={12} gap="4">
+            <div className="lg:col-span-7">
+              <Stack gap="3">
+                <Card>
+                  <Stack gap="3">
+                    <Stack gap="1">
+                      <h3 className="heading-lg text-[var(--color-text)]">Create Progress Update</h3>
+                      <p className="body-sm text-[var(--color-text-muted)]">Capture blockers, wins, and current status.</p>
+                    </Stack>
 
-          <Button type="submit" loading={submitting} disabled={!form.goalId}>
-            Save Progress Update
-          </Button>
-        </form>
-      </Card>
+                    <form onSubmit={handleSubmit}>
+                      <Stack gap="3">
+                        <FormSection title="Goal Selection" description="Choose the goal this update belongs to.">
+                          <Dropdown
+                            label="Goal"
+                            value={form.goalId}
+                            onChange={(goalId) => setForm((prev) => ({ ...prev, goalId }))}
+                            options={goals.map((goal) => ({ value: goal.$id, label: goal.title }))}
+                            placeholder={goals.length ? undefined : "Create a goal first"}
+                            disabled={goals.length === 0}
+                          />
+                        </FormSection>
 
-      {justCrossedMilestone && (
-        <div className="mb-4 rounded-xl border border-[var(--color-success)] bg-[var(--color-success-subtle)] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="text-2xl leading-none" aria-hidden="true">
-                {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.emoji || "🎉"}
-              </span>
-              <div>
-                <p className="body font-semibold text-[var(--color-text)]">
-                  {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.title || "Milestone reached!"}
-                </p>
-                <p className="caption mt-1 text-[var(--color-text)]">
-                  {String(
-                    MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.body ||
-                      "You crossed a milestone on '{goalTitle}'."
-                  ).replace("{goalTitle}", justCrossedMilestone.goalTitle)}
-                </p>
-              </div>
+                        <FormSection title="Progress Details" description="Update completion, status, and supporting notes." divider>
+                          <Grid cols={1} colsMd={2} gap="2">
+                            <Input
+                              label="Percent Complete"
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={form.percentComplete}
+                              onChange={(event) => setForm((prev) => ({ ...prev, percentComplete: event.target.value }))}
+                              required
+                            />
+                            <Dropdown
+                              label="RAG Status"
+                              value={form.ragStatus}
+                              onChange={(ragStatus) => setForm((prev) => ({ ...prev, ragStatus }))}
+                              options={ragOptions}
+                            />
+                          </Grid>
+
+                          <Textarea
+                            label="Update"
+                            value={form.updateText}
+                            onChange={(event) => setForm((prev) => ({ ...prev, updateText: event.target.value }))}
+                            required
+                          />
+
+                          <Stack gap="2">
+                            <label className="body-sm font-medium text-[var(--color-text)]" htmlFor="proof-files">
+                              Proof Attachments (optional)
+                            </label>
+                            <input
+                              key={fileInputKey}
+                              id="proof-files"
+                              type="file"
+                              multiple
+                              accept=".png,.jpg,.jpeg,.pdf,.eml"
+                              className="body-sm"
+                              onChange={(event) => {
+                                const files = event.target.files ? Array.from(event.target.files) : [];
+                                setSelectedFiles(files);
+                              }}
+                            />
+                            {selectedFiles.length > 0 && (
+                              <p className="caption">Selected files: {selectedFiles.map((file) => file.name).join(", ")}</p>
+                            )}
+                          </Stack>
+                        </FormSection>
+
+                        <div className="flex justify-end">
+                          <Button type="submit" size="lg" loading={submitting} disabled={!form.goalId}>
+                            Save Progress Update
+                          </Button>
+                        </div>
+                      </Stack>
+                    </form>
+                  </Stack>
+                </Card>
+              </Stack>
             </div>
-            <button
-              type="button"
-              onClick={() => setJustCrossedMilestone(null)}
-              className="caption text-[var(--color-text)] underline underline-offset-2 hover:no-underline"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
 
-      <Card title="Recent Updates" description="Your latest updates across all goals.">
-        <Stack gap="2">
-          {!loading && updates.length === 0 && <p className="caption">No progress updates yet.</p>}
-          {updates.map((item) => (
-            <div key={item.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="body-sm text-[var(--color-text)]">Goal: {item.goalId}</p>
-                <Badge variant={ragVariant(item.ragStatus)}>{item.ragStatus}</Badge>
-              </div>
-              <p className="caption mt-2">{item.updateText}</p>
-              <p className="caption mt-2">Progress: {item.percentComplete}%</p>
-              {item.attachmentIds && item.attachmentIds.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1">
-                  <p className="caption">Attachments: {item.attachmentIds.length}</p>
-                  {item.attachmentIds.map((fileId) => (
-                    <a
-                      key={fileId}
-                      href={getAttachmentDownloadPath(fileId)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="caption text-[var(--color-primary)] hover:underline"
-                    >
-                      Open attachment {fileId.slice(0, 8)}
-                    </a>
-                  ))}
+            <div className="lg:col-span-5">
+              <Stack gap="3">
+                <Card title="Insights" description="Placeholder panel for quick progress guidance.">
+                  <Stack gap="3">
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-[var(--space-3)] py-[var(--space-3)]">
+                      <Stack gap="1">
+                        <div className="flex items-center justify-between gap-[var(--space-2)]">
+                          <p className="caption">Your Status</p>
+                          <Badge variant="info">Preview</Badge>
+                        </div>
+                        <p className="body-sm text-[var(--color-text)]">Average progress: {loading ? "..." : `${average}%`}</p>
+                        <p className="caption text-[var(--color-text-muted)]">Trend: --</p>
+                      </Stack>
+                    </div>
+
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-[var(--space-3)] py-[var(--space-3)]">
+                      <Stack gap="1">
+                        <div className="flex items-center justify-between gap-[var(--space-2)]">
+                          <p className="caption">At Risk Goals</p>
+                          <Badge variant="warning">Placeholder</Badge>
+                        </div>
+                        <p className="body-sm text-[var(--color-text)]">Count: --</p>
+                      </Stack>
+                    </div>
+
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-[var(--space-3)] py-[var(--space-3)]">
+                      <Stack gap="1">
+                        <div className="flex items-center justify-between gap-[var(--space-2)]">
+                          <p className="caption">Tips</p>
+                          <Badge variant="success">Action</Badge>
+                        </div>
+                        <p className="body-sm text-[var(--color-text-muted)]">Update regularly to stay on track.</p>
+                      </Stack>
+                    </div>
+                  </Stack>
+                </Card>
+              </Stack>
+            </div>
+          </Grid>
+
+          {justCrossedMilestone && (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-success)] bg-[var(--color-success-subtle)] px-[var(--space-3)] py-[var(--space-3)]">
+              <div className="flex items-start justify-between gap-[var(--space-3)]">
+                <div className="flex items-start gap-[var(--space-3)]">
+                  <span className="text-2xl leading-none" aria-hidden="true">
+                    {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.emoji || "🎉"}
+                  </span>
+                  <Stack gap="1">
+                    <p className="body font-semibold text-[var(--color-text)]">
+                      {MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.title || "Milestone reached!"}
+                    </p>
+                    <p className="caption text-[var(--color-text)]">
+                      {String(
+                        MILESTONE_MESSAGES[`progress_${justCrossedMilestone.threshold}` as keyof typeof MILESTONE_MESSAGES]?.body ||
+                          "You crossed a milestone on '{goalTitle}'."
+                      ).replace("{goalTitle}", justCrossedMilestone.goalTitle)}
+                    </p>
+                  </Stack>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setJustCrossedMilestone(null)}
+                  className="caption text-[var(--color-text)] underline underline-offset-2 hover:no-underline"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
-          ))}
+          )}
+
+          <Divider label="Timeline" />
+
+          <Card title="Recent Updates" description="Timeline of your latest updates across all goals.">
+            <Stack gap="3">
+              {loading &&
+                Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`update-skeleton-${index}`} className="flex gap-[var(--space-3)]">
+                    <div className="flex w-[var(--space-3)] flex-col items-center">
+                      <Skeleton variant="circle" className="mt-[var(--space-1)] h-[var(--space-2)] w-[var(--space-2)]" />
+                      {index < 2 && <Skeleton variant="rect" className="mt-[var(--space-1)] h-full w-px" />}
+                    </div>
+
+                    <div className="flex-1">
+                      <Card className="shadow-none">
+                        <Stack gap="2">
+                          <div className="flex items-start justify-between gap-[var(--space-2)]">
+                            <Skeleton variant="rect" className="h-[var(--space-3)] w-[40%]" />
+                            <Skeleton variant="rect" className="h-[var(--space-3)] w-[64px] rounded-[999px]" />
+                          </div>
+                          <Skeleton variant="rect" className="h-[var(--space-3)] w-[92%]" />
+                          <Skeleton variant="rect" className="h-[var(--space-3)] w-[30%]" />
+                        </Stack>
+                      </Card>
+                    </div>
+                  </div>
+                ))}
+
+              {!loading && updates.length === 0 && (
+                <Card className="shadow-none">
+                  <p className="body-sm text-[var(--color-text-muted)]">
+                    No updates yet. Start by logging your first progress update.
+                  </p>
+                </Card>
+              )}
+
+              {!loading &&
+                updates.map((item, index) => (
+                  <div key={item.$id} className="flex gap-[var(--space-3)]">
+                    <div className="flex w-[var(--space-3)] flex-col items-center">
+                      <span className="mt-[var(--space-1)] h-[var(--space-2)] w-[var(--space-2)] rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]" />
+                      {index < updates.length - 1 && (
+                        <span className="mt-[var(--space-1)] h-full w-px bg-[var(--color-border)]" />
+                      )}
+                    </div>
+
+                    <div className="flex-1">
+                      <Card className="shadow-none">
+                        <Stack gap="2">
+                          <div className="flex items-start justify-between gap-[var(--space-2)]">
+                            <p className="body-sm font-semibold text-[var(--color-text)]">Goal title: {item.goalId}</p>
+                            <Badge variant={ragVariant(item.ragStatus)}>{item.ragStatus}</Badge>
+                          </div>
+                          <p className="body-sm text-[var(--color-text)]">{item.updateText}</p>
+                          <p className="caption">Progress: {item.percentComplete}%</p>
+                          {item.attachmentIds && item.attachmentIds.length > 0 && (
+                            <Stack gap="1">
+                              <p className="caption">Attachments: {item.attachmentIds.length}</p>
+                              {item.attachmentIds.map((fileId) => (
+                                <a
+                                  key={fileId}
+                                  href={getAttachmentDownloadPath(fileId)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="caption text-[var(--color-primary)] hover:underline"
+                                >
+                                  Open attachment {fileId.slice(0, 8)}
+                                </a>
+                              ))}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Card>
+                    </div>
+                  </div>
+                ))}
+            </Stack>
+          </Card>
         </Stack>
-      </Card>
-    </Stack>
+      </Stack>
+    </Container>
   );
 }

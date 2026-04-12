@@ -818,7 +818,7 @@ Examples:
 - Submits meeting requests to manager with proposed schedule.
 - Tracks pending/scheduled/rejected states.
 
-### Meeting calendar (`app/employee/meeting-calendar/page.tsx`)
+### Meeting calendar (`app/employee/meetings/page.tsx`)
 - Shows employee calendar context and meeting availability data from Google APIs.
 
 ### Timeline (`app/employee/timeline/page.tsx`)

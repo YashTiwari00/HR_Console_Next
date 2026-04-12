@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { Stack } from '@/src/components/layout';
 import { Alert, Button, Spinner } from '@/src/components/ui';
 import ExplainabilityDrawer from '@/src/components/patterns/ExplainabilityDrawer';
 import { cn } from '@/src/lib/cn';
@@ -33,22 +34,6 @@ interface GrowthPathwayResponse {
 }
 
 const CREDITS_PER_CYCLE = 3;
-
-function WindingPathIllustration() {
-  return (
-    <svg
-      viewBox="0 0 220 84"
-      width="100%"
-      height="84"
-      fill="none"
-      aria-hidden="true"
-      className="max-w-[260px]"
-    >
-      <path d="M12 56C44 32 76 32 108 56C140 80 172 80 208 56" stroke="var(--color-muted)" strokeWidth="6" strokeLinecap="round" />
-      <path d="M12 28C44 4 76 4 108 28C140 52 172 52 208 28" stroke="var(--color-muted-subtle)" strokeWidth="10" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function parsePathwayText(text: string): ReactNode[] {
   const lines = text
@@ -173,12 +158,12 @@ export function CareerPathwayPanel({
   return (
     <section
       className={cn(
-        'w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4',
+        'w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-[var(--space-4)]',
         className
       )}
       {...props}
     >
-      <div className="flex flex-col gap-4">
+      <Stack gap="3" align="start" className="w-full gap-[var(--space-4)]">
         <div>
           <h3 className="text-base font-semibold text-[var(--color-text)]">Career Pathway</h3>
           <p className="text-sm text-[var(--color-text-muted)]">
@@ -187,7 +172,7 @@ export function CareerPathwayPanel({
         </div>
 
         {error ? (
-          <div className="space-y-2">
+          <div className="space-y-[var(--space-2)]">
             <Alert variant="error" title="Could not generate pathway" description={error} />
             <Button variant="secondary" size="sm" onClick={() => void generatePathway()} disabled={loading}>
               Retry
@@ -196,25 +181,25 @@ export function CareerPathwayPanel({
         ) : null}
 
         {usageLimitReached ? (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
-            <p className="text-sm font-medium text-[var(--color-text)]">You've used all 3 AI credits for this cycle.</p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">Credits reset at the start of the next cycle.</p>
-          </div>
+          <Alert
+            variant="warning"
+            title="AI credits used for this cycle"
+            description="You have used all 3 credits. Credits reset at the start of the next cycle."
+          />
         ) : null}
 
         {!hasGenerated && !usageLimitReached ? (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-5">
-            <div className="flex flex-col items-start gap-3">
-              <WindingPathIllustration />
+          <div className="w-full rounded-xl border border-[color-mix(in_srgb,var(--color-primary)_28%,var(--color-border))] bg-[var(--color-surface-raised)] p-[var(--space-4)]">
+            <div className="flex flex-col items-start gap-[var(--space-3)]">
               <div>
-                <h4 className="text-sm font-semibold text-[var(--color-text)]">Discover your career pathway</h4>
+                <h4 className="text-sm font-semibold text-[var(--color-text)]">Generate your pathway</h4>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  Get a personalized suggestion based on your performance history and current role.
+                  Start with one AI suggestion tailored to your role and current growth signals.
                 </p>
               </div>
 
               {loading ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-[var(--space-2)]">
                   <Spinner size="sm" />
                   <p className="text-sm italic text-[var(--color-text-muted)]">Analysing your performance journey...</p>
                 </div>
@@ -231,18 +216,18 @@ export function CareerPathwayPanel({
         ) : null}
 
         {hasGenerated && pathwayText ? (
-          <div className="space-y-3">
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-5">
-              <div className="space-y-2">{parsedPathway}</div>
+          <div className="space-y-[var(--space-3)]">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-[var(--space-4)]">
+              <div className="space-y-[var(--space-2)]">{parsedPathway}</div>
             </div>
 
             {loading ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-[var(--space-2)]">
                 <Spinner size="sm" />
                 <p className="text-sm italic text-[var(--color-text-muted)]">Analysing your performance journey...</p>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-[var(--space-2)]">
                 {usedCount < CREDITS_PER_CYCLE ? (
                   <Button
                     variant="ghost"
@@ -266,7 +251,7 @@ export function CareerPathwayPanel({
             <p className="text-xs text-[var(--color-text-muted)]">Generated by AI · {generatedAt || new Date().toLocaleDateString()}</p>
           </div>
         ) : null}
-      </div>
+      </Stack>
 
       <ExplainabilityDrawer
         open={drawerOpen}

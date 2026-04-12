@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { Grid, Stack } from "@/src/components/layout";
+import { Container, Grid, Stack } from "@/src/components/layout";
 import { BulkGoalAiReviewPanel, ExplainabilityDrawer, GoalLineageView, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import { useAiMode } from "@/src/context/AiModeContext";
@@ -564,7 +564,8 @@ export default function ManagerGoalsPage() {
   }
 
   return (
-    <Stack gap="4">
+    <Container maxWidth="xl">
+      <Stack gap="6">
       <PageHeader
         title="My Goals Workspace"
         subtitle="Draft, refine, and submit your own goals for HR approval."
@@ -913,6 +914,7 @@ export default function ManagerGoalsPage() {
         payload={aiSuggestion?.explainability || null}
         title="Goal Suggestion Explainability"
       />
-    </Stack>
+      </Stack>
+    </Container>
   );
 }

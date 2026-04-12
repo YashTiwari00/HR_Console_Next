@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { requestJson } from "@/app/employee/_lib/pmsClient";
+import { Grid, Stack } from "@/src/components/layout";
 import PageHeader from "@/src/components/patterns/PageHeader";
 import CareerPathwayPanel from "@/src/components/patterns/CareerPathwayPanel";
 import TnaSkillCard from "@/src/components/patterns/TnaSkillCard";
 import Alert from "@/src/components/ui/Alert";
+import Badge from "@/src/components/ui/Badge";
 import Card from "@/src/components/ui/Card";
 import CycleHistoryTimeline from "@/src/components/ui/CycleHistoryTimeline";
+import NotificationBell from "@/src/components/ui/NotificationBell";
 import ReadinessBadge from "@/src/components/ui/ReadinessBadge";
 
 type TrendLabel = "new" | "stable" | "improving" | "declining";
@@ -232,11 +235,41 @@ export default function EmployeeGrowthPage() {
     growthData?.dataAvailable?.hasTnaItems === false &&
     (growthData?.recentGoals?.length ?? 0) === 0;
 
+  const cycleAtGlanceMetrics = (
+    <Grid cols={1} colsMd={3} gap="3" className="gap-[var(--space-4)]">
+      <Card className="h-full border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] bg-[var(--color-surface-muted)]">
+        <Stack gap="1" align="center" justify="center" className="h-full min-h-[132px] text-center">
+          <p className="text-3xl font-bold text-[var(--color-primary)]">{activeGoals.length}</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Active Goals</p>
+        </Stack>
+      </Card>
+
+      <Card className="h-full border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] bg-[var(--color-surface-muted)]">
+        <Stack gap="1" align="center" justify="center" className="h-full min-h-[132px] text-center">
+          <p className="text-3xl font-bold text-[var(--color-primary)]">
+            {avgProgress === null ? "—" : `${avgProgress}%`}
+          </p>
+          <p className="text-xs text-[var(--color-text-muted)]">Avg. Progress</p>
+        </Stack>
+      </Card>
+
+      <Card className="h-full border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] bg-[var(--color-surface-muted)]">
+        <Stack gap="1" align="center" justify="center" className="h-full min-h-[132px] text-center">
+          <p className="text-3xl font-bold text-[var(--color-primary)]">
+            {Number(growthData?.selfReviewSummary?.totalSubmitted || 0)}
+          </p>
+          <p className="text-xs text-[var(--color-text-muted)]">Self-Reviews Submitted</p>
+        </Stack>
+      </Card>
+    </Grid>
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-[var(--space-6)]">
       <PageHeader
         title="My Growth"
-        subtitle="Track your journey, build skills, and unlock your next career step."
+        subtitle="Track your journey, build skills, and unlock your next career step"
+        actions={<NotificationBell />}
       />
 
       {!growthEnabled ? (
@@ -251,7 +284,7 @@ export default function EmployeeGrowthPage() {
       ) : (
         <>
           {error ? (
-            <div className="mb-2 space-y-2">
+            <div className="space-y-[var(--space-2)]">
               <Alert
                 variant="error"
                 title="Could not load growth data"
@@ -259,7 +292,7 @@ export default function EmployeeGrowthPage() {
               />
               <button
                 type="button"
-                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)]"
+                className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-[var(--space-3)] py-[var(--space-1)] text-xs text-[var(--color-text)]"
                 onClick={() => void loadData()}
               >
                 Try again
@@ -269,7 +302,7 @@ export default function EmployeeGrowthPage() {
 
           {isOnboarding ? (
             <Card>
-              <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div className="flex flex-col items-center gap-[var(--space-3)] py-[var(--space-6)] text-center">
                 <EmptyJourneyIllustration />
                 <h2 className="text-xl font-semibold text-[var(--color-text)]">Your growth journey starts here</h2>
                 <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
@@ -282,33 +315,68 @@ export default function EmployeeGrowthPage() {
             </Card>
           ) : (
             <>
-              <Card title="Your Performance Journey">
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-                  <div className="lg:col-span-3">
-                    <CycleHistoryTimeline
-                      cycles={timelineCycles}
-                      trendLabel={normalizeTrend(trajectory?.trendLabel)}
-                      loading={loading}
-                    />
+              <Card className="border-[color-mix(in_srgb,var(--color-primary)_35%,var(--color-border))] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-primary-subtle)_62%,var(--color-surface))_0%,var(--color-surface)_100%)] shadow-[0_16px_40px_color-mix(in_srgb,var(--color-primary)_22%,transparent)]">
+                <div className="space-y-[var(--space-4)] p-[var(--space-6)]">
+                  <div className="grid grid-cols-1 gap-[var(--space-4)] lg:grid-cols-2 lg:items-start">
+                    <div className="space-y-[var(--space-3)]">
+                      <h2 className="h3 text-[var(--color-text)]">Your Performance Journey</h2>
+                      <p className="body-sm text-[var(--color-text-muted)]">
+                        Understand how your cycle progress, check-ins, and readiness are evolving so you can take your next career step with confidence.
+                      </p>
+                      <Link
+                        href="/employee/progress"
+                        className="inline-flex items-center justify-center gap-[var(--space-2)] rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-[var(--space-4)] py-[var(--space-2)] body-sm font-medium text-[var(--color-button-text)] shadow-[var(--shadow-sm)] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-[var(--color-primary-hover)] hover:shadow-[0_4px_18px_color-mix(in_srgb,var(--color-primary)_45%,transparent)]"
+                      >
+                        Update Progress
+                      </Link>
+                    </div>
+
+                    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-[var(--space-4)]">
+                      <div className="flex items-center justify-between gap-[var(--space-2)]">
+                        <p className="body-sm font-medium text-[var(--color-text)]">Current Stage</p>
+                        <Badge variant="info">Early Stage</Badge>
+                      </div>
+                      <ul className="mt-[var(--space-2)] space-y-[var(--space-1)] text-sm text-[var(--color-text-muted)]">
+                        <li className="flex items-start gap-[var(--space-2)]">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" aria-hidden="true" />
+                          <span>{loading ? "Loading cycle trend..." : `${timelineCycles.length} recorded cycle ${timelineCycles.length === 1 ? "entry" : "entries"}`}</span>
+                        </li>
+                        <li className="flex items-start gap-[var(--space-2)]">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" aria-hidden="true" />
+                          <span>{loading ? "Loading readiness signal..." : growthData?.latestReadiness?.description || "Readiness signals update as your cycle data grows."}</span>
+                        </li>
+                        <li className="flex items-start gap-[var(--space-2)]">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" aria-hidden="true" />
+                          <span>{loading ? "Loading goal momentum..." : `${activeGoals.length} active approved ${activeGoals.length === 1 ? "goal" : "goals"} in motion`}</span>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
 
-                  <div className="lg:col-span-2">
-                    <ReadinessBadge
-                      label={normalizeReadinessLabel(growthData?.latestReadiness?.label)}
-                      description={growthData?.latestReadiness?.description || ""}
-                      source={normalizeReadinessSource(growthData?.latestReadiness?.source)}
-                      size="lg"
-                      showDescription={true}
-                    />
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Readiness for your next career step</p>
+                  <div className="grid grid-cols-1 gap-[var(--space-4)] lg:grid-cols-5">
+                    <div className="lg:col-span-3">
+                      <CycleHistoryTimeline
+                        cycles={timelineCycles}
+                        trendLabel={normalizeTrend(trajectory?.trendLabel)}
+                        loading={loading}
+                      />
+                    </div>
+
+                    <div className="lg:col-span-2">
+                      <ReadinessBadge
+                        label={normalizeReadinessLabel(growthData?.latestReadiness?.label)}
+                        description={growthData?.latestReadiness?.description || ""}
+                        source={normalizeReadinessSource(growthData?.latestReadiness?.source)}
+                        size="lg"
+                        showDescription={true}
+                      />
+                      <p className="mt-2 text-xs text-[var(--color-text-muted)]">Readiness for your next career step</p>
+                    </div>
                   </div>
                 </div>
               </Card>
 
-              <Card
-                title="Career Pathway"
-                description="AI-powered suggestions based on your role and performance journey"
-              >
+              <Stack gap="3" className="gap-[var(--space-6)]">
                 {growthData?.dataAvailable?.hasCycleHistory === true ||
                 String(growthData?.role || "").trim() ? (
                   <CareerPathwayPanel
@@ -326,60 +394,71 @@ export default function EmployeeGrowthPage() {
                     readinessLabel={normalizeReadinessLabel(growthData?.latestReadiness?.label)}
                   />
                 ) : (
-                  <p className="text-sm italic text-[var(--color-text-muted)]">
-                    Career pathway suggestions will appear after your first performance cycle.
-                  </p>
+                  <Card title="Career Pathway" description="AI-powered suggestions based on your role and performance journey">
+                    <Stack gap="2" align="start">
+                      <p className="text-sm text-[var(--color-text-muted)]">
+                        Complete your first cycle to unlock AI pathway suggestions.
+                      </p>
+                      <Link href="/employee/progress" className="text-sm font-medium text-[var(--color-primary)] underline">
+                        Update progress
+                      </Link>
+                    </Stack>
+                  </Card>
                 )}
-              </Card>
 
-              <Card
-                title="Skills to Develop"
-                description="Based on your performance reviews and self-assessments"
-              >
-                {(growthData?.tnaItems?.length || 0) > 0 ? (
-                  <div className="space-y-3">
-                    {(growthData?.tnaItems || []).map((item, index) => (
-                      <TnaSkillCard
-                        key={`${item.area}-${index}`}
-                        area={String(item?.area || "")}
-                        signal={normalizeTnaSignal(item?.signal)}
-                        cycleId={String(item?.cycleId || "")}
-                        cycleName={cycleNameById.get(String(item?.cycleId || "").trim())}
-                        index={index}
-                      />
-                    ))}
-                  </div>
-                ) : growthData?.dataAvailable?.hasTnaItems === false ? (
-                  <p className="py-6 text-center text-sm italic text-[var(--color-text-muted)]">
-                    No development areas identified yet. Complete a full cycle to see personalised skill suggestions.
-                  </p>
-                ) : null}
-              </Card>
+                <Card>
+                  <Stack gap="3" align="start" className="w-full gap-[var(--space-4)]">
+                    <div className="flex w-full items-start justify-between gap-[var(--space-3)] border-b border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] pb-[var(--space-2)]">
+                      <div>
+                        <h3 className="heading-lg text-[var(--color-text)] tracking-tight">Skills to Develop</h3>
+                        <p className="caption">Based on your performance reviews and self-assessments</p>
+                      </div>
+                      <Link
+                        href="/employee/growth"
+                        className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-[var(--space-3)] py-[var(--space-2)] body-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-muted)]"
+                      >
+                        View All Skills
+                      </Link>
+                    </div>
+
+                    {(growthData?.tnaItems?.length || 0) > 0 ? (
+                      <div className="w-full space-y-3">
+                        {(growthData?.tnaItems || []).map((item, index) => (
+                          <TnaSkillCard
+                            key={`${item.area}-${index}`}
+                            area={String(item?.area || "")}
+                            signal={normalizeTnaSignal(item?.signal)}
+                            cycleId={String(item?.cycleId || "")}
+                            cycleName={cycleNameById.get(String(item?.cycleId || "").trim())}
+                            index={index}
+                          />
+                        ))}
+                      </div>
+                    ) : growthData?.dataAvailable?.hasTnaItems === false ? (
+                      <Stack gap="2" align="center" className="w-full py-[var(--space-4)] text-center">
+                        <p className="text-sm text-[var(--color-text-muted)]">
+                          No skill suggestions yet. Complete reviews and progress updates to generate development areas.
+                        </p>
+                        <Link href="/employee/progress" className="text-sm font-medium text-[var(--color-primary)] underline">
+                          Add progress update
+                        </Link>
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </Card>
+
+                <Card title="This Cycle At a Glance">
+                  {cycleAtGlanceMetrics}
+                </Card>
+              </Stack>
             </>
           )}
 
-          <Card title="This Cycle At a Glance">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4 text-center">
-                <p className="text-3xl font-bold text-[var(--color-primary)]">{activeGoals.length}</p>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Active Goals</p>
-              </div>
-
-              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4 text-center">
-                <p className="text-3xl font-bold text-[var(--color-primary)]">
-                  {avgProgress === null ? "—" : `${avgProgress}%`}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Avg. Progress</p>
-              </div>
-
-              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4 text-center">
-                <p className="text-3xl font-bold text-[var(--color-primary)]">
-                  {Number(growthData?.selfReviewSummary?.totalSubmitted || 0)}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Self-Reviews Submitted</p>
-              </div>
-            </div>
-          </Card>
+          {isOnboarding ? (
+            <Card title="This Cycle At a Glance">
+              {cycleAtGlanceMetrics}
+            </Card>
+          ) : null}
         </>
       )}
     </div>

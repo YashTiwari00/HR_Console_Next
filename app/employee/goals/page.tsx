@@ -1,30 +1,29 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Grid, Stack } from "@/src/components/layout";
+import { Container, Grid, Stack } from "@/src/components/layout";
 import * as XLSX from "xlsx";
 import {
-  BulkGoalAiReviewPanel,
   ConversationalGoalComposer,
   ExplainabilityDrawer,
+  FormSection,
   GoalLineageCard,
   GoalLineageView,
-  type GoalAiDraft,
   PageHeader,
 } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import { ContributionBadge } from "@/src/components/ui/ContributionBadge";
 import { useAiMode } from "@/src/context/AiModeContext";
 import {
-  BulkGoalAnalysisItem,
-  BulkGoalInput,
+  commitBulkGoalsImport,
+  type BulkGoalImportPreviewRow,
+  type BulkGoalImportRowInput,
   createGoal,
   fetchAiUsageSnapshot,
   fetchGoalFeedback,
   fetchGoalRatings,
   fetchGoals,
   fetchMe,
-  getBulkGoalAnalysis,
   getCycleIdFromDate,
   getGoalSuggestions,
   GoalItem,
@@ -32,9 +31,19 @@ import {
   GoalRatingsResponse,
   GoalSuggestion,
   goalStatusVariant,
+  previewBulkGoalsImport,
+  previewGoalsImport,
   submitGoal,
   updateGoal,
 } from "@/app/employee/_lib/pmsClient";
+
+type BulkUploadSource = "excel" | "google_sheet";
+
+interface EmployeeBulkGoalRow {
+  title: string;
+  description: string;
+  weightage: number;
+}
 
 const frameworkOptions = [
   { value: "OKR", label: "OKR" },
@@ -62,6 +71,29 @@ function getSuggestionSourceBadge(suggestion: GoalSuggestion | null): {
   return { label: "AI Generated", variant: "info" };
 }
 
+function goalLifecycleBorderClass(status: string) {
+  if (status === "submitted") return "border-l-[#f59e0b]";
+  if (status === "approved") return "border-l-[#16a34a]";
+  if (status === "needs_changes") return "border-l-[#dc2626]";
+  return "border-l-[#9ca3af]";
+}
+
+function progressWidthClass(percent: number) {
+  const normalized = Math.max(0, Math.min(100, percent));
+  if (normalized >= 100) return "w-full";
+  if (normalized >= 90) return "w-11/12";
+  if (normalized >= 80) return "w-10/12";
+  if (normalized >= 70) return "w-9/12";
+  if (normalized >= 60) return "w-8/12";
+  if (normalized >= 50) return "w-6/12";
+  if (normalized >= 40) return "w-5/12";
+  if (normalized >= 30) return "w-4/12";
+  if (normalized >= 20) return "w-3/12";
+  if (normalized >= 10) return "w-2/12";
+  if (normalized > 0) return "w-1/12";
+  return "w-0";
+}
+
 export default function EmployeeGoalsPage() {
   const aiMode = useAiMode();
   const [mode, setMode] = useState<"form" | "ai">("form");
@@ -76,6 +108,7 @@ export default function EmployeeGoalsPage() {
   const [aiUsageRemaining, setAiUsageRemaining] = useState<number | null>(null);
   const [aiBudgetWarning, setAiBudgetWarning] = useState("");
   const [explainabilityOpen, setExplainabilityOpen] = useState(false);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   const [goalForm, setGoalForm] = useState({
     title: "",
@@ -120,11 +153,15 @@ export default function EmployeeGoalsPage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkError, setBulkError] = useState("");
-  const [bulkFallbackUsed, setBulkFallbackUsed] = useState(false);
+  const [bulkSourceType, setBulkSourceType] = useState<BulkUploadSource>("excel");
+  const [bulkGoogleSheetUrl, setBulkGoogleSheetUrl] = useState("");
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkEmployeeId, setBulkEmployeeId] = useState("");
   const [bulkFileName, setBulkFileName] = useState("");
-  const [bulkSourceGoals, setBulkSourceGoals] = useState<BulkGoalInput[]>([]);
-  const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
-  const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [bulkPreviewRows, setBulkPreviewRows] = useState<BulkGoalImportPreviewRow[]>([]);
+  const [bulkCommitRows, setBulkCommitRows] = useState<BulkGoalImportRowInput[]>([]);
+  const [bulkPreviewMeta, setBulkPreviewMeta] = useState({ total: 0, valid: 0, invalid: 0 });
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [lineageGoalId, setLineageGoalId] = useState<string | null>(null);
 
   function readCell(row: Record<string, unknown>, keys: string[]) {
@@ -144,15 +181,24 @@ export default function EmployeeGoalsPage() {
         const title = readCell(row, ["title", "goal title", "goal"]);
         const description = readCell(row, ["description", "goal description"]);
         const weightRaw = readCell(row, ["weight", "weightage", "%"]);
-        const weight = Number.parseInt(weightRaw || "0", 10);
+        const weightage = Number.parseInt(weightRaw || "0", 10);
 
         return {
           title,
           description,
-          weight: Number.isInteger(weight) && weight > 0 ? weight : 10,
-        } as BulkGoalInput;
+          weightage: Number.isInteger(weightage) && weightage > 0 ? weightage : 10,
+        } as EmployeeBulkGoalRow;
       })
       .filter((item) => item.title && item.description);
+  }
+
+  function isGoogleSheetUrl(url: string) {
+    try {
+      const parsed = new URL(String(url || "").trim());
+      return parsed.hostname.toLowerCase() === "docs.google.com" && parsed.pathname.includes("/spreadsheets");
+    } catch {
+      return false;
+    }
   }
 
   async function readGoalsFromWorkbook(file: File) {
@@ -170,83 +216,99 @@ export default function EmployeeGoalsPage() {
     return parseGoalRows(rows);
   }
 
-  function buildDrafts(analysis: BulkGoalAnalysisItem[], sourceGoals: BulkGoalInput[]) {
-    return analysis.map((item, index) => ({
-      title: item.improvedTitle || sourceGoals[index]?.title || "",
-      description: item.improvedDescription || sourceGoals[index]?.description || "",
-      metrics: item.suggestedMetrics || "",
-      weight: sourceGoals[index]?.weight || 10,
-      allocationSplitText: "",
-    }));
-  }
+  function toImportRows(sourceGoals: EmployeeBulkGoalRow[]) {
+    const employeeId = String(bulkEmployeeId || "").trim();
+    const managerId = String(goalForm.managerId || "").trim();
 
-  async function analyzeWorkbookGoals(sourceGoals: BulkGoalInput[]) {
-    if (sourceGoals.length === 0) {
-      throw new Error("No valid goals found in uploaded file.");
+    if (!employeeId) {
+      throw new Error("Unable to resolve your employee profile for bulk import.");
     }
 
-    if (sourceGoals.length > 10) {
-      throw new Error("Upload contains more than 10 goals. Please reduce rows to 10 or fewer.");
+    if (!managerId) {
+      throw new Error("Manager ID is required for import. Update the Manager ID field and retry.");
     }
 
-    const analysis = await getBulkGoalAnalysis({
-      goals: sourceGoals,
-      role: "employee",
+    return sourceGoals.map((row) => ({
+      employeeId,
+      title: row.title,
+      description: row.description,
+      frameworkType: goalForm.frameworkType,
+      weightage: row.weightage,
       cycleId: goalForm.cycleId,
-    });
-
-    setBulkAnalysis(analysis.goals);
-    setBulkDrafts(buildDrafts(analysis.goals, sourceGoals));
-    setBulkFallbackUsed(analysis.fallbackUsed);
+      dueDate: goalForm.dueDate || null,
+      lineageRef: "",
+      aiSuggested: true,
+      managerId,
+    }));
   }
 
   async function handleBulkFileUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] || null;
     if (!file) return;
 
+    setBulkFile(file);
     setBulkFileName(file.name);
     setBulkError("");
+    setBulkPreviewRows([]);
+    setBulkCommitRows([]);
+    setBulkPreviewMeta({ total: 0, valid: 0, invalid: 0 });
+    event.target.value = "";
+  }
+
+  async function handlePreviewBulkImport() {
     setBulkLoading(true);
+    setBulkError("");
+    setSuccess("");
+    setBulkPreviewRows([]);
+    setBulkCommitRows([]);
+    setBulkPreviewMeta({ total: 0, valid: 0, invalid: 0 });
 
     try {
-      const sourceGoals = await readGoalsFromWorkbook(file);
-      setBulkSourceGoals(sourceGoals);
-      await analyzeWorkbookGoals(sourceGoals);
-      setSuccess("Bulk goals analyzed with AI.");
+      const preview =
+        bulkSourceType === "google_sheet"
+          ? await (async () => {
+              if (!isGoogleSheetUrl(bulkGoogleSheetUrl)) {
+                throw new Error("Enter a valid Google Sheet URL from docs.google.com/spreadsheets.");
+              }
+              return previewGoalsImport({
+                googleSheetUrl: bulkGoogleSheetUrl,
+                cycleId: goalForm.cycleId,
+              });
+            })()
+          : await (async () => {
+              if (!bulkFile) {
+                throw new Error("Upload an Excel file before preview.");
+              }
+
+              const sourceGoals = await readGoalsFromWorkbook(bulkFile);
+              if (sourceGoals.length === 0) {
+                throw new Error("No valid goals found in uploaded file.");
+              }
+
+              const rows = toImportRows(sourceGoals);
+              return previewBulkGoalsImport({ rows, cycleId: goalForm.cycleId });
+            })();
+
+      setBulkPreviewRows(preview.rows || []);
+      setBulkCommitRows((preview.rows || []).map((row) => row.normalized));
+      setBulkPreviewMeta({
+        total: Number(preview.totalRows || 0),
+        valid: Number(preview.validRows || 0),
+        invalid: Number(preview.invalidRows || 0),
+      });
+      setSuccess(`Preview complete: ${preview.validRows} valid, ${preview.invalidRows} invalid.`);
     } catch (err) {
-      setBulkAnalysis([]);
-      setBulkDrafts([]);
-      setBulkFallbackUsed(false);
-      setBulkError(err instanceof Error ? err.message : "Failed to process file.");
+      setBulkError(err instanceof Error ? err.message : "Failed to preview bulk goals.");
     } finally {
       setBulkLoading(false);
-      event.target.value = "";
     }
   }
 
-  function handleBulkDraftChange(index: number, draft: GoalAiDraft) {
-    setBulkDrafts((prev) => prev.map((item, itemIndex) => (itemIndex === index ? draft : item)));
-  }
-
-  function handleApplyBulkSuggestion(index: number) {
-    const draft = bulkDrafts[index];
-    if (!draft) return;
-
-    setGoalForm((prev) => ({
-      ...prev,
-      title: draft.title,
-      description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
-      weightage: String(draft.weight || 10),
-    }));
-  }
-
-  function handleApplyAllBulkSuggestions() {
-    if (bulkDrafts.length === 0) return;
-    handleApplyBulkSuggestion(0);
-  }
-
   async function persistBulkGoals(submitCreatedGoals: boolean) {
-    if (bulkDrafts.length === 0) return;
+    if (bulkCommitRows.length === 0) {
+      setBulkError("Run preview before saving.");
+      return;
+    }
 
     if (submitCreatedGoals) {
       setBulkSubmitting(true);
@@ -257,25 +319,23 @@ export default function EmployeeGoalsPage() {
     setBulkError("");
 
     try {
-      const createdGoalIds: string[] = [];
+      const idempotencyKey =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      for (const draft of bulkDrafts) {
-        const created = await createGoal({
-          title: draft.title,
-          description: `${draft.description}${draft.metrics ? `\n\nMetric: ${draft.metrics}` : ""}`,
-          cycleId: goalForm.cycleId,
-          frameworkType: goalForm.frameworkType,
-          managerId: goalForm.managerId,
-          weightage: draft.weight,
-          dueDate: goalForm.dueDate || null,
-          aiSuggested: true,
-        });
+      const result = await commitBulkGoalsImport({
+        data: bulkCommitRows,
+        cycleId: goalForm.cycleId,
+        idempotencyKey,
+        templateVersion: "v1",
+        sourceType: bulkSourceType,
+        sourceUrl: bulkSourceType === "google_sheet" ? String(bulkGoogleSheetUrl || "").trim() : undefined,
+      });
 
-        const goalId = String(created?.data?.$id || created?.$id || "").trim();
-        if (goalId) {
-          createdGoalIds.push(goalId);
-        }
-      }
+      const createdGoalIds = (result?.summary?.successes || [])
+        .map((item) => String(item?.goalId || "").trim())
+        .filter(Boolean);
 
       if (submitCreatedGoals) {
         for (const goalId of createdGoalIds) {
@@ -286,7 +346,7 @@ export default function EmployeeGoalsPage() {
       setSuccess(
         submitCreatedGoals
           ? `Created and submitted ${createdGoalIds.length} goals for approval.`
-          : `Created ${bulkDrafts.length} draft goals from AI review.`
+          : `Created ${createdGoalIds.length} draft goals from bulk import.`
       );
       await loadGoals();
     } catch (err) {
@@ -366,6 +426,10 @@ export default function EmployeeGoalsPage() {
         const data = await fetchMe();
 
         const managerId = data?.profile?.managerId;
+        const profileId = String(data?.profile?.$id || data?.$id || "").trim();
+        if (active && profileId) {
+          setBulkEmployeeId(profileId);
+        }
         if (active && managerId) {
           setGoalForm((prev) => ({ ...prev, managerId }));
           setManagerResolved(true);
@@ -396,6 +460,8 @@ export default function EmployeeGoalsPage() {
   );
 
   const remainingWeightage = Math.max(0, 100 - cycleWeightage);
+  const waitingPercent = goals.length > 0 ? Math.round((submittedCount / goals.length) * 100) : 0;
+  const cycleWeightagePercent = Math.max(0, Math.min(100, Math.round(cycleWeightage)));
 
   async function handleCreateGoal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -531,16 +597,204 @@ export default function EmployeeGoalsPage() {
   }
 
   return (
-    <Stack gap="4">
+    <Container maxWidth="xl">
+      <Stack gap="6">
       <PageHeader
         title="Goals Workspace"
-        subtitle="Draft, refine, and submit goals for approval."
+        subtitle="Set, refine, and track your goals for this cycle"
         actions={
-          <Button variant="secondary" onClick={loadGoals} disabled={loading || submitting}>
-            Refresh
-          </Button>
+          <Stack direction="horizontal" gap="2" align="center">
+            <Button size="sm" variant="secondary" onClick={loadGoals} disabled={loading || submitting}>
+              Refresh
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "form" ? "secondary" : "ghost"}
+                onClick={() => setMode("form")}
+              >
+                Form Mode
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "ai" ? "secondary" : "ghost"}
+                onClick={() => setMode("ai")}
+              >
+                AI Mode
+              </Button>
+            </div>
+          </Stack>
         }
       />
+
+      <Stack gap="2">
+        <p className="caption font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Primary Action</p>
+        <Card>
+          <Stack gap="3">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] pb-[var(--space-3)]">
+              <Stack gap="1">
+                <h3 className="heading-lg text-[var(--color-text)]">Create Goal</h3>
+                <p className="caption">Start with a clear, measurable outcome.</p>
+              </Stack>
+              {mode === "form" && (
+                <Button type="button" size="sm" variant="secondary" onClick={handleAiSuggest} loading={aiLoading}>
+                  {aiSuggestion ? "Regenerate AI Suggestion" : "Suggest with AI"}
+                </Button>
+              )}
+            </div>
+
+            {mode === "form" ? (
+              <form onSubmit={handleCreateGoal}>
+                <Stack gap="3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="caption">
+                      Remaining AI suggestions this cycle: {aiUsageRemaining === null ? "..." : aiUsageRemaining}
+                    </span>
+                    {aiSuggestion && (
+                      <Button type="button" size="sm" variant="secondary" onClick={handleAcceptAiSuggestion}>
+                        Accept Suggestion
+                      </Button>
+                    )}
+                  </div>
+
+                  {aiSuggestion && (
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-3)]">
+                      <div className="flex items-center gap-2">
+                        <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
+                        <Badge variant={getSuggestionSourceBadge(aiSuggestion).variant}>
+                          {getSuggestionSourceBadge(aiSuggestion).label}
+                        </Badge>
+                      </div>
+                      <p className="caption mt-[var(--space-1)]">{aiSuggestion.title}</p>
+                      <p className="caption mt-[var(--space-1)]">{aiSuggestion.description}</p>
+                      {aiMode.mode === "decision_support" && (aiSuggestion.framework || aiSuggestion.weightageJustification || aiSuggestion.frameworkRationale) && (
+                        <div className="mt-[var(--space-2)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-2)] py-[var(--space-2)]">
+                          {aiSuggestion.framework && (
+                            <p className="caption">Framework Recommendation: {aiSuggestion.framework}</p>
+                          )}
+                          {aiSuggestion.frameworkRationale && (
+                            <p className="caption mt-[var(--space-1)]">Framework Rationale: {aiSuggestion.frameworkRationale}</p>
+                          )}
+                          <p className="caption mt-[var(--space-1)]">Suggested Weightage: {aiSuggestion.weightage}%</p>
+                          {aiSuggestion.weightageJustification && (
+                            <p className="caption mt-[var(--space-1)]">Weightage Justification: {aiSuggestion.weightageJustification}</p>
+                          )}
+                          {aiSuggestion.aopAlignmentHint && (
+                            <p className="caption mt-[var(--space-1)]">AOP Alignment Hint: {aiSuggestion.aopAlignmentHint}</p>
+                          )}
+                        </div>
+                      )}
+                      {aiSuggestion.rationale && <p className="caption mt-[var(--space-2)]">Why: {aiSuggestion.rationale}</p>}
+                      {aiSuggestion.explainability && (
+                        <div className="mt-[var(--space-2)]">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setExplainabilityOpen(true)}
+                          >
+                            Why this suggestion?
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <FormSection title="Goal Details" description="Capture a clear outcome and context.">
+                    <Stack gap="3">
+                      <Input
+                        label="Goal Title"
+                        value={goalForm.title}
+                        onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
+                        required
+                      />
+                      <Textarea
+                        label="Description"
+                        value={goalForm.description}
+                        onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
+                        required
+                      />
+                    </Stack>
+                  </FormSection>
+
+                  <FormSection title="Planning" description="Set ownership, cycle, and delivery fields." divider>
+                    <Stack gap="3">
+                      <Grid cols={1} colsMd={2} gap="2">
+                        <Input
+                          label="Cycle ID"
+                          value={goalForm.cycleId}
+                          onChange={(event) => setGoalForm((prev) => ({ ...prev, cycleId: event.target.value }))}
+                          required
+                        />
+                        <Input
+                          label="Manager ID"
+                          value={goalForm.managerId}
+                          onChange={(event) => setGoalForm((prev) => ({ ...prev, managerId: event.target.value }))}
+                          helperText={
+                            managerResolved
+                              ? "Auto-filled from your profile mapping."
+                              : "Auto-resolve failed. Enter manually or set users.managerId in Appwrite."
+                          }
+                        />
+                      </Grid>
+
+                      <div className="flex items-center">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
+                        >
+                          {advancedSettingsOpen ? "Hide Advanced Settings" : "Advanced Settings"}
+                        </Button>
+                      </div>
+
+                      {advancedSettingsOpen && (
+                        <Grid cols={1} colsMd={3} gap="2">
+                          <Dropdown
+                            label="Framework"
+                            value={goalForm.frameworkType}
+                            onChange={(frameworkType) =>
+                              setGoalForm((prev) => ({ ...prev, frameworkType }))
+                            }
+                            options={frameworkOptions}
+                          />
+                          <Input
+                            label="Weightage"
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={goalForm.weightage}
+                            onChange={(event) => setGoalForm((prev) => ({ ...prev, weightage: event.target.value }))}
+                            required
+                          />
+                          <Input
+                            label="Due Date"
+                            type="date"
+                            value={goalForm.dueDate}
+                            onChange={(event) => setGoalForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                          />
+                        </Grid>
+                      )}
+                    </Stack>
+                  </FormSection>
+
+                  <div className="flex items-center">
+                    <Button type="submit" loading={submitting}>Create Draft Goal</Button>
+                  </div>
+                </Stack>
+              </form>
+            ) : (
+              <ConversationalGoalComposer
+                cycleId={goalForm.cycleId}
+                frameworkType={goalForm.frameworkType}
+              />
+            )}
+          </Stack>
+        </Card>
+      </Stack>
 
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
@@ -549,220 +803,144 @@ export default function EmployeeGoalsPage() {
         <Alert variant="warning" title="AI Budget Warning" description={aiBudgetWarning} onDismiss={() => setAiBudgetWarning("")} />
       )}
 
-      <Card title="Bulk Goal Import" description="Upload Excel goals and review AI improvements before saving.">
-        <Stack gap="3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              type="file"
-              label="Upload Excel (.xlsx, .xls)"
-              accept=".xlsx,.xls"
-              onChange={handleBulkFileUpload}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => analyzeWorkbookGoals(bulkSourceGoals)}
-              loading={bulkLoading}
-              disabled={bulkSourceGoals.length === 0}
-            >
-              Re-run AI Analysis
-            </Button>
-            <Button
-              type="button"
-              onClick={() => persistBulkGoals(false)}
-              loading={bulkSaving}
-              disabled={bulkDrafts.length === 0 || bulkSubmitting}
-            >
-              Save Goals
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => persistBulkGoals(true)}
-              loading={bulkSubmitting}
-              disabled={bulkDrafts.length === 0 || bulkSaving}
-            >
-              Submit for Approval
-            </Button>
-          </div>
-          <p className="caption">
-            Expected columns in first sheet: title, description, weight or weightage. Max 10 goals per upload.
-          </p>
-          {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
-          <BulkGoalAiReviewPanel
-            role="employee"
-            items={bulkAnalysis}
-            drafts={bulkDrafts}
-            loading={bulkLoading}
-            fallbackUsed={bulkFallbackUsed}
-            error={bulkError}
-            onDraftChange={handleBulkDraftChange}
-            onApplySuggestion={handleApplyBulkSuggestion}
-            onApplyAll={handleApplyAllBulkSuggestions}
-            onDismissError={() => setBulkError("")}
-          />
-        </Stack>
-      </Card>
-
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "form" ? "primary" : "secondary"}
-          onClick={() => setMode("form")}
-        >
-          Form Mode
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={mode === "ai" ? "primary" : "secondary"}
-          onClick={() => setMode("ai")}
-        >
-          AI Mode
-        </Button>
-      </div>
-
-      <Grid cols={1} colsLg={2} gap="3">
-        {mode === "form" ? (
-          <Card title="Create Goal" description="Start with a clear, measurable outcome.">
-            <form className="space-y-3" onSubmit={handleCreateGoal}>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="secondary" onClick={handleAiSuggest} loading={aiLoading}>
-                  {aiSuggestion ? "Regenerate AI Suggestion" : "Suggest with AI"}
+      <Grid cols={1} colsLg={3} gap="6">
+        <Stack gap="6" className="lg:col-span-2">
+          <Card className="border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] hover:border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] hover:translate-y-0">
+            <Stack gap="2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <Stack gap="1">
+                  <h3 className="heading-lg text-[var(--color-text)]">Import Goals (Optional)</h3>
+                  <p className="caption">Upload Excel or use a Google Sheet link, preview, then save.</p>
+                </Stack>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setBulkImportOpen((prev) => !prev)}
+                >
+                  {bulkImportOpen ? "Hide" : "Show"}
                 </Button>
-                <span className="caption">
-                  Remaining AI suggestions this cycle: {aiUsageRemaining === null ? "..." : aiUsageRemaining}
-                </span>
-                {aiSuggestion && (
-                  <Button type="button" onClick={handleAcceptAiSuggestion}>
-                    Accept Suggestion
-                  </Button>
-                )}
               </div>
 
-              {aiSuggestion && (
-                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
-                  <div className="flex items-center gap-2">
-                    <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
-                    <Badge variant={getSuggestionSourceBadge(aiSuggestion).variant}>
-                      {getSuggestionSourceBadge(aiSuggestion).label}
-                    </Badge>
+              {bulkImportOpen && (
+                <Stack gap="3">
+                  <div className="inline-flex rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)] p-[var(--space-1)]">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={bulkSourceType === "excel" ? "secondary" : "ghost"}
+                      onClick={() => setBulkSourceType("excel")}
+                    >
+                      Upload Excel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={bulkSourceType === "google_sheet" ? "secondary" : "ghost"}
+                      onClick={() => setBulkSourceType("google_sheet")}
+                    >
+                      Google Sheet Link
+                    </Button>
                   </div>
-                  <p className="caption mt-1">{aiSuggestion.title}</p>
-                  <p className="caption mt-1">{aiSuggestion.description}</p>
-                  {aiMode.mode === "decision_support" && (aiSuggestion.framework || aiSuggestion.weightageJustification || aiSuggestion.frameworkRationale) && (
-                    <div className="mt-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-2">
-                      {aiSuggestion.framework && (
-                        <p className="caption">Framework Recommendation: {aiSuggestion.framework}</p>
-                      )}
-                      {aiSuggestion.frameworkRationale && (
-                        <p className="caption mt-1">Framework Rationale: {aiSuggestion.frameworkRationale}</p>
-                      )}
-                      <p className="caption mt-1">Suggested Weightage: {aiSuggestion.weightage}%</p>
-                      {aiSuggestion.weightageJustification && (
-                        <p className="caption mt-1">Weightage Justification: {aiSuggestion.weightageJustification}</p>
-                      )}
-                      {aiSuggestion.aopAlignmentHint && (
-                        <p className="caption mt-1">AOP Alignment Hint: {aiSuggestion.aopAlignmentHint}</p>
-                      )}
-                    </div>
+
+                  {bulkSourceType === "excel" ? (
+                    <Input
+                      key="employee-bulk-source-excel"
+                      type="file"
+                      label="Upload Excel (.xlsx, .xls)"
+                      accept=".xlsx,.xls"
+                      onChange={handleBulkFileUpload}
+                    />
+                  ) : (
+                    <Input
+                      key="employee-bulk-source-google-sheet"
+                      label="Google Sheet URL"
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      value={bulkGoogleSheetUrl}
+                      onChange={(event) => setBulkGoogleSheetUrl(event.target.value)}
+                    />
                   )}
-                  {aiSuggestion.rationale && <p className="caption mt-2">Why: {aiSuggestion.rationale}</p>}
-                  {aiSuggestion.explainability && (
-                    <div className="mt-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setExplainabilityOpen(true)}
-                      >
-                        Why this suggestion?
-                      </Button>
-                    </div>
+
+                  {bulkSourceType === "google_sheet" && bulkGoogleSheetUrl && !isGoogleSheetUrl(bulkGoogleSheetUrl) && (
+                    <p className="caption text-[var(--color-danger,#b91c1c)]">URL must include docs.google.com/spreadsheets.</p>
                   )}
-                </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={handlePreviewBulkImport}
+                      loading={bulkLoading}
+                      disabled={bulkLoading || bulkSaving || bulkSubmitting}
+                    >
+                      {bulkSourceType === "google_sheet" && bulkLoading ? "Fetching sheet..." : "Preview Import"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => persistBulkGoals(false)}
+                      loading={bulkSaving}
+                      disabled={bulkPreviewRows.length === 0 || bulkSubmitting || bulkLoading}
+                    >
+                      Save Goals
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => persistBulkGoals(true)}
+                      loading={bulkSubmitting}
+                      disabled={bulkPreviewRows.length === 0 || bulkSaving || bulkLoading}
+                    >
+                      Submit for Approval
+                    </Button>
+                  </div>
+                  <p className="caption">
+                    Excel expected columns: title, description, weight or weightage.
+                  </p>
+                  {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
+
+                  {bulkPreviewRows.length > 0 && (
+                    <Stack gap="2">
+                      <p className="caption">
+                        Preview: {bulkPreviewMeta.valid} valid, {bulkPreviewMeta.invalid} invalid, total {bulkPreviewMeta.total}.
+                      </p>
+                      <div className="overflow-auto rounded-[var(--radius-sm)] border border-[var(--color-border)]">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="bg-[var(--color-surface-muted)]">
+                            <tr>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Row</th>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Title</th>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Framework</th>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Weightage</th>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Status</th>
+                              <th className="px-[var(--space-3)] py-[var(--space-2)]">Errors</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {bulkPreviewRows.slice(0, 12).map((row) => (
+                              <tr key={row.rowNumber} className="border-t border-[var(--color-border)]">
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.rowNumber}</td>
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.normalized?.title || "-"}</td>
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.normalized?.frameworkType || "-"}</td>
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.normalized?.weightage ?? "-"}</td>
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.valid ? "Valid" : "Invalid"}</td>
+                                <td className="px-[var(--space-3)] py-[var(--space-2)]">{row.errors?.join("; ") || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {bulkPreviewRows.length > 12 && <p className="caption">Showing first 12 rows only.</p>}
+                    </Stack>
+                  )}
+                </Stack>
               )}
-
-              <Input
-                label="Goal Title"
-                value={goalForm.title}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
-                required
-              />
-              <Textarea
-                label="Description"
-                value={goalForm.description}
-                onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
-                required
-              />
-              <Grid cols={1} colsMd={2} gap="2">
-                <Input
-                  label="Cycle ID"
-                  value={goalForm.cycleId}
-                  onChange={(event) => setGoalForm((prev) => ({ ...prev, cycleId: event.target.value }))}
-                  required
-                />
-                <Input
-                  label="Manager ID"
-                  value={goalForm.managerId}
-                  onChange={(event) => setGoalForm((prev) => ({ ...prev, managerId: event.target.value }))}
-                  helperText={
-                    managerResolved
-                      ? "Auto-filled from your profile mapping."
-                      : "Auto-resolve failed. Enter manually or set users.managerId in Appwrite."
-                  }
-                />
-              </Grid>
-              <Grid cols={1} colsMd={3} gap="2">
-                <Dropdown
-                  label="Framework"
-                  value={goalForm.frameworkType}
-                  onChange={(frameworkType) =>
-                    setGoalForm((prev) => ({ ...prev, frameworkType }))
-                  }
-                  options={frameworkOptions}
-                />
-                <Input
-                  label="Weightage"
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={goalForm.weightage}
-                  onChange={(event) => setGoalForm((prev) => ({ ...prev, weightage: event.target.value }))}
-                  required
-                />
-                <Input
-                  label="Due Date"
-                  type="date"
-                  value={goalForm.dueDate}
-                  onChange={(event) => setGoalForm((prev) => ({ ...prev, dueDate: event.target.value }))}
-                />
-              </Grid>
-              <Button type="submit" loading={submitting}>Create Draft Goal</Button>
-            </form>
+            </Stack>
           </Card>
-        ) : (
-          <ConversationalGoalComposer
-            cycleId={goalForm.cycleId}
-            frameworkType={goalForm.frameworkType}
-          />
-        )}
 
-        <Card title="Queue Snapshot" description="Keep the review cycle moving.">
-          <Stack gap="2">
-            <p className="body-sm text-[var(--color-text)]">Total goals: {loading ? "..." : goals.length}</p>
-            <p className="body-sm text-[var(--color-text)]">Waiting for manager: {loading ? "..." : submittedCount}</p>
-            <p className="body-sm text-[var(--color-text)]">
-              Cycle weightage ({goalForm.cycleId}): {loading ? "..." : `${cycleWeightage}%`}
-            </p>
-            <p className="caption">Remaining weightage available: {loading ? "..." : `${remainingWeightage}%`}</p>
-            <p className="caption">Tip: Keep each goal specific and measurable before submitting.</p>
-          </Stack>
-        </Card>
-      </Grid>
-
-      <Card title="My Goals" description="Submit drafts and track approvals.">
+          <Card title="Your Goal Journey" description="Track each goal through its lifecycle.">
         <Stack gap="2">
           {loading && <p className="caption">Loading goals...</p>}
           {!loading && goals.length === 0 && <p className="caption">No goals yet. Create your first goal.</p>}
@@ -772,13 +950,18 @@ export default function EmployeeGoalsPage() {
               loadGoalRatings(goal.$id);
             }
             const ratingsData: GoalRatingsResponse | undefined = goalRatings[goal.$id];
+            const progressPercent = Math.max(0, Math.min(100, Number(goal.progressPercent) || 0));
             return (
-            <div key={goal.$id} className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-3">
+            <Card
+              key={goal.$id}
+              className={`border-l-4 ${goalLifecycleBorderClass(goal.status)} transition-[box-shadow,transform] duration-200 hover:shadow-[var(--shadow-sm)] hover:-translate-y-px`}
+            >
+              <Stack gap="3">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="body font-medium text-[var(--color-text)]">{goal.title}</p>
-                  <p className="caption mt-1">{goal.description}</p>
-                </div>
+                <Stack gap="1">
+                  <p className="heading-lg text-[var(--color-text)]">{goal.title}</p>
+                  <p className="caption text-[var(--color-text-muted)]">{goal.description}</p>
+                </Stack>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={goalStatusVariant(goal.status)}>{goal.status}</Badge>
                   {typeof goal.aopAligned === "boolean" && (
@@ -796,8 +979,20 @@ export default function EmployeeGoalsPage() {
                 </div>
               </div>
 
+              <div className="h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)]">
+                <div
+                  className={`h-full bg-[var(--color-primary)] transition-[width] duration-300 ${progressWidthClass(progressPercent)}`}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="caption">Framework: {goal.frameworkType}</span>
+                <span className="caption">Weightage: {goal.weightage}%</span>
+                <span className="caption">Progress: {progressPercent}%</span>
+              </div>
+
               {editingGoalId === goal.$id ? (
-                <div className="mt-3 space-y-2">
+                <Stack gap="2">
                   <Input
                     label="Title"
                     value={editForm.title}
@@ -842,6 +1037,7 @@ export default function EmployeeGoalsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
+                      variant="secondary"
                       onClick={() => handleSaveGoalEdit(goal.$id)}
                       loading={submitting}
                     >
@@ -856,13 +1052,30 @@ export default function EmployeeGoalsPage() {
                       Cancel
                     </Button>
                   </div>
-                </div>
+                </Stack>
               ) : (
                 <>
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <span className="caption">Framework: {goal.frameworkType}</span>
-                    <span className="caption">Weightage: {goal.weightage}%</span>
-                    <span className="caption">Progress: {goal.progressPercent}%</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(goal.status === "draft" || goal.status === "needs_changes") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => startEditGoal(goal)}
+                        disabled={submitting}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {(goal.status === "draft" || goal.status === "needs_changes") && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleSubmitGoal(goal.$id)}
+                        disabled={submitting}
+                      >
+                        Submit for Approval
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -873,29 +1086,9 @@ export default function EmployeeGoalsPage() {
                     >
                       {lineageGoalId === goal.$id ? "Hide Lineage" : "Goal Lineage"}
                     </Button>
-                    {(goal.status === "draft" || goal.status === "needs_changes") && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => startEditGoal(goal)}
-                          disabled={submitting}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleSubmitGoal(goal.$id)}
-                          disabled={submitting}
-                        >
-                          Submit for Approval
-                        </Button>
-                      </>
-                    )}
                   </div>
 
-                  <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                  <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <p className="caption font-medium">Contribution to Business Target</p>
@@ -930,7 +1123,7 @@ export default function EmployeeGoalsPage() {
                       )}
                     </div>
 
-                    <div className="mt-2">
+                    <div className="mt-[var(--space-2)]">
                       {(goal.status === "approved" || goal.status === "closed") ? (
                         <GoalLineageCard goalId={goal.$id} cycleId={goal.cycleId} compact />
                       ) : (
@@ -940,37 +1133,37 @@ export default function EmployeeGoalsPage() {
                   </div>
 
                   {feedbackByGoal[goal.$id] && (
-                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                    <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)]">
                       <p className="caption font-medium">Latest manager feedback</p>
-                      <p className="caption mt-1">{feedbackByGoal[goal.$id]}</p>
+                      <p className="caption mt-[var(--space-1)]">{feedbackByGoal[goal.$id]}</p>
                     </div>
                   )}
 
                   {goal.parentGoalId && (
-                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                    <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)]">
                       <p className="caption font-medium">Derived from manager goal</p>
-                      <p className="caption mt-1">Parent goal ID: {goal.parentGoalId}</p>
+                      <p className="caption mt-[var(--space-1)]">Parent goal ID: {goal.parentGoalId}</p>
                       {typeof goal.contributionPercent === "number" && (
-                        <p className="caption mt-1">Contribution: {goal.contributionPercent}%</p>
+                        <p className="caption mt-[var(--space-1)]">Contribution: {goal.contributionPercent}%</p>
                       )}
                     </div>
                   )}
 
                   {lineageGoalId === goal.$id && (
-                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-3">
+                    <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-3)]">
                       <p className="caption font-medium">Goal Lineage</p>
-                      <div className="mt-2">
+                      <div className="mt-[var(--space-2)]">
                         <GoalLineageView goalId={goal.$id} embedded mode="chain" />
                       </div>
                     </div>
                   )}
 
                   {ratingsData && ratingsData.ratings.length > 1 && (
-                    <div className="mt-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                    <div className="mt-[var(--space-3)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-2)]">
                       <p className="caption font-medium text-[var(--color-text)]">
                         Final Rating: {ratingsData.finalRatingLabel ?? "—"} ({ratingsData.finalRating ?? "—"})
                       </p>
-                      <div className="mt-2 space-y-1">
+                      <Stack gap="1" className="mt-[var(--space-2)]">
                         {(ratingsData.ratings as GoalRatingItem[]).map((r) => (
                           <div key={r.$id} className="flex items-center justify-between gap-2">
                             <p className="caption text-[var(--color-text-muted)]">
@@ -981,16 +1174,57 @@ export default function EmployeeGoalsPage() {
                             </p>
                           </div>
                         ))}
-                      </div>
+                      </Stack>
                     </div>
                   )}
                 </>
               )}
-            </div>
+              </Stack>
+            </Card>
             );
           })}
         </Stack>
-      </Card>
+          </Card>
+        </Stack>
+
+        <div className="lg:col-span-1">
+          <Card title="Queue Snapshot" description="Contextual insights for this cycle.">
+            <Stack gap="3">
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]">
+                <p className="caption text-[var(--color-text-muted)]">Total goals</p>
+                <p className="heading-lg text-[var(--color-text)]">{loading ? "..." : goals.length}</p>
+              </div>
+
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="caption text-[var(--color-text-muted)]">Waiting for manager</p>
+                  <p className="body-sm font-medium text-[var(--color-text)]">{loading ? "..." : submittedCount}</p>
+                </div>
+                <div className="mt-[var(--space-2)] h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--color-surface)]">
+                  <div
+                    className={`h-full bg-[var(--color-warning,#f59e0b)] transition-[width] duration-300 ${progressWidthClass(loading ? 0 : waitingPercent)}`}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="caption text-[var(--color-text-muted)]">Cycle weightage</p>
+                  <p className="body-sm font-medium text-[var(--color-text)]">
+                    {loading ? "..." : `${cycleWeightage}%`}
+                  </p>
+                </div>
+                <div className="mt-[var(--space-2)] h-2 w-full overflow-hidden rounded-[var(--radius-sm)] bg-[var(--color-surface)]">
+                  <div
+                    className={`h-full bg-[var(--color-primary)] transition-[width] duration-300 ${progressWidthClass(loading ? 0 : cycleWeightagePercent)}`}
+                  />
+                </div>
+                <p className="caption mt-[var(--space-2)]">Remaining: {loading ? "..." : `${remainingWeightage}%`}</p>
+              </div>
+            </Stack>
+          </Card>
+        </div>
+      </Grid>
 
       <ExplainabilityDrawer
         open={explainabilityOpen}
@@ -998,6 +1232,8 @@ export default function EmployeeGoalsPage() {
         payload={aiSuggestion?.explainability || null}
         title="Goal Suggestion Explainability"
       />
-    </Stack>
+      </Stack>
+    </Container>
   );
 }
+

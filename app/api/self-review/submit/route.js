@@ -80,16 +80,45 @@ export async function POST(request) {
       Query.limit(300),
     ]);
 
-    const goals = goalsResult.documents || [];
-    if (goals.length === 0) {
+    const cycleGoals = goalsResult.documents || [];
+    if (cycleGoals.length === 0) {
       return Response.json(
         { error: "Cannot submit self-review because no goals exist for this cycle." },
         { status: 400 }
       );
     }
 
+    const cycleGoalIds = cycleGoals.map((goal) => normalize(goal.$id)).filter(Boolean);
+    let eligibleGoalIds = new Set();
+
+    if (cycleGoalIds.length > 0) {
+      const finalCheckInsResult = await databases.listDocuments(
+        databaseId,
+        appwriteConfig.checkInsCollectionId,
+        [
+          Query.equal("employeeId", profile.$id),
+          Query.equal("goalId", cycleGoalIds),
+          Query.equal("isFinalCheckIn", true),
+          Query.equal("status", "completed"),
+          Query.limit(500),
+        ]
+      );
+
+      eligibleGoalIds = new Set(
+        (finalCheckInsResult.documents || []).map((item) => normalize(item.goalId)).filter(Boolean)
+      );
+    }
+
+    const goals = cycleGoals.filter((goal) => eligibleGoalIds.has(normalize(goal.$id)));
+    if (goals.length === 0) {
+      return Response.json(
+        { error: "Cannot submit self-review until at least one final check-in is completed." },
+        { status: 400 }
+      );
+    }
+
     const goalById = new Map();
-    for (const goal of goals) {
+    for (const goal of cycleGoals) {
       goalById.set(normalize(goal.$id), goal);
     }
 
