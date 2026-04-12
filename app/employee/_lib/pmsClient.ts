@@ -2225,6 +2225,58 @@ export async function overrideHrSuccessionTag(
   };
 }
 
+// ─── Succession Planning ──────────────────────────────────────────────────────
+
+export interface ManagerTalentBenchRow {
+  employeeId: string;
+  name: string;
+  email: string;
+  department: string;
+  role: string;
+  performanceBand: "high" | "medium" | "low" | null;
+  potentialBand: "high" | "medium" | "low" | null;
+  readinessBand: "ready_now" | "ready_1_2_years" | "emerging" | null;
+  readinessScore: number | null;
+  successionTag: "ready" | "needs_development" | "watch" | null;
+  trendLabel: "improving" | "stable" | "declining" | "new" | null;
+  isPromotionReady: boolean;
+  promotionReadyAt: string | null;
+  promotionReadyBy: string | null;
+  lastEvaluatedAt: string | null;
+  snapshotId: string | null;
+}
+
+export interface ManagerTalentBenchData {
+  total: number;
+  rows: ManagerTalentBenchRow[];
+}
+
+export async function fetchManagerTalentBench() {
+  const payload = await requestJson("/api/manager/talent-bench");
+  return (payload?.data || { total: 0, rows: [] }) as ManagerTalentBenchData;
+}
+
+export async function markPromotionReady(
+  employeeId: string,
+  isPromotionReady: boolean
+) {
+  const payload = await requestJson(
+    `/api/hr/succession/${encodeURIComponent(employeeId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ isPromotionReady }),
+    }
+  );
+  return payload?.data as {
+    employeeId: string;
+    snapshotId: string;
+    isPromotionReady: boolean;
+    promotionReadyAt: string | null;
+    promotionReadyBy: string | null;
+    updatedAt: string | null;
+  };
+}
+
 export async function fetchHrManagerDetail(managerId: string) {
   const payload = await requestJson(`/api/hr/managers/${encodeURIComponent(managerId)}`);
   return payload?.data as HrManagerDetail;

@@ -25,6 +25,7 @@ const navItems = [
   { label: "Calibration Workbench", href: "/hr/calibration",   route: "/hr/calibration",    tutorialId: "nav-calibration"    },
   { label: "Training Needs",       href: "/hr/training-needs", route: "/hr/training-needs", tutorialId: "nav-training-needs" },
   { label: "9-Box Talent Map",     href: "/hr/9-box",         route: "/hr/9-box",          tutorialId: "nav-9-box"          },
+  { label: "Succession Planning",  href: "/hr/succession",    route: "/hr/succession",     tutorialId: "nav-succession"     },
   { label: "Notification Policy",  href: "/hr/notifications",  route: "/hr/notifications",  tutorialId: "nav-notifications"  },
 ];
 
@@ -37,6 +38,7 @@ const quickActions = [
   { label: "Run Calibration Session", href: "/hr/calibration" },
   { label: "Review Training Needs", href: "/hr/training-needs" },
   { label: "Review 9-Box Snapshot", href: "/hr/9-box" },
+  { label: "Succession Planning", href: "/hr/succession" },
   { label: "Manage Notifications", href: "/hr/notifications" },
 ];
 

@@ -9,6 +9,7 @@ import {
   HrSuccessionDashboardData,
   HrSuccessionDashboardRow,
   overrideHrSuccessionTag,
+  markPromotionReady,
 } from "@/app/employee/_lib/pmsClient";
 
 type SuccessionTag = "ready" | "needs_development" | "watch";
@@ -124,6 +125,26 @@ export default function HrSuccessionPage() {
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [editTag, setEditTag] = useState<SuccessionTag>("watch");
   const [editReason, setEditReason] = useState("");
+  const [promotionReadyIds, setPromotionReadyIds] = useState<Set<string>>(new Set());
+  const [togglingPromotionFor, setTogglingPromotionFor] = useState<string | null>(null);
+
+  const togglePromotionReady = async (employeeId: string, current: boolean) => {
+    setTogglingPromotionFor(employeeId);
+    setError("");
+    try {
+      await markPromotionReady(employeeId, !current);
+      setPromotionReadyIds((prev) => {
+        const next = new Set(prev);
+        if (!current) next.add(employeeId);
+        else next.delete(employeeId);
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update promotion status.");
+    } finally {
+      setTogglingPromotionFor(null);
+    }
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -269,6 +290,7 @@ export default function HrSuccessionPage() {
                 <th className="py-3 pr-4">Readiness Score</th>
                 <th className="py-3 pr-4">Succession Tag</th>
                 <th className="py-3 pr-4">Trend</th>
+                <th className="py-3">Promotion</th>
               </tr>
             </thead>
 
@@ -314,7 +336,7 @@ export default function HrSuccessionPage() {
                                   </p>
                                   {explainability.factors.length > 0 ? (
                                     <ul className="mt-2 list-disc space-y-1 pl-4 caption text-[var(--color-text)]">
-                                      {explainability.factors.map((factor) => (
+                                      {explainability.factors.map((factor: string) => (
                                         <li key={factor}>{factor}</li>
                                       ))}
                                     </ul>
@@ -356,11 +378,32 @@ export default function HrSuccessionPage() {
                           {formatTrendLabel(row.trendLabel)}
                         </Badge>
                       </td>
+
+                      <td className="py-4">
+                        {(() => {
+                          const isReady = promotionReadyIds.has(row.employeeId);
+                          const isToggling = togglingPromotionFor === row.employeeId;
+                          return (
+                            <div className="flex items-center gap-2">
+                              {isReady && <Badge variant="success">Ready</Badge>}
+                              <Button
+                                variant={isReady ? "danger" : "secondary"}
+                                size="sm"
+                                onClick={() => togglePromotionReady(row.employeeId, isReady)}
+                                disabled={Boolean(savingForEmployeeId) || Boolean(togglingPromotionFor)}
+                                loading={isToggling}
+                              >
+                                {isReady ? "Unmark" : "Mark Ready"}
+                              </Button>
+                            </div>
+                          );
+                        })()}
+                      </td>
                     </tr>
 
                     {isEditing ? (
                       <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-muted)]">
-                        <td colSpan={6} className="py-4">
+                        <td colSpan={7} className="py-4">
                           <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
                             <p className="body-sm font-medium text-[var(--color-text)] mb-3">
                               HR Override for {row.name}
@@ -406,7 +449,7 @@ export default function HrSuccessionPage() {
 
               {!loading && data.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-5 caption text-[var(--color-text-muted)]">
+                  <td colSpan={7} className="py-5 caption text-[var(--color-text-muted)]">
                     No succession rows available for this filter.
                   </td>
                 </tr>

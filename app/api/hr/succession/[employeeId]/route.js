@@ -54,17 +54,29 @@ export async function PATCH(request, context) {
     const body = await request.json().catch(() => ({}));
     const successionTag = normalizeTag(body?.successionTag);
     const overrideReason = normalizeText(body?.overrideReason);
+    const isPromotionReady = body?.isPromotionReady !== undefined ? Boolean(body.isPromotionReady) : null;
 
-    if (!isValidTag(successionTag)) {
+    // Allow promotion-only update (no tag change required)
+    const isTagUpdate = Boolean(successionTag);
+    const isPromotionUpdate = isPromotionReady !== null;
+
+    if (!isTagUpdate && !isPromotionUpdate) {
+      return Response.json(
+        { error: "At least one of successionTag or isPromotionReady must be provided." },
+        { status: 400 }
+      );
+    }
+
+    if (isTagUpdate && !isValidTag(successionTag)) {
       return Response.json(
         { error: "successionTag must be one of: ready, needs_development, watch." },
         { status: 400 }
       );
     }
 
-    if (!overrideReason) {
+    if (isTagUpdate && !overrideReason) {
       return Response.json(
-        { error: "overrideReason is required." },
+        { error: "overrideReason is required when updating successionTag." },
         { status: 400 }
       );
     }
@@ -81,48 +93,58 @@ export async function PATCH(request, context) {
     const updatedBy = normalizeText(profile?.$id || profile?.userId || "system") || "system";
     const previousSuccessionTag = normalizeTag(snapshot?.successionTag);
 
+    const snapshotPatch = { updatedBy, updatedAt: nowIso };
+    if (isTagUpdate) {
+      snapshotPatch.successionTag = successionTag;
+      snapshotPatch.isOverridden = true;
+    }
+    if (isPromotionUpdate) {
+      snapshotPatch.isPromotionReady = isPromotionReady;
+      snapshotPatch.promotionReadyAt = isPromotionReady ? nowIso : null;
+      snapshotPatch.promotionReadyBy = isPromotionReady ? updatedBy : null;
+    }
+
     const updated = await databases.updateDocument(
       databaseId,
       appwriteConfig.talentSnapshotsCollectionId,
       snapshot.$id,
-      {
-        successionTag,
-        isOverridden: true,
-        updatedBy,
-        updatedAt: nowIso,
-      }
+      snapshotPatch
     );
 
-    await databases.createDocument(
-      databaseId,
-      appwriteConfig.successionOverridesCollectionId,
-      ID.unique(),
-      {
-        employeeId,
-        snapshotId: updated.$id,
-        cycleId: String(updated.cycleId || "").trim() || null,
-        successionTag,
-        overrideReason,
-        updatedBy,
-        updatedAt: nowIso,
-      }
-    );
+    if (isTagUpdate) {
+      await databases.createDocument(
+        databaseId,
+        appwriteConfig.successionOverridesCollectionId,
+        ID.unique(),
+        {
+          employeeId,
+          snapshotId: updated.$id,
+          cycleId: String(updated.cycleId || "").trim() || null,
+          successionTag,
+          overrideReason,
+          updatedBy,
+          updatedAt: nowIso,
+        }
+      );
+    }
 
-    try {
-      const hrRecipientIds = await listHrRecipientIds(databases);
-      await notifySuccessionTagTransition(databases, {
-        employeeId,
-        employeeName: employeeId,
-        managerId: normalizeText(updated?.managerId || "") || null,
-        previousTag: previousSuccessionTag,
-        nextTag: successionTag,
-        cycleId: normalizeText(updated?.cycleId || "") || null,
-        updatedAt: nowIso,
-        actorId: updatedBy,
-        hrRecipientIds,
-      });
-    } catch {
-      // Notification failures should not block manual override updates.
+    if (isTagUpdate) {
+      try {
+        const hrRecipientIds = await listHrRecipientIds(databases);
+        await notifySuccessionTagTransition(databases, {
+          employeeId,
+          employeeName: employeeId,
+          managerId: normalizeText(updated?.managerId || "") || null,
+          previousTag: previousSuccessionTag,
+          nextTag: successionTag,
+          cycleId: normalizeText(updated?.cycleId || "") || null,
+          updatedAt: nowIso,
+          actorId: updatedBy,
+          hrRecipientIds,
+        });
+      } catch {
+        // Notification failures should not block manual override updates.
+      }
     }
 
     return Response.json({
@@ -130,9 +152,12 @@ export async function PATCH(request, context) {
         employeeId,
         snapshotId: updated.$id,
         cycleId: updated.cycleId || null,
-        successionTag: updated.successionTag || successionTag,
+        successionTag: updated.successionTag || successionTag || null,
         isOverridden: Boolean(updated.isOverridden),
-        overrideReason,
+        overrideReason: overrideReason || null,
+        isPromotionReady: Boolean(updated.isPromotionReady),
+        promotionReadyAt: updated.promotionReadyAt || null,
+        promotionReadyBy: updated.promotionReadyBy || null,
         readinessScore: updated.readinessScore ?? null,
         readinessReason: updated.readinessReason || null,
         updatedBy: updated.updatedBy || updatedBy,

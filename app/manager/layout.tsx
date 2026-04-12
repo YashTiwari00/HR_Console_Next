@@ -27,6 +27,7 @@ const managerNavItems = [
   { label: "Matrix Reviews",        href: "/manager/matrix-reviews",       route: "/manager/matrix-reviews",       tutorialId: "nav-matrix-reviews"   },
   { label: "Team Ranking & Graph",  href: "/manager/team-analytics",       route: "/manager/team-analytics",       tutorialId: "nav-team-analytics"   },
   { label: "Team Approvals",        href: "/manager/team-approvals",       route: "/manager/team-approvals",       tutorialId: "nav-team-approvals"   },
+  { label: "Talent Bench",          href: "/manager/talent-bench",         route: "/manager/talent-bench",         tutorialId: "nav-talent-bench"     },
 ];
 
 const employeeNavItems = [
@@ -45,6 +46,7 @@ const managerQuickActions = [
   { label: "Open Matrix Reviews", href: "/manager/matrix-reviews" },
   { label: "Open Team Ranking & Graph", href: "/manager/team-analytics" },
   { label: "Review Team Approvals", href: "/manager/team-approvals" },
+  { label: "View Talent Bench", href: "/manager/talent-bench" },
 ];
 
 const employeeQuickActions = [
