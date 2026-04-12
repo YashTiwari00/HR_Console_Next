@@ -1,6 +1,6 @@
 'use client';
 
-import type { HTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes } from 'react';
 import { cn } from '@/src/lib/cn';
 
 export interface TnaSkillCardProps {
@@ -60,7 +60,7 @@ export function TnaSkillCard({
   index,
   className,
   ...props
-}: TnaSkillCardProps & Omit<HTMLAttributes<HTMLDivElement>, 'className'>) {
+}: TnaSkillCardProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'>) {
   if (!area || area.trim().length === 0) {
     return null;
   }
@@ -74,16 +74,20 @@ export function TnaSkillCard({
     : `Skill ${sequence}: ${safeArea}. ${signalBadge.label}.`;
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        'w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4',
+        'w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-[var(--space-4)] text-left',
+        'cursor-pointer transition-[box-shadow,transform,border-color] duration-200',
+        'hover:-translate-y-px hover:shadow-[0_8px_22px_color-mix(in_srgb,var(--color-primary)_12%,transparent)]',
+        'hover:border-[color-mix(in_srgb,var(--color-primary)_28%,var(--color-border))]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]',
         className
       )}
-      role="group"
       aria-label={ariaLabel}
       {...props}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-[var(--space-3)]">
         <div
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
           style={{
@@ -98,7 +102,7 @@ export function TnaSkillCard({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-[var(--color-text)]">{safeArea}</p>
           <span
-            className="mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
+            className="mt-[var(--space-1)] inline-flex rounded-full px-[var(--space-2)] py-[var(--space-1)] text-xs font-medium"
             style={{
               backgroundColor: signalBadge.backgroundColor,
               color: signalBadge.color,
@@ -112,7 +116,7 @@ export function TnaSkillCard({
           <ChevronRightIcon />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

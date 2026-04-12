@@ -31,6 +31,7 @@ This document is the current technical baseline for the HR Console workspace.
 ## 5. AI and intelligence stack
 - OpenRouter client wrapper in `lib/openrouter.js`
 - AI route family in `app/api/ai/*` for chat, goal drafting, summaries, agenda, intelligence, and usage
+- AI growth features for hub summaries, growth pathways, and training suggestions
 - Explainability and decision helpers in `lib/ai/*`, `lib/decision/*`, and `lib/ratingDrop*`
 - Usage governance persisted in `ai_events` and policy collections
 
@@ -39,11 +40,14 @@ This document is the current technical baseline for the HR Console workspace.
 - Google OAuth token lifecycle and role-safe token status APIs
 - Google Calendar free/busy, event listing, and meeting creation endpoints
 - Google Meet request lifecycle and intelligence/transcript integration routes
+- Google Sheets goal-import ingestion (public sheet URL -> CSV export -> import preview/commit)
+- SMTP-based notification delivery through Gmail credentials
 
 ## 7. Feature and utility packages
 - FullCalendar: `@fullcalendar/react`, `@fullcalendar/timegrid`, `@fullcalendar/interaction` (6.1.20)
 - XLSX import/export: `xlsx` 0.18.5
 - 3D/visual utilities: `three` 0.183.2
+- Email transport: `nodemailer` 8.0.5
 
 ## 8. Code quality and tooling
 - ESLint 9
@@ -69,8 +73,12 @@ This document is the current technical baseline for the HR Console workspace.
 	- `npm run test:trajectory`
 	- `npm run test:rating-drop`
 	- `npm run smoke:api`
+	- `npm run smoke:gamification`
 	- `npm run smoke:self-review`
 	- `npm run smoke:ai:bulk-goals`
+	- `npm run smoke:ai:modes`
+	- `npm run smoke:contribution-badge`
+	- `npm run smoke:growth-hub`
 	- `npm run smoke:ui`
 
 ## 10. Appwrite data domains
@@ -111,7 +119,11 @@ This document is the current technical baseline for the HR Console workspace.
 - `notifications`
 - `notification_events`
 
-### 10.5 Meetings and external sync
+### 10.5 Growth, gamification, and readiness
+- `milestone_events`
+- `succession_overrides`
+
+### 10.6 Meetings and external sync
 - `google_tokens`
 - `google_meet_requests`
 - `meeting_metadata`
@@ -124,9 +136,11 @@ This document is the current technical baseline for the HR Console workspace.
 - Core appwrite envs (`NEXT_PUBLIC_APPWRITE_ENDPOINT`, `NEXT_PUBLIC_APPWRITE_PROJECT_ID`, `NEXT_PUBLIC_DATABASE_ID`, `APPWRITE_API_KEY`)
 - Collection/bucket IDs are overrideable via `NEXT_PUBLIC_*` env variables in `lib/appwrite.js`
 - OAuth and callback envs for Appwrite and Google integrations
-- Feature flags for selective UI/analytics rollout
+- Feature flags for selective rollout (`NEXT_PUBLIC_ENABLE_EMPLOYEE_TRAJECTORY`, `NEXT_PUBLIC_ENABLE_GAMIFICATION`, `NEXT_PUBLIC_ENABLE_GROWTH_HUB`, `NEXT_PUBLIC_ENABLE_CONTRIBUTION_BADGE`)
+- SMTP envs for notification delivery (`EMAIL_USER`, `EMAIL_PASS`)
 
 ## 12. Notes on compatibility
 - The project intentionally supports schema drift with safe fallbacks in route handlers.
 - Mixed TS/JS route files are expected and supported.
 - Existing legacy route aliases (for example region-admin paths) are maintained as redirect-compatible shims.
+- Goal import APIs support both Excel/CSV payloads and public Google Sheet URLs while preserving idempotent commit behavior.

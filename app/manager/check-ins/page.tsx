@@ -37,6 +37,9 @@ export default function ManagerCheckInsPage() {
   });
 
   const approvedGoals = goals.filter((goal) => goal.status === "approved");
+  const totalCheckIns = checkIns.length;
+  const completedCheckIns = checkIns.filter((checkIn) => checkIn.status === "completed").length;
+  const pendingCheckIns = checkIns.filter((checkIn) => checkIn.status !== "completed").length;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -132,8 +135,8 @@ export default function ManagerCheckInsPage() {
   return (
     <Stack gap="4">
       <PageHeader
-        title="My Check-ins"
-        subtitle="Schedule and track your own coaching conversations."
+        title="Check-ins"
+        subtitle="Schedule and track coaching conversations"
         actions={
           <Button variant="secondary" onClick={loadData} disabled={loading || submitting}>
             Refresh
@@ -143,6 +146,18 @@ export default function ManagerCheckInsPage() {
 
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
+
+      <Grid cols={1} colsMd={3} gap="3">
+        <Card title="Total Check-ins">
+          <p className="heading-xl">{loading ? "..." : totalCheckIns}</p>
+        </Card>
+        <Card title="Completed Check-ins">
+          <p className="heading-xl">{loading ? "..." : completedCheckIns}</p>
+        </Card>
+        <Card title="Pending Check-ins">
+          <p className="heading-xl">{loading ? "..." : pendingCheckIns}</p>
+        </Card>
+      </Grid>
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Plan Check-in" description="Book the next touchpoint on one of your goals.">

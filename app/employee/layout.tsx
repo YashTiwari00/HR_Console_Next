@@ -30,7 +30,6 @@ const baseNavItems = [
   { label: 'Check-ins',        href: '/employee/check-ins',         route: '/employee/check-ins',         tutorialId: 'nav-checkins'         },
   { label: 'Matrix Feedback',  href: '/employee/matrix-feedback',    route: '/employee/matrix-feedback',    tutorialId: 'nav-matrix-feedback'  },
   { label: 'Meetings',         href: '/employee/meetings',          route: '/employee/meetings',          tutorialId: 'nav-meetings'         },
-  { label: 'Meeting Calendar', href: '/employee/meeting-calendar',  route: '/employee/meeting-calendar',  tutorialId: 'nav-meeting-calendar' },
   { label: 'Cycle Timeline',   href: '/employee/timeline',          route: '/employee/timeline',          tutorialId: 'nav-timeline'         },
 ];
 
@@ -40,7 +39,6 @@ const baseQuickActions = [
   { label: 'Plan Check-in', href: '/employee/check-ins' },
   { label: 'Submit Matrix Feedback', href: '/employee/matrix-feedback' },
   { label: 'Open Meetings', href: '/employee/meetings' },
-  { label: 'Open Meeting Calendar', href: '/employee/meeting-calendar' },
 ];
 
 export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
@@ -96,6 +94,7 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
       { label: 'Open Growth Hub', href: '/employee/growth' },
     ];
   }, [growthHubEnabled]);
+  const showTopNotificationBell = !pathname.startsWith('/employee/growth');
 
   useEffect(() => {
     let active = true;
@@ -261,9 +260,11 @@ export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
         <SidebarLayout sidebar={sidebar} sidebarWidth="min(300px, 82vw)">
           <div className="min-h-full bg-[linear-gradient(180deg,var(--color-bg)_0%,var(--color-surface)_100%)]">
             <div className="mx-auto w-full max-w-7xl px-[var(--space-3)] py-[var(--space-4)] md:px-[var(--space-5)] md:py-[var(--space-5)]">
-              <div className="mb-[var(--space-3)] flex justify-end">
-                <NotificationBell />
-              </div>
+              {showTopNotificationBell ? (
+                <div className="mb-[var(--space-3)] flex justify-end">
+                  <NotificationBell />
+                </div>
+              ) : null}
               {children}
               <MilestoneToastStack enabled={gamificationEnabled} />
             </div>
