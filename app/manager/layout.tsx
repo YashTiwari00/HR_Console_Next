@@ -39,22 +39,16 @@ const employeeNavItems = [
 ];
 
 const managerQuickActions = [
-  { label: "Open Manager Dashboard", href: "/manager" },
-  { label: "Open Meeting Calendar", href: "/manager/meeting-calendar" },
   { label: "Assign Team Goal", href: "/manager/team-goals" },
-  { label: "Review Team Progress", href: "/manager/team-progress" },
-  { label: "Open Matrix Reviews", href: "/manager/matrix-reviews" },
-  { label: "Open Team Ranking & Graph", href: "/manager/team-analytics" },
   { label: "Review Team Approvals", href: "/manager/team-approvals" },
+  { label: "Schedule Meeting", href: "/manager/meeting-calendar" },
   { label: "View Talent Bench", href: "/manager/talent-bench" },
 ];
 
 const employeeQuickActions = [
-  { label: "Open Personal Dashboard", href: "/manager/employee-dashboard" },
   { label: "Create My Goal", href: "/manager/goals" },
   { label: "Log My Progress", href: "/manager/progress" },
-  { label: "Open My Check-ins", href: "/manager/check-ins" },
-  { label: "Open My Timeline", href: "/manager/timeline" },
+  { label: "Plan Check-in", href: "/manager/check-ins" },
 ];
 
 const employeePersonaRoutes = [

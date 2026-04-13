@@ -91,6 +91,7 @@ export default function Alert({
         'flex items-start gap-[var(--space-2)]',
         'p-[var(--space-3)]',
         'border rounded-[var(--radius-sm)]',
+        'backdrop-blur-[14px] backdrop-saturate-[1.3]',
         config.container,
         className
       )}

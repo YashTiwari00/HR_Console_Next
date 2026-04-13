@@ -18,23 +18,33 @@ export default function SidebarLayout({
       className={cn('flex h-screen min-h-screen overflow-hidden overflow-x-hidden bg-[var(--color-bg)]', className)}
       {...props}
     >
-      {/* Sidebar — independently scrollable */}
+      {/* Sidebar — glass panel */}
       <aside
         className={cn(
           'shrink-0 flex h-full min-h-screen flex-col overflow-y-scroll overflow-x-hidden',
-          'border-r border-[color-mix(in_srgb,var(--color-border)_75%,transparent)] shadow-[var(--shadow-sm)]',
+          'border-r border-[color-mix(in_srgb,var(--color-border)_45%,transparent)]',
+          'shadow-[2px_0_24px_color-mix(in_srgb,var(--color-primary)_6%,transparent)]',
           'overscroll-contain'
         )}
         style={{
           width: sidebarWidth,
-          background: 'linear-gradient(175deg, color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)) 0%, var(--color-surface) 40%, var(--color-surface-muted) 100%)',
+          background: 'color-mix(in srgb, var(--color-surface) 65%, transparent)',
+          backdropFilter: 'blur(20px) saturate(1.5)',
+          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}
       >
         {sidebar}
       </aside>
 
-      {/* Main content — independently scrollable */}
-      <main className="flex-1 min-w-0 min-h-0 h-full overflow-y-auto overflow-x-hidden overscroll-contain bg-[color-mix(in_srgb,var(--color-bg)_88%,var(--color-surface)_12%)] shadow-[-2px_0_12px_color-mix(in_srgb,var(--color-primary)_4%,transparent)_inset]">
+      {/* Main content — subtle glass inset */}
+      <main
+        className="flex-1 min-w-0 min-h-0 h-full overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{
+          background: 'color-mix(in srgb, var(--color-bg) 85%, transparent)',
+          backdropFilter: 'blur(8px) saturate(1.2)',
+          WebkitBackdropFilter: 'blur(8px) saturate(1.2)',
+        }}
+      >
         {children}
       </main>
     </div>

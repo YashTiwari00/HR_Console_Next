@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Container, Grid, Stack } from "@/src/components/layout";
-import { FormSection, PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Divider, Input, Select, Skeleton, Textarea } from "@/src/components/ui";
+import { Container, Stack } from "@/src/components/layout";
+import { PageHeader } from "@/src/components/patterns";
+import { Alert, Badge, Button, Checkbox, Input, Select, Skeleton, Textarea } from "@/src/components/ui";
 import {
   askMeetingQuestion,
   createMeetRequest,
@@ -25,48 +25,26 @@ import AvailabilityCalendar from "@/components/calendar/AvailabilityCalendar";
 
 const DEFAULT_TIMEZONE = "UTC";
 
-function startOfWeek(date: Date) {
-  const result = new Date(date);
-  const day = result.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  result.setDate(result.getDate() + diff);
-  result.setHours(0, 0, 0, 0);
-  return result;
-}
-
 function toDateTimeLocalValue(input: string | Date) {
   const date = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(date.valueOf())) return "";
-  const timezoneOffsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function toIsoFromDateTimeLocal(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "";
-  return date.toISOString();
+  const d = new Date(value);
+  return Number.isNaN(d.valueOf()) ? "" : d.toISOString();
 }
 
-function widthClassFromPercent(percent: number) {
-  const normalized = Math.max(0, Math.min(100, percent));
-  if (normalized >= 100) return "w-full";
-  if (normalized >= 90) return "w-11/12";
-  if (normalized >= 80) return "w-10/12";
-  if (normalized >= 70) return "w-9/12";
-  if (normalized >= 60) return "w-8/12";
-  if (normalized >= 50) return "w-6/12";
-  if (normalized >= 40) return "w-5/12";
-  if (normalized >= 30) return "w-4/12";
-  if (normalized >= 20) return "w-3/12";
-  if (normalized >= 10) return "w-2/12";
-  if (normalized > 0) return "w-1/12";
-  return "w-0";
-}
+type ActiveTab = "request" | "intelligence";
 
 export default function EmployeeMeetingCalendarDashboardPage() {
   const [tokenStatus, setTokenStatus] = useState<GoogleTokenStatus | null>(null);
   const [meetRequests, setMeetRequests] = useState<MeetRequestItem[]>([]);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("request");
 
+  // Request form
   const [title, setTitle] = useState("1:1 Meeting Request");
   const [description, setDescription] = useState("");
   const [proposedStart, setProposedStart] = useState("");
@@ -75,6 +53,7 @@ export default function EmployeeMeetingCalendarDashboardPage() {
   const [linkedGoalIds, setLinkedGoalIds] = useState<string[]>([]);
   const [goals, setGoals] = useState<GoalItem[]>([]);
 
+  // Intelligence
   const [selectedMeetingId, setSelectedMeetingId] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [meetingQuestion, setMeetingQuestion] = useState("");
@@ -84,11 +63,11 @@ export default function EmployeeMeetingCalendarDashboardPage() {
   const [loadingReport, setLoadingReport] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [askingQuestion, setAskingQuestion] = useState(false);
+
+  // Availability
   const [availabilityStart, setAvailabilityStart] = useState(() => toDateTimeLocalValue(new Date()));
   const [availabilityEnd, setAvailabilityEnd] = useState(() => {
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    return toDateTimeLocalValue(nextWeek);
+    const d = new Date(); d.setDate(d.getDate() + 7); return toDateTimeLocalValue(d);
   });
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [busySlots, setBusySlots] = useState<Array<{ start: string; end: string }>>([]);
@@ -100,720 +79,424 @@ export default function EmployeeMeetingCalendarDashboardPage() {
   const [success, setSuccess] = useState("");
 
   const loadDashboard = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
+    setLoading(true); setError("");
     try {
-      const [nextTokenStatus, nextMeetRequests] = await Promise.all([
-        fetchGoogleTokenStatus(),
-        fetchMeetRequests(),
-      ]);
-
-      setTokenStatus(nextTokenStatus);
-      setMeetRequests(nextMeetRequests);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load meeting calendar dashboard.");
-    } finally {
-      setLoading(false);
-    }
+      const [ts, mr] = await Promise.all([fetchGoogleTokenStatus(), fetchMeetRequests()]);
+      setTokenStatus(ts); setMeetRequests(mr);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to load meeting dashboard."); }
+    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   useEffect(() => {
-    let cancelled = false;
-    const loadGoals = async () => {
+    let c = false;
+    (async () => {
       try {
         const rows = await fetchGoals();
-        if (cancelled) return;
-        const approved = rows.filter((item) => item.status === "approved" || item.status === "submitted");
+        if (c) return;
+        const approved = rows.filter((i) => i.status === "approved" || i.status === "submitted");
         setGoals(approved);
-        setLinkedGoalIds((current) => current.filter((id) => approved.some((goal) => goal.$id === id)));
-      } catch {
-        if (!cancelled) {
-          setGoals([]);
-        }
-      }
-    };
-
-    loadGoals();
-    return () => {
-      cancelled = true;
-    };
+        setLinkedGoalIds((cur) => cur.filter((id) => approved.some((g) => g.$id === id)));
+      } catch { if (!c) setGoals([]); }
+    })();
+    return () => { c = true; };
   }, []);
 
   useEffect(() => {
-    if (!selectedMeetingId) {
-      setMeetingReport(null);
-      setTranscriptText("");
-      setMeetingAnswer("");
-      setMeetingCitations([]);
-      return;
-    }
-
-    let cancelled = false;
-    const loadReport = async () => {
+    if (!selectedMeetingId) { setMeetingReport(null); setTranscriptText(""); setMeetingAnswer(""); setMeetingCitations([]); return; }
+    let c = false;
+    (async () => {
       setLoadingReport(true);
-      try {
-        const payload = await fetchMeetingIntelligence(selectedMeetingId);
-        if (cancelled) return;
-        setMeetingReport(payload.report || null);
-        setTranscriptText(payload.report?.transcriptText || "");
-      } catch {
-        if (!cancelled) {
-          setMeetingReport(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingReport(false);
-        }
-      }
-    };
-
-    loadReport();
-    return () => {
-      cancelled = true;
-    };
+      try { const p = await fetchMeetingIntelligence(selectedMeetingId); if (!c) { setMeetingReport(p.report || null); setTranscriptText(p.report?.transcriptText || ""); } }
+      catch { if (!c) setMeetingReport(null); }
+      finally { if (!c) setLoadingReport(false); }
+    })();
+    return () => { c = true; };
   }, [selectedMeetingId]);
 
   const stats = useMemo(() => {
-    const pending = meetRequests.filter((item) => item.status === "pending").length;
-    const scheduled = meetRequests.filter((item) => item.status === "scheduled").length;
-    const rejected = meetRequests.filter((item) => item.status === "rejected").length;
-
-    const weekStart = startOfWeek(new Date());
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
-    const weeklyRequests = meetRequests.filter((item) => {
-      const requestedAt = new Date(item.requestedAt);
-      if (Number.isNaN(requestedAt.valueOf())) return false;
-      return requestedAt >= weekStart && requestedAt < weekEnd;
-    }).length;
-
-    return {
-      total: meetRequests.length,
-      pending,
-      scheduled,
-      rejected,
-      weeklyRequests,
-    };
+    const pending = meetRequests.filter((i) => i.status === "pending").length;
+    const scheduled = meetRequests.filter((i) => i.status === "scheduled").length;
+    const rejected = meetRequests.filter((i) => i.status === "rejected").length;
+    return { total: meetRequests.length, pending, scheduled, rejected };
   }, [meetRequests]);
 
-  const rankingRows = useMemo(
-    () => [
-      { label: "Scheduled ratio", value: meetRequests.length ? Math.round((stats.scheduled / meetRequests.length) * 100) : 0 },
-      { label: "Pending ratio", value: meetRequests.length ? Math.round((stats.pending / meetRequests.length) * 100) : 0 },
-      { label: "Rejected ratio", value: meetRequests.length ? Math.round((stats.rejected / meetRequests.length) * 100) : 0 },
-    ],
-    [meetRequests.length, stats.pending, stats.rejected, stats.scheduled]
-  );
-
   const selectedSlot = useMemo(() => {
-    const start = toIsoFromDateTimeLocal(proposedStart);
-    const end = toIsoFromDateTimeLocal(proposedEnd);
-    if (!start || !end) return null;
-    return { start, end };
+    const s = toIsoFromDateTimeLocal(proposedStart), e = toIsoFromDateTimeLocal(proposedEnd);
+    return s && e ? { start: s, end: e } : null;
   }, [proposedEnd, proposedStart]);
 
-  const availabilityRange = useMemo(
-    () => ({
-      start: toIsoFromDateTimeLocal(availabilityStart),
-      end: toIsoFromDateTimeLocal(availabilityEnd),
-    }),
-    [availabilityEnd, availabilityStart]
-  );
+  const availabilityRange = useMemo(() => ({
+    start: toIsoFromDateTimeLocal(availabilityStart),
+    end: toIsoFromDateTimeLocal(availabilityEnd),
+  }), [availabilityEnd, availabilityStart]);
 
-  async function handleConnectGoogle() {
-    setError("");
-    setSuccess("");
-    setConnectingGoogle(true);
-    window.location.href = "/api/google/connect";
-  }
+  const scheduledMeetings = useMemo(() => meetRequests.filter((i) => i.status === "scheduled"), [meetRequests]);
+  const scheduledMeetingOptions = useMemo(() => scheduledMeetings.map((i) => ({
+    value: i.$id,
+    label: `${i.title} (${formatDate(i.scheduledStartTime || i.startTime || i.requestedAt)})`,
+  })), [scheduledMeetings]);
+
+  const isConnected = tokenStatus?.connected && tokenStatus?.reason !== "expired";
+
+  async function handleConnectGoogle() { setError(""); setSuccess(""); setConnectingGoogle(true); window.location.href = "/api/google/connect"; }
 
   async function handleSubmitRequest(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setSuccess("");
-
-    if (!tokenStatus?.connected) {
-      setError("Connect Google Calendar before creating a meeting request.");
-      return;
-    }
-
-    if (!proposedStart || !proposedEnd) {
-      setError("Provide proposed start and end time.");
-      return;
-    }
-
-    const startIso = new Date(proposedStart).toISOString();
-    const endIso = new Date(proposedEnd).toISOString();
-
-    if (new Date(endIso).valueOf() <= new Date(startIso).valueOf()) {
-      setError("Proposed end time must be after start time.");
-      return;
-    }
-
+    event.preventDefault(); setError(""); setSuccess("");
+    if (!isConnected) { setError("Connect Google Calendar first."); return; }
+    if (!proposedStart || !proposedEnd) { setError("Provide start and end time."); return; }
+    const sIso = new Date(proposedStart).toISOString(), eIso = new Date(proposedEnd).toISOString();
+    if (new Date(eIso).valueOf() <= new Date(sIso).valueOf()) { setError("End time must be after start time."); return; }
     setSubmitting(true);
     try {
-      await createMeetRequest({
-        title,
-        description,
-        proposedStartTime: startIso,
-        proposedEndTime: endIso,
-        timeZone: DEFAULT_TIMEZONE,
-        linkedGoalIds,
-        meetingType,
-      });
-
-      setSuccess("Meeting request submitted successfully.");
-      setDescription("");
-      setProposedStart("");
-      setProposedEnd("");
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to submit meeting request.");
-    } finally {
-      setSubmitting(false);
-    }
+      await createMeetRequest({ title, description, proposedStartTime: sIso, proposedEndTime: eIso, timeZone: DEFAULT_TIMEZONE, linkedGoalIds, meetingType });
+      setSuccess("Meeting request submitted!"); setDescription(""); setProposedStart(""); setProposedEnd(""); await loadDashboard();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to submit request."); }
+    finally { setSubmitting(false); }
   }
 
   async function handleCheckAvailability() {
-    setError("");
-    setSuccess("");
-
-    if (!tokenStatus?.connected) {
-      setError("Connect Google Calendar before checking availability.");
-      return;
-    }
-
-    const startIso = toIsoFromDateTimeLocal(availabilityStart);
-    const endIso = toIsoFromDateTimeLocal(availabilityEnd);
-    if (!startIso || !endIso || new Date(endIso).valueOf() <= new Date(startIso).valueOf()) {
-      setError("Provide a valid availability range.");
-      return;
-    }
-
+    setError(""); setSuccess("");
+    if (!isConnected) { setError("Connect Google Calendar first."); return; }
+    const sIso = toIsoFromDateTimeLocal(availabilityStart), eIso = toIsoFromDateTimeLocal(availabilityEnd);
+    if (!sIso || !eIso || new Date(eIso).valueOf() <= new Date(sIso).valueOf()) { setError("Provide a valid range."); return; }
     setCheckingAvailability(true);
     try {
       const ctx = await fetchCurrentUserContext();
-      const employeeId = String(ctx?.profile?.$id || "").trim();
-      if (!employeeId) {
-        setError("Unable to identify current user for availability lookup.");
-        return;
-      }
-
-      const freebusy = await fetchEmployeeFreeBusy({
-        employeeId,
-        startDate: startIso,
-        endDate: endIso,
-        timeZone: DEFAULT_TIMEZONE,
-      });
-
-      setBusySlots((freebusy?.busy || []).map((slot) => ({ start: slot.start, end: slot.end })));
-      setSuccess("Availability loaded. Select a free slot below.");
-    } catch (err) {
-      setBusySlots([]);
-      setError(err instanceof Error ? err.message : "Unable to load availability.");
-    } finally {
-      setCheckingAvailability(false);
-    }
+      const eid = String(ctx?.profile?.$id || "").trim();
+      if (!eid) { setError("Unable to identify current user."); return; }
+      const fb = await fetchEmployeeFreeBusy({ employeeId: eid, startDate: sIso, endDate: eIso, timeZone: DEFAULT_TIMEZONE });
+      setBusySlots((fb?.busy || []).map((s) => ({ start: s.start, end: s.end })));
+      setSuccess("Availability loaded. Click a free slot to select it.");
+    } catch (err) { setBusySlots([]); setError(err instanceof Error ? err.message : "Unable to load availability."); }
+    finally { setCheckingAvailability(false); }
   }
 
   function handleSelectSlot(start: string, end: string) {
-    setProposedStart(toDateTimeLocalValue(start));
-    setProposedEnd(toDateTimeLocalValue(end));
+    setProposedStart(toDateTimeLocalValue(start)); setProposedEnd(toDateTimeLocalValue(end));
   }
 
-  async function handleGenerateMeetingIntelligence() {
-    setError("");
-    setSuccess("");
-
-    if (!selectedMeetingId) {
-      setError("Select a scheduled meeting first.");
-      return;
-    }
-
-    if (!transcriptText.trim()) {
-      setError("Paste transcript before generating intelligence.");
-      return;
-    }
-
+  async function handleGenerateIntelligence() {
+    setError(""); setSuccess("");
+    if (!selectedMeetingId) { setError("Select a meeting first."); return; }
+    if (!transcriptText.trim()) { setError("Paste transcript first."); return; }
     setGeneratingReport(true);
     try {
-      const payload = await generateMeetingIntelligence(selectedMeetingId, {
-        transcriptText,
-        transcriptSource: "google_meet_or_manual",
-      });
-      setMeetingReport(payload.report || null);
-      setSuccess("Meeting intelligence generated.");
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate meeting intelligence.");
-    } finally {
-      setGeneratingReport(false);
-    }
+      const p = await generateMeetingIntelligence(selectedMeetingId, { transcriptText, transcriptSource: "google_meet_or_manual" });
+      setMeetingReport(p.report || null); setSuccess("Intelligence generated."); await loadDashboard();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to generate intelligence."); }
+    finally { setGeneratingReport(false); }
   }
 
   async function handleAskQuestion() {
-    setError("");
-    setSuccess("");
-
-    if (!selectedMeetingId || !meetingQuestion.trim()) {
-      setError("Select a meeting and enter a question.");
-      return;
-    }
-
+    setError(""); setSuccess("");
+    if (!selectedMeetingId || !meetingQuestion.trim()) { setError("Select meeting and enter a question."); return; }
     setAskingQuestion(true);
     try {
-      const payload = await askMeetingQuestion(selectedMeetingId, meetingQuestion);
-      setMeetingAnswer(payload.answer || "");
-      setMeetingCitations(payload.citations || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to answer the meeting question.");
-    } finally {
-      setAskingQuestion(false);
-    }
+      const p = await askMeetingQuestion(selectedMeetingId, meetingQuestion);
+      setMeetingAnswer(p.answer || ""); setMeetingCitations(p.citations || []);
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to answer question."); }
+    finally { setAskingQuestion(false); }
   }
 
   async function handleDownloadReport() {
-    if (!selectedMeetingId) {
-      setError("Select a meeting first.");
-      return;
-    }
-
-    try {
-      await downloadMeetingReport(selectedMeetingId);
-      setSuccess("Meeting report download started.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download meeting report.");
-    }
+    if (!selectedMeetingId) { setError("Select a meeting first."); return; }
+    try { await downloadMeetingReport(selectedMeetingId); setSuccess("Download started."); }
+    catch (err) { setError(err instanceof Error ? err.message : "Unable to download report."); }
   }
-
-  const scheduledMeetings = useMemo(
-    () => meetRequests.filter((item) => item.status === "scheduled"),
-    [meetRequests]
-  );
-
-  const scheduledMeetingOptions = useMemo(
-    () =>
-      scheduledMeetings.map((item) => ({
-        value: item.$id,
-        label: `${item.title} (${formatDate(item.scheduledStartTime || item.startTime || item.requestedAt)})`,
-      })),
-    [scheduledMeetings]
-  );
 
   return (
     <Container>
-      <Stack gap="6">
+      <Stack gap="5" className="fade-in">
         <PageHeader
-          title="Meeting & Calendar Dashboard"
-          subtitle="Track your calendar, requests, approvals status, and meeting trends in one place."
-          actions={
-            <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
-              Refresh
-            </Button>
-          }
+          title="Meetings"
+          subtitle="Request meetings, check availability, and review meeting intelligence."
+          actions={<Button variant="secondary" onClick={loadDashboard} disabled={loading}>Refresh</Button>}
         />
 
-        {error && (
-          <Alert
-            variant="error"
-            title="Unable to continue"
-            description={error}
-            onDismiss={() => setError("")}
-          />
-        )}
-        {success && (
-          <Alert
-            variant="success"
-            title="Success"
-            description={success}
-            onDismiss={() => setSuccess("")}
-          />
-        )}
+        {error && <Alert variant="error" title="Error" description={error} onDismiss={() => setError("")} />}
+        {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
 
-        <Grid cols={1} colsMd={3} gap="3">
-          <Card title="Total Requests" className="h-full hover:shadow-[var(--shadow-md)] fade-in">
-            <Stack gap="1" className="h-full justify-between">
-              {loading ? <Skeleton variant="rect" className="h-[28px] w-[72px]" /> : <p className="heading-xl">{stats.total}</p>}
-            </Stack>
-          </Card>
-          <Card title="Scheduled Meetings" className="h-full hover:shadow-[var(--shadow-md)] fade-in">
-            <Stack gap="1" className="h-full justify-between">
-              {loading ? <Skeleton variant="rect" className="h-[28px] w-[72px]" /> : <p className="heading-xl">{stats.scheduled}</p>}
-            </Stack>
-          </Card>
-          <Card title="This Week Requests" className="h-full hover:shadow-[var(--shadow-md)] fade-in">
-            <Stack gap="1" className="h-full justify-between">
-              {loading ? <Skeleton variant="rect" className="h-[28px] w-[72px]" /> : <p className="heading-xl">{stats.weeklyRequests}</p>}
-            </Stack>
-          </Card>
-        </Grid>
-
-        <Card title="Google Connection" description="Your Google Calendar connection status for meetings.">
-          <Stack gap="3">
-            <div className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-              <Stack gap="1">
-                <p className="body-sm text-[var(--color-text)]">Connection info</p>
-                <p className="caption">Email: {tokenStatus?.email || "Not connected"}</p>
-                <p className="caption">Expiry: {tokenStatus?.expiresAt ? formatDate(tokenStatus.expiresAt) : "Not available"}</p>
-              </Stack>
-              <Badge variant={tokenStatus?.connected && tokenStatus?.reason !== "expired" ? "success" : "warning"}>
-                {tokenStatus?.connected && tokenStatus?.reason !== "expired" ? "Connected" : "Expired"}
-              </Badge>
+        {/* ── Stats + Connection ──────────────────────────────────────── */}
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 stagger-in">
+          {[
+            { label: "Total", value: stats.total, color: "var(--color-text)" },
+            { label: "Pending", value: stats.pending, color: "var(--color-warning)" },
+            { label: "Scheduled", value: stats.scheduled, color: "var(--color-success)" },
+            { label: "Rejected", value: stats.rejected, color: "var(--color-danger)" },
+          ].map((c) => (
+            <div key={c.label} className="glass-stat rounded-[var(--radius-md)] p-4" style={{ borderLeftWidth: 4, borderLeftColor: c.color }}>
+              <p className="caption text-[var(--color-text-muted)]">{c.label}</p>
+              <p className="heading-xl mt-1" style={{ color: c.color }}>{loading ? "..." : c.value}</p>
             </div>
+          ))}
+        </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <Button onClick={handleConnectGoogle} disabled={connectingGoogle}>
-                {connectingGoogle ? "Redirecting..." : "Reconnect"}
-              </Button>
-              <Button variant="secondary" onClick={loadDashboard} disabled={loading}>
-                Refresh status
-              </Button>
+        {/* Google connection — compact */}
+        <div className="glass rounded-[var(--radius-md)] px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`h-3 w-3 rounded-full ${isConnected ? "bg-[var(--color-success)]" : "bg-[var(--color-warning)]"}`} />
+            <div>
+              <p className="body-sm font-medium text-[var(--color-text)]">
+                Google Calendar — {isConnected ? "Connected" : "Not Connected"}
+              </p>
+              {tokenStatus?.email && <p className="caption text-[var(--color-text-muted)]">{tokenStatus.email}</p>}
             </div>
-          </Stack>
-        </Card>
+          </div>
+          <Button size="sm" variant={isConnected ? "secondary" : "primary"} onClick={handleConnectGoogle} disabled={connectingGoogle}>
+            {connectingGoogle ? "Redirecting..." : isConnected ? "Reconnect" : "Connect Google"}
+          </Button>
+        </div>
 
-        <Grid cols={1} gap="6" className="lg:grid-cols-[2fr_1fr]">
-          <Stack gap="5">
-            <Card
-              title="Request Meeting"
-              description="Primary action: create a new meeting request for your manager."
-              className="h-full fade-in"
-            >
-              <form className="flex h-full min-h-0 flex-col" onSubmit={handleSubmitRequest}>
-                <Stack gap="3" className="min-h-0">
-                  <FormSection title="Meeting Details" description="Define the request context and participants.">
-                    <Stack gap="3">
-                      <Input
-                        label="Meeting title"
-                        value={title}
-                        onChange={(event) => setTitle(event.target.value)}
-                        required
-                      />
-                      <Select
-                        label="Meeting type"
-                        value={meetingType}
-                        onChange={(event) => setMeetingType(event.target.value === "group" ? "group" : "individual")}
-                        options={[
-                          { value: "individual", label: "Individual" },
-                          { value: "group", label: "Group" },
-                        ]}
-                      />
-                      <Stack gap="2">
-                        <p className="body-sm text-[var(--color-text)]">Goals for this meeting</p>
-                        {goals.length === 0 && <p className="caption">No approved/submitted goals available.</p>}
+        {/* ── Tab switcher ────────────────────────────────────────────── */}
+        <div className="flex gap-2">
+          {(["request", "intelligence"] as ActiveTab[]).map((tab) => {
+            const active = activeTab === tab;
+            const label = tab === "request" ? "Request Meeting" : "Meeting Intelligence";
+            return (
+              <button key={tab} type="button" onClick={() => setActiveTab(tab)}
+                className={`rounded-full px-5 py-2 body-sm font-medium transition-all duration-200 ${active ? "pill-active" : "glass-subtle text-[var(--color-text-muted)] hover:text-[var(--color-text)] glow-ring"}`}
+              >{label}</button>
+            );
+          })}
+        </div>
+
+        {/* ── Request Meeting Tab ─────────────────────────────────────── */}
+        {activeTab === "request" && (
+          <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+            {/* Left — Form */}
+            <div className="glass rounded-[var(--radius-lg)] p-6">
+              <p className="heading-lg text-[var(--color-text)] mb-1">New Meeting Request</p>
+              <p className="caption text-[var(--color-text-muted)] mb-5">Fill in details and pick a time slot from your calendar.</p>
+
+              <form onSubmit={handleSubmitRequest}>
+                <Stack gap="4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Input label="Meeting title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                    <Select
+                      label="Type"
+                      value={meetingType}
+                      onChange={(e) => setMeetingType(e.target.value === "group" ? "group" : "individual")}
+                      options={[{ value: "individual", label: "Individual" }, { value: "group", label: "Group" }]}
+                    />
+                  </div>
+
+                  <Textarea label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+
+                  {goals.length > 0 && (
+                    <div className="glass-subtle rounded-[var(--radius-sm)] p-3">
+                      <p className="caption font-semibold text-[var(--color-text)] mb-2">Link to goals</p>
+                      <div className="space-y-1.5 max-h-[140px] overflow-auto">
                         {goals.map((goal) => (
                           <Checkbox
                             key={goal.$id}
                             label={goal.title}
-                            description={`Progress ${goal.progressPercent || 0}%`}
+                            description={`${goal.progressPercent || 0}% complete`}
                             checked={linkedGoalIds.includes(goal.$id)}
-                            onChange={(event) => {
-                              setLinkedGoalIds((current) =>
-                                event.target.checked
-                                  ? Array.from(new Set([...current, goal.$id]))
-                                  : current.filter((id) => id !== goal.$id)
-                              );
-                            }}
+                            onChange={(e) => setLinkedGoalIds((cur) => e.target.checked ? [...new Set([...cur, goal.$id])] : cur.filter((id) => id !== goal.$id))}
                           />
                         ))}
-                      </Stack>
-                      <Textarea
-                        label="Description"
-                        value={description}
-                        onChange={(event) => setDescription(event.target.value)}
-                        rows={3}
-                      />
-                    </Stack>
-                  </FormSection>
+                      </div>
+                    </div>
+                  )}
 
-                  <FormSection title="Schedule & Availability" description="Choose timing and verify available slots." divider>
-                    <Stack gap="3" className="min-h-0">
-                      <Grid cols={1} colsMd={2} gap="2">
-                        <Input
-                          label="Proposed start"
-                          type="datetime-local"
-                          value={proposedStart}
-                          onChange={(event) => setProposedStart(event.target.value)}
-                          required
-                        />
-                        <Input
-                          label="Proposed end"
-                          type="datetime-local"
-                          value={proposedEnd}
-                          onChange={(event) => setProposedEnd(event.target.value)}
-                          required
-                        />
-                      </Grid>
+                  <div className="border-t border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] pt-4">
+                    <p className="body-sm font-semibold text-[var(--color-text)] mb-3">Schedule</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Input label="Start" type="datetime-local" value={proposedStart} onChange={(e) => setProposedStart(e.target.value)} required />
+                      <Input label="End" type="datetime-local" value={proposedEnd} onChange={(e) => setProposedEnd(e.target.value)} required />
+                    </div>
+                  </div>
 
-                      <Grid cols={1} colsMd={2} gap="2">
-                        <Input
-                          label="Availability start"
-                          type="datetime-local"
-                          value={availabilityStart}
-                          onChange={(event) => setAvailabilityStart(event.target.value)}
-                        />
-                        <Input
-                          label="Availability end"
-                          type="datetime-local"
-                          value={availabilityEnd}
-                          onChange={(event) => setAvailabilityEnd(event.target.value)}
-                        />
-                      </Grid>
-
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={handleCheckAvailability}
-                        disabled={!tokenStatus?.connected}
-                        loading={checkingAvailability}
-                      >
-                        Check Availability
-                      </Button>
-
-                      <Stack gap="2" className="min-h-0 overflow-hidden">
-                        <p className="body-sm text-[var(--color-text)]">Select Time Slot</p>
-                        {!checkingAvailability && busySlots.length === 0 && (
-                          <div className="flex min-h-[88px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)] text-center">
-                            <p className="caption">Set a date range and click Check Availability to load calendar slots.</p>
-                          </div>
-                        )}
-                        {checkingAvailability && (
-                          <Skeleton variant="rect" className="h-[180px] w-full" />
-                        )}
-                        <div className="availability-calendar-shell min-h-0 max-h-[60vh] overflow-auto">
-                          <AvailabilityCalendar
-                            busySlots={busySlots}
-                            selectedSlot={selectedSlot}
-                            loading={checkingAvailability}
-                            range={availabilityRange}
-                            onSelectSlot={handleSelectSlot}
-                          />
-                        </div>
-                      </Stack>
-                    </Stack>
-                  </FormSection>
-                </Stack>
-
-                <div className="sticky bottom-0 mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] pt-[var(--space-2)]">
-                  <Button type="submit" loading={submitting} disabled={!tokenStatus?.connected}>
+                  <Button type="submit" loading={submitting} disabled={!isConnected}>
                     Submit Request
                   </Button>
-                </div>
+                </Stack>
               </form>
-            </Card>
+            </div>
 
-            <Card
-              title="Meeting Intelligence"
-              description="Review transcript, generate AI summary, ask follow-up questions, and download report."
-              className="bg-[var(--color-surface-muted)] hover:shadow-[var(--shadow-sm)] hover:border-[var(--color-border)] hover:-translate-y-0 fade-in"
-            >
-              <Stack gap="3">
-                <Select
-                  label="Scheduled meeting"
-                  value={selectedMeetingId}
-                  onChange={(event) => setSelectedMeetingId(event.target.value)}
-                  options={scheduledMeetingOptions}
-                  placeholder="Select scheduled meeting"
-                />
-                {loadingReport && <p className="caption">Loading meeting intelligence...</p>}
-
-                <Textarea
-                  label="Transcript"
-                  rows={5}
-                  value={transcriptText}
-                  onChange={(event) => setTranscriptText(event.target.value)}
-                  placeholder="Paste transcript from Google Meet or integrated source"
-                />
-
-                <Button
-                  variant="secondary"
-                  onClick={handleGenerateMeetingIntelligence}
-                  loading={generatingReport}
-                  disabled={!selectedMeetingId}
-                >
-                  Generate AI Meeting Intelligence
+            {/* Right — Calendar + Upcoming */}
+            <Stack gap="4">
+              <div className="glass rounded-[var(--radius-lg)] p-5">
+                <p className="body-sm font-semibold text-[var(--color-text)] mb-3">Check Availability</p>
+                <div className="grid gap-2 grid-cols-2 mb-3">
+                  <Input label="From" type="datetime-local" value={availabilityStart} onChange={(e) => setAvailabilityStart(e.target.value)} />
+                  <Input label="To" type="datetime-local" value={availabilityEnd} onChange={(e) => setAvailabilityEnd(e.target.value)} />
+                </div>
+                <Button variant="secondary" size="sm" onClick={handleCheckAvailability} disabled={!isConnected} loading={checkingAvailability} className="mb-3">
+                  Load Calendar
                 </Button>
 
-                {meetingReport && (
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-3)]">
-                    <Stack gap="1">
-                      <p className="heading-lg text-[var(--color-text)]">Summary</p>
-                      <p className="caption">{meetingReport.summary}</p>
-                    </Stack>
-                    {meetingReport.keyTakeaways?.length > 0 && (
-                      <ul className="list-disc pl-[var(--space-4)] caption">
-                        {meetingReport.keyTakeaways.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    )}
+                {!checkingAvailability && busySlots.length === 0 && (
+                  <div className="glass-subtle rounded-[var(--radius-sm)] p-4 text-center">
+                    <p className="caption text-[var(--color-text-muted)]">Set a range and click Load Calendar to see your free/busy slots.</p>
                   </div>
                 )}
+                {checkingAvailability && <Skeleton variant="rect" className="h-[200px] w-full rounded-[var(--radius-sm)]" />}
 
-                <Input
-                  label="Ask meeting AI"
-                  value={meetingQuestion}
-                  onChange={(event) => setMeetingQuestion(event.target.value)}
-                  placeholder="What were my action items?"
-                />
-                <Button variant="secondary" onClick={handleAskQuestion} loading={askingQuestion} disabled={!selectedMeetingId}>
-                  Ask AI
+                <div className="availability-calendar-shell max-h-[50vh] overflow-auto rounded-[var(--radius-sm)]">
+                  <AvailabilityCalendar
+                    busySlots={busySlots}
+                    selectedSlot={selectedSlot}
+                    loading={checkingAvailability}
+                    range={availabilityRange}
+                    onSelectSlot={handleSelectSlot}
+                  />
+                </div>
+              </div>
+
+              {/* Upcoming meetings */}
+              <div className="glass rounded-[var(--radius-lg)] p-5">
+                <p className="body-sm font-semibold text-[var(--color-text)] mb-3">
+                  Upcoming Meetings
+                  {scheduledMeetings.length > 0 && <span className="ml-2 caption text-[var(--color-text-muted)]">({scheduledMeetings.length})</span>}
+                </p>
+                {loading && <Skeleton variant="rect" className="h-[60px] w-full rounded-[var(--radius-sm)]" />}
+                {!loading && scheduledMeetings.length === 0 && (
+                  <div className="glass-subtle rounded-[var(--radius-sm)] p-4 text-center">
+                    <p className="caption text-[var(--color-text-muted)]">No upcoming meetings.</p>
+                  </div>
+                )}
+                <div className="space-y-2 max-h-[240px] overflow-auto">
+                  {scheduledMeetings.map((item) => (
+                    <div key={item.$id} className="glass-subtle rounded-[var(--radius-sm)] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-all duration-150 hover:shadow-[var(--shadow-sm)]">
+                      <div>
+                        <p className="body-sm font-medium text-[var(--color-text)]">{item.title}</p>
+                        <p className="caption text-[var(--color-text-muted)]">{formatDate(item.scheduledStartTime || (item as unknown as { startTime?: string }).startTime || item.requestedAt)}</p>
+                      </div>
+                      <Badge variant="success">Scheduled</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Stack>
+          </div>
+        )}
+
+        {/* ── Intelligence Tab ────────────────────────────────────────── */}
+        {activeTab === "intelligence" && (
+          <div className="glass rounded-[var(--radius-lg)] p-6">
+            <p className="heading-lg text-[var(--color-text)] mb-1">Meeting Intelligence</p>
+            <p className="caption text-[var(--color-text-muted)] mb-5">Select a scheduled meeting, paste the transcript, and generate AI insights.</p>
+
+            <Stack gap="4">
+              <Select
+                label="Scheduled meeting"
+                value={selectedMeetingId}
+                onChange={(e) => setSelectedMeetingId(e.target.value)}
+                options={scheduledMeetingOptions}
+                placeholder="Select a meeting..."
+              />
+              {loadingReport && <p className="caption text-[var(--color-text-muted)]">Loading intelligence...</p>}
+
+              <Textarea
+                label="Transcript"
+                rows={6}
+                value={transcriptText}
+                onChange={(e) => setTranscriptText(e.target.value)}
+                placeholder="Paste transcript from Google Meet or other source..."
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" onClick={handleGenerateIntelligence} loading={generatingReport} disabled={!selectedMeetingId}>
+                  Generate AI Summary
                 </Button>
+                <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
+                  Download Report
+                </Button>
+              </div>
+
+              {meetingReport && (
+                <div className="glass-subtle rounded-[var(--radius-md)] p-5 space-y-3" style={{ animation: "slideUp 0.25s ease-out both" }}>
+                  <div>
+                    <p className="body-sm font-semibold text-[var(--color-text)]">Summary</p>
+                    <p className="body-sm text-[var(--color-text-muted)] mt-1 leading-relaxed">{meetingReport.summary}</p>
+                  </div>
+                  {meetingReport.keyTakeaways?.length > 0 && (
+                    <div>
+                      <p className="body-sm font-semibold text-[var(--color-text)] mb-1">Key Takeaways</p>
+                      <ul className="space-y-1">
+                        {meetingReport.keyTakeaways.map((item) => (
+                          <li key={item} className="flex items-start gap-2 caption text-[var(--color-text-muted)]">
+                            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="border-t border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] pt-4">
+                <p className="body-sm font-semibold text-[var(--color-text)] mb-3">Ask a question about this meeting</p>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Input
+                      label=""
+                      value={meetingQuestion}
+                      onChange={(e) => setMeetingQuestion(e.target.value)}
+                      placeholder="What were my action items?"
+                    />
+                  </div>
+                  <Button variant="secondary" onClick={handleAskQuestion} loading={askingQuestion} disabled={!selectedMeetingId} className="self-end">
+                    Ask AI
+                  </Button>
+                </div>
 
                 {meetingAnswer && (
-                  <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-3)]">
+                  <div className="glass-subtle rounded-[var(--radius-sm)] p-4 mt-3" style={{ animation: "slideUp 0.2s ease-out both" }}>
                     <p className="body-sm text-[var(--color-text)]">{meetingAnswer}</p>
                     {meetingCitations.length > 0 && (
-                      <ul className="list-disc pl-[var(--space-4)] caption">
-                        {meetingCitations.map((item) => (
-                          <li key={item}>{item}</li>
+                      <div className="mt-2 space-y-1">
+                        {meetingCitations.map((c) => (
+                          <p key={c} className="caption text-[var(--color-text-muted)] italic">{c}</p>
                         ))}
-                      </ul>
+                      </div>
                     )}
                   </div>
                 )}
+              </div>
+            </Stack>
+          </div>
+        )}
 
-                <Button variant="ghost" onClick={handleDownloadReport} disabled={!selectedMeetingId}>
-                  Download Meeting Report
-                </Button>
-              </Stack>
-            </Card>
+        {/* ── Request History ─────────────────────────────────────────── */}
+        <div className="glass rounded-[var(--radius-lg)] p-5">
+          <p className="heading-lg text-[var(--color-text)] mb-1">Request History</p>
+          <p className="caption text-[var(--color-text-muted)] mb-4">All meeting requests and their current status.</p>
 
-          </Stack>
-
-          <Stack gap="5">
-            <Card title="Upcoming Meetings" description="Your scheduled meetings." className="fade-in">
-              <Stack gap="2">
-                {loading && (
-                  <Stack gap="2">
-                    <Skeleton variant="rect" className="h-[52px] w-full" />
-                    <Skeleton variant="rect" className="h-[52px] w-full" />
-                  </Stack>
-                )}
-                {!loading && scheduledMeetings.length === 0 && (
-                  <div className="flex min-h-[120px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)] text-center">
-                    <p className="caption">No upcoming meetings yet.</p>
+          {loading && <Skeleton variant="rect" className="h-[80px] w-full rounded-[var(--radius-sm)]" />}
+          {!loading && meetRequests.length === 0 && (
+            <div className="glass-subtle rounded-[var(--radius-sm)] p-6 text-center">
+              <p className="caption text-[var(--color-text-muted)]">No meeting requests yet. Create your first one above.</p>
+            </div>
+          )}
+          {!loading && meetRequests.length > 0 && (
+            <div className="space-y-2 max-h-[320px] overflow-auto">
+              {meetRequests.map((item) => (
+                <div
+                  key={item.$id}
+                  className="glass-subtle rounded-[var(--radius-sm)] px-4 py-3 flex items-center justify-between gap-3 transition-all duration-150 hover:shadow-[var(--shadow-sm)]"
+                  style={{ borderLeftWidth: 3, borderLeftColor: item.status === "scheduled" ? "var(--color-success)" : item.status === "rejected" ? "var(--color-danger)" : "var(--color-warning)" }}
+                >
+                  <div>
+                    <p className="body-sm font-medium text-[var(--color-text)]">{item.title}</p>
+                    <p className="caption text-[var(--color-text-muted)]">
+                      {formatDate(item.requestedAt)}
+                      {item.meetingType === "group" ? " · Group" : ""}
+                      {item.linkedGoalIds?.length ? ` · ${item.linkedGoalIds.length} goal${item.linkedGoalIds.length > 1 ? "s" : ""}` : ""}
+                    </p>
                   </div>
-                )}
-
-                <Stack gap="2" className="max-h-[280px] overflow-auto pr-1">
-                  {scheduledMeetings.map((item) => (
-                    <div
-                      key={`upcoming-${item.$id}`}
-                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="body-sm text-[var(--color-text)]">{item.title}</p>
-                        <Badge variant="success">scheduled</Badge>
-                      </div>
-                      <p className="caption">{formatDate(item.scheduledStartTime || item.startTime || item.requestedAt)}</p>
-                    </div>
-                  ))}
-                </Stack>
-              </Stack>
-            </Card>
-
-            <Card title="Request History" description="All submitted requests and their status." className="fade-in">
-              <Stack gap="2">
-                {loading && (
-                  <Stack gap="2">
-                    <Skeleton variant="rect" className="h-[52px] w-full" />
-                    <Skeleton variant="rect" className="h-[52px] w-full" />
-                    <Skeleton variant="rect" className="h-[52px] w-full" />
-                  </Stack>
-                )}
-                {!loading && meetRequests.length === 0 && (
-                  <div className="flex min-h-[120px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)] text-center">
-                    <p className="caption">No request history available.</p>
-                  </div>
-                )}
-
-                <Stack gap="2" className="max-h-[320px] overflow-auto pr-1">
-                  {meetRequests.map((item) => (
-                    <div
-                      key={`history-${item.$id}`}
-                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="body-sm text-[var(--color-text)]">{item.title}</p>
-                        <Badge variant={item.status === "scheduled" ? "success" : item.status === "rejected" ? "warning" : "info"}>
-                          {item.status}
-                        </Badge>
-                      </div>
-                      <p className="caption">Requested: {formatDate(item.requestedAt)}</p>
-                    </div>
-                  ))}
-                </Stack>
-              </Stack>
-            </Card>
-
-            <Divider />
-
-            <Card title="Team Progress Overview" description="Status breakdown of your meeting requests.">
-              <Stack gap="2">
-                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-                  <p className="caption">Pending</p>
-                  <p className="body-sm">{loading ? "..." : stats.pending}</p>
+                  <Badge variant={item.status === "scheduled" ? "success" : item.status === "rejected" ? "danger" : "info"}>
+                    {item.status}
+                  </Badge>
                 </div>
-                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-                  <p className="caption">Scheduled</p>
-                  <p className="body-sm">{loading ? "..." : stats.scheduled}</p>
-                </div>
-                <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2">
-                  <p className="caption">Rejected</p>
-                  <p className="body-sm">{loading ? "..." : stats.rejected}</p>
-                </div>
-              </Stack>
-            </Card>
-
-            <Card title="Team Ranking & Graph" description="Simple trend bars for your meeting request outcomes.">
-              <Stack gap="2">
-                {rankingRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-3)] py-[var(--space-2)]"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="body-sm text-[var(--color-text)]">{row.label}</p>
-                      <p className="caption">{row.value}%</p>
-                    </div>
-                    <div className="mt-2 h-2 w-full rounded-full bg-[var(--color-border)]">
-                      <div className={`h-full rounded-full bg-[var(--color-primary)] ${widthClassFromPercent(Math.max(8, row.value))}`} />
-                    </div>
-                  </div>
-                ))}
-              </Stack>
-            </Card>
-
-            <Card title="Team Approvals" description="Manager decisions on your requests.">
-              <Stack gap="2">
-                {!loading && meetRequests.length === 0 && <p className="caption">No meeting requests yet.</p>}
-                {meetRequests.slice(0, 6).map((item) => (
-                  <div
-                    key={item.$id}
-                    className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="body-sm text-[var(--color-text)]">{item.title}</p>
-                      <Badge variant={item.status === "scheduled" ? "success" : item.status === "rejected" ? "warning" : "info"}>
-                        {item.status}
-                      </Badge>
-                    </div>
-                    <p className="caption mt-1">Requested: {formatDate(item.requestedAt)}</p>
-                    <p className="caption mt-1">Meeting type: {item.meetingType || "individual"}</p>
-                    <p className="caption mt-1">Linked goals: {item.linkedGoalIds?.length || 0}</p>
-                  </div>
-                ))}
-              </Stack>
-            </Card>
-          </Stack>
-        </Grid>
+              ))}
+            </div>
+          )}
+        </div>
       </Stack>
     </Container>
   );

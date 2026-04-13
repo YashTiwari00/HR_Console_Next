@@ -1,12 +1,10 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Container, Grid, Stack } from "@/src/components/layout";
 import * as XLSX from "xlsx";
 import {
-  ConversationalGoalComposer,
   ExplainabilityDrawer,
-  FormSection,
   GoalLineageCard,
   GoalLineageView,
   PageHeader,
@@ -96,7 +94,6 @@ function progressWidthClass(percent: number) {
 
 export default function EmployeeGoalsPage() {
   const aiMode = useAiMode();
-  const [mode, setMode] = useState<"form" | "ai">("form");
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -108,7 +105,6 @@ export default function EmployeeGoalsPage() {
   const [aiUsageRemaining, setAiUsageRemaining] = useState<number | null>(null);
   const [aiBudgetWarning, setAiBudgetWarning] = useState("");
   const [explainabilityOpen, setExplainabilityOpen] = useState(false);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   const [goalForm, setGoalForm] = useState({
     title: "",
@@ -120,7 +116,7 @@ export default function EmployeeGoalsPage() {
     dueDate: "",
   });
 
-  const [managerResolved, setManagerResolved] = useState(false);
+  const [, setManagerResolved] = useState(false);
   const [feedbackByGoal, setFeedbackByGoal] = useState<Record<string, string>>({});
   const [goalRatings, setGoalRatings] = useState<Record<string, GoalRatingsResponse>>({});
   const [loadingRatingsFor, setLoadingRatingsFor] = useState<Set<string>>(new Set());
@@ -152,7 +148,7 @@ export default function EmployeeGoalsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [bulkError, setBulkError] = useState("");
+  const [, setBulkError] = useState("");
   const [bulkSourceType, setBulkSourceType] = useState<BulkUploadSource>("excel");
   const [bulkGoogleSheetUrl, setBulkGoogleSheetUrl] = useState("");
   const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -161,7 +157,6 @@ export default function EmployeeGoalsPage() {
   const [bulkPreviewRows, setBulkPreviewRows] = useState<BulkGoalImportPreviewRow[]>([]);
   const [bulkCommitRows, setBulkCommitRows] = useState<BulkGoalImportRowInput[]>([]);
   const [bulkPreviewMeta, setBulkPreviewMeta] = useState({ total: 0, valid: 0, invalid: 0 });
-  const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [lineageGoalId, setLineageGoalId] = useState<string | null>(null);
 
   function readCell(row: Record<string, unknown>, keys: string[]) {
@@ -479,27 +474,26 @@ export default function EmployeeGoalsPage() {
   const waitingPercent = goals.length > 0 ? Math.round((submittedCount / goals.length) * 100) : 0;
   const cycleWeightagePercent = Math.max(0, Math.min(100, Math.round(cycleWeightage)));
 
-  async function handleCreateGoal(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleCreateFromSuggestion() {
+    if (!aiSuggestion) return;
     setSubmitting(true);
     setError("");
     setSuccess("");
 
     try {
       await createGoal({
-        title: goalForm.title,
-        description: goalForm.description,
+        title: aiSuggestion.title,
+        description: aiSuggestion.description,
         cycleId: goalForm.cycleId,
         frameworkType: goalForm.frameworkType,
         managerId: goalForm.managerId,
-        weightage: Number.parseInt(goalForm.weightage, 10),
+        weightage: aiSuggestion.weightage || Number.parseInt(goalForm.weightage, 10),
         dueDate: goalForm.dueDate || null,
-        aiSuggested: Boolean(aiSuggestion),
+        aiSuggested: true,
       });
 
-      setGoalForm((prev) => ({ ...prev, title: "", description: "" }));
       setAiSuggestion(null);
-      setSuccess("Goal created as draft.");
+      setSuccess("Goal created as draft from AI suggestion.");
       await loadGoals();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create goal.");
@@ -601,216 +595,91 @@ export default function EmployeeGoalsPage() {
     }
   }
 
-  function handleAcceptAiSuggestion() {
-    if (!aiSuggestion) return;
-
-    setGoalForm((prev) => ({
-      ...prev,
-      title: aiSuggestion.title,
-      description: aiSuggestion.description,
-      weightage: String(aiSuggestion.weightage),
-    }));
-  }
 
   return (
     <Container maxWidth="xl">
       <Stack gap="6">
       <PageHeader
         title="Goals Workspace"
-        subtitle="Set, refine, and track your goals for this cycle"
+        subtitle="Upload your task document and let AI suggest goals for this cycle."
         actions={
-          <Stack direction="horizontal" gap="2" align="center">
-            <Button size="sm" variant="secondary" onClick={loadGoals} disabled={loading || submitting}>
-              Refresh
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === "form" ? "secondary" : "ghost"}
-                onClick={() => setMode("form")}
-              >
-                Form Mode
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === "ai" ? "secondary" : "ghost"}
-                onClick={() => setMode("ai")}
-              >
-                AI Mode
-              </Button>
-            </div>
-          </Stack>
+          <Button size="sm" variant="secondary" onClick={loadGoals} disabled={loading || submitting}>
+            Refresh
+          </Button>
         }
       />
 
-      <Stack gap="2">
-        <p className="caption font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Primary Action</p>
-        <Card>
-          <Stack gap="3">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color-mix(in_srgb,var(--color-border)_70%,transparent)] pb-[var(--space-3)]">
-              <Stack gap="1">
-                <h3 className="heading-lg text-[var(--color-text)]">Create Goal</h3>
-                <p className="caption">Start with a clear, measurable outcome.</p>
-              </Stack>
-              {mode === "form" && (
-                <Button type="button" size="sm" variant="secondary" onClick={handleAiSuggest} loading={aiLoading}>
-                  {aiSuggestion ? "Regenerate AI Suggestion" : "Suggest with AI"}
-                </Button>
-              )}
-            </div>
+      {/* ── AI Goal Suggestions ──────────────────────────────────────── */}
+      <div className="glass rounded-[var(--radius-lg)] p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+          <div>
+            <h3 className="heading-lg text-[var(--color-text)]">Suggest Goals with AI</h3>
+            <p className="caption text-[var(--color-text-muted)] mt-1">
+              Upload a tasks document or describe your responsibilities — AI will generate 4–5 measurable goals.
+            </p>
+          </div>
+          <span className="caption text-[var(--color-text-muted)]">
+            Remaining suggestions: {aiUsageRemaining === null ? "..." : aiUsageRemaining}
+          </span>
+        </div>
 
-            {mode === "form" ? (
-              <form onSubmit={handleCreateGoal}>
-                <Stack gap="3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="caption">
-                      Remaining AI suggestions this cycle: {aiUsageRemaining === null ? "..." : aiUsageRemaining}
-                    </span>
-                    {aiSuggestion && (
-                      <Button type="button" size="sm" variant="secondary" onClick={handleAcceptAiSuggestion}>
-                        Accept Suggestion
-                      </Button>
-                    )}
-                  </div>
+        <Stack gap="4">
+          <Textarea
+            label="Describe your tasks or paste a task list"
+            value={goalForm.description}
+            onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
+            rows={4}
+            placeholder="e.g. I manage the onboarding pipeline, handle vendor negotiations, run weekly standups, own the Q2 product launch..."
+          />
 
-                  {aiSuggestion && (
-                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-[var(--space-3)] py-[var(--space-3)]">
-                      <div className="flex items-center gap-2">
-                        <p className="body-sm font-medium text-[var(--color-text)]">AI Draft</p>
-                        <Badge variant={getSuggestionSourceBadge(aiSuggestion).variant}>
-                          {getSuggestionSourceBadge(aiSuggestion).label}
-                        </Badge>
-                      </div>
-                      <p className="caption mt-[var(--space-1)]">{aiSuggestion.title}</p>
-                      <p className="caption mt-[var(--space-1)]">{aiSuggestion.description}</p>
-                      {aiMode.mode === "decision_support" && (aiSuggestion.framework || aiSuggestion.weightageJustification || aiSuggestion.frameworkRationale) && (
-                        <div className="mt-[var(--space-2)] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-[var(--space-2)] py-[var(--space-2)]">
-                          {aiSuggestion.framework && (
-                            <p className="caption">Framework Recommendation: {aiSuggestion.framework}</p>
-                          )}
-                          {aiSuggestion.frameworkRationale && (
-                            <p className="caption mt-[var(--space-1)]">Framework Rationale: {aiSuggestion.frameworkRationale}</p>
-                          )}
-                          <p className="caption mt-[var(--space-1)]">Suggested Weightage: {aiSuggestion.weightage}%</p>
-                          {aiSuggestion.weightageJustification && (
-                            <p className="caption mt-[var(--space-1)]">Weightage Justification: {aiSuggestion.weightageJustification}</p>
-                          )}
-                          {aiSuggestion.aopAlignmentHint && (
-                            <p className="caption mt-[var(--space-1)]">AOP Alignment Hint: {aiSuggestion.aopAlignmentHint}</p>
-                          )}
-                        </div>
-                      )}
-                      {aiSuggestion.rationale && <p className="caption mt-[var(--space-2)]">Why: {aiSuggestion.rationale}</p>}
-                      {aiSuggestion.explainability && (
-                        <div className="mt-[var(--space-2)]">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setExplainabilityOpen(true)}
-                          >
-                            Why this suggestion?
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <FormSection title="Goal Details" description="Capture a clear outcome and context.">
-                    <Stack gap="3">
-                      <Input
-                        label="Goal Title"
-                        value={goalForm.title}
-                        onChange={(event) => setGoalForm((prev) => ({ ...prev, title: event.target.value }))}
-                        required
-                      />
-                      <Textarea
-                        label="Description"
-                        value={goalForm.description}
-                        onChange={(event) => setGoalForm((prev) => ({ ...prev, description: event.target.value }))}
-                        required
-                      />
-                    </Stack>
-                  </FormSection>
-
-                  <FormSection title="Planning" description="Set ownership, cycle, and delivery fields." divider>
-                    <Stack gap="3">
-                      <Grid cols={1} colsMd={2} gap="2">
-                        <Input
-                          label="Cycle ID"
-                          value={goalForm.cycleId}
-                          onChange={(event) => setGoalForm((prev) => ({ ...prev, cycleId: event.target.value }))}
-                          required
-                        />
-                        <Input
-                          label="Manager ID"
-                          value={goalForm.managerId}
-                          onChange={(event) => setGoalForm((prev) => ({ ...prev, managerId: event.target.value }))}
-                          helperText={
-                            managerResolved
-                              ? "Auto-filled from your profile mapping."
-                              : "Auto-resolve failed. Enter manually or set users.managerId in Appwrite."
-                          }
-                        />
-                      </Grid>
-
-                      <div className="flex items-center">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setAdvancedSettingsOpen((prev) => !prev)}
-                        >
-                          {advancedSettingsOpen ? "Hide Advanced Settings" : "Advanced Settings"}
-                        </Button>
-                      </div>
-
-                      {advancedSettingsOpen && (
-                        <Grid cols={1} colsMd={3} gap="2">
-                          <Dropdown
-                            label="Framework"
-                            value={goalForm.frameworkType}
-                            onChange={(frameworkType) =>
-                              setGoalForm((prev) => ({ ...prev, frameworkType }))
-                            }
-                            options={frameworkOptions}
-                          />
-                          <Input
-                            label="Weightage"
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={goalForm.weightage}
-                            onChange={(event) => setGoalForm((prev) => ({ ...prev, weightage: event.target.value }))}
-                            required
-                          />
-                          <Input
-                            label="Due Date"
-                            type="date"
-                            value={goalForm.dueDate}
-                            onChange={(event) => setGoalForm((prev) => ({ ...prev, dueDate: event.target.value }))}
-                          />
-                        </Grid>
-                      )}
-                    </Stack>
-                  </FormSection>
-
-                  <div className="flex items-center">
-                    <Button type="submit" loading={submitting}>Create Draft Goal</Button>
-                  </div>
-                </Stack>
-              </form>
-            ) : (
-              <ConversationalGoalComposer
-                cycleId={goalForm.cycleId}
-                frameworkType={goalForm.frameworkType}
-              />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleAiSuggest}
+              loading={aiLoading}
+              disabled={!goalForm.description.trim()}
+            >
+              Generate Goal Suggestions
+            </Button>
+            {aiSuggestion && (
+              <Button type="button" size="sm" variant="ghost" onClick={handleAiSuggest} loading={aiLoading}>
+                Regenerate
+              </Button>
             )}
-          </Stack>
-        </Card>
-      </Stack>
+          </div>
+
+          {aiError && <p className="caption text-[var(--color-danger)]">{aiError}</p>}
+
+          {aiSuggestion && (
+            <div className="glass-subtle rounded-[var(--radius-md)] p-5 space-y-3" style={{ animation: "slideUp 0.25s ease-out both" }}>
+              <div className="flex items-center gap-2">
+                <p className="body-sm font-semibold text-[var(--color-text)]">AI Suggested Goal</p>
+                <Badge variant={getSuggestionSourceBadge(aiSuggestion).variant}>
+                  {getSuggestionSourceBadge(aiSuggestion).label}
+                </Badge>
+              </div>
+              <div className="glass-subtle rounded-[var(--radius-sm)] p-4">
+                <p className="body-sm font-medium text-[var(--color-text)]">{aiSuggestion.title}</p>
+                <p className="caption text-[var(--color-text-muted)] mt-1">{aiSuggestion.description}</p>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  <span className="caption text-[var(--color-text-muted)]">Weightage: {aiSuggestion.weightage}%</span>
+                  {aiSuggestion.rationale && <span className="caption text-[var(--color-text-muted)]">Why: {aiSuggestion.rationale}</span>}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" onClick={handleCreateFromSuggestion} loading={submitting}>
+                  Accept &amp; Create Draft
+                </Button>
+                {aiSuggestion.explainability && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setExplainabilityOpen(true)}>
+                    Why this suggestion?
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </Stack>
+      </div>
 
       {error && <Alert variant="error" title="Action failed" description={error} onDismiss={() => setError("")} />}
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
@@ -821,24 +690,13 @@ export default function EmployeeGoalsPage() {
 
       <Grid cols={1} colsLg={3} gap="6">
         <Stack gap="6" className="lg:col-span-2">
-          <Card className="border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] hover:border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] hover:translate-y-0">
+          <Card>
             <Stack gap="2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <Stack gap="1">
-                  <h3 className="heading-lg text-[var(--color-text)]">Import Goals (Optional)</h3>
-                  <p className="caption">Upload Excel or use a Google Sheet link, preview, then save.</p>
-                </Stack>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setBulkImportOpen((prev) => !prev)}
-                >
-                  {bulkImportOpen ? "Hide" : "Show"}
-                </Button>
-              </div>
+              <Stack gap="1">
+                <h3 className="heading-lg text-[var(--color-text)]">Import Goals</h3>
+                <p className="caption">Upload an Excel file or paste a Google Sheet link to bulk-create goals. Preview before saving.</p>
+              </Stack>
 
-              {bulkImportOpen && (
                 <Stack gap="3">
                   <div className="inline-flex rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)] p-[var(--space-1)]">
                     <Button
@@ -952,7 +810,6 @@ export default function EmployeeGoalsPage() {
                     </Stack>
                   )}
                 </Stack>
-              )}
             </Stack>
           </Card>
 

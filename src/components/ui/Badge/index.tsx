@@ -33,6 +33,7 @@ export default function Badge({
         'caption font-medium',
         'rounded-[999px]',
         'whitespace-nowrap',
+        'backdrop-blur-[8px]',
         variantClasses[variant],
         className
       )}
