@@ -31,17 +31,9 @@ const navItems = [
 ];
 
 const quickActions = [
-  { label: "Manage HR Settings", href: "/hr/settings" },
-  { label: "View Team Ranking", href: "/hr/team-analytics" },
-  { label: "Monitor Goal Progress", href: "/hr" },
-  { label: "Monitor Manager Cadence", href: "/hr/check-ins" },
-  { label: "Review AI Governance", href: "/hr/ai-governance" },
   { label: "Run Calibration Session", href: "/hr/calibration" },
-  { label: "Review Training Needs", href: "/hr/training-needs" },
   { label: "Review 9-Box Snapshot", href: "/hr/9-box" },
-  { label: "Succession Planning", href: "/hr/succession" },
-  { label: "Increments & Promotions", href: "/hr/increments" },
-  { label: "Manage Notifications", href: "/hr/notifications" },
+  { label: "Manage HR Settings", href: "/hr/settings" },
 ];
 
 export default function HrLayout({ children }: HrLayoutProps) {

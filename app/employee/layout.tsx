@@ -37,8 +37,6 @@ const baseQuickActions = [
   { label: 'Create Draft Goal', href: '/employee/goals' },
   { label: 'Submit Progress Update', href: '/employee/progress' },
   { label: 'Plan Check-in', href: '/employee/check-ins' },
-  { label: 'Submit Matrix Feedback', href: '/employee/matrix-feedback' },
-  { label: 'Open Meetings', href: '/employee/meetings' },
 ];
 
 export default function EmployeeLayout({ children }: EmployeeLayoutProps) {
