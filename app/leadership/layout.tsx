@@ -22,6 +22,36 @@ const navItems = [
     route: "/leadership",
     tutorialId: "nav-dashboard",
   },
+  {
+    label: "1. Overview",
+    href: "/leadership/overview",
+    route: "/leadership/overview",
+    tutorialId: "nav-overview",
+  },
+  {
+    label: "2. Execution",
+    href: "/leadership/execution",
+    route: "/leadership/execution",
+    tutorialId: "nav-execution",
+  },
+  {
+    label: "3. Risk",
+    href: "/leadership/risk",
+    route: "/leadership/risk",
+    tutorialId: "nav-risk",
+  },
+  {
+    label: "4. Succession",
+    href: "/leadership/succession",
+    route: "/leadership/succession",
+    tutorialId: "nav-succession",
+  },
+  {
+    label: "5. Talent",
+    href: "/leadership/talent",
+    route: "/leadership/talent",
+    tutorialId: "nav-talent",
+  },
 ];
 
 export default function LeadershipLayout({ children }: LeadershipLayoutProps) {

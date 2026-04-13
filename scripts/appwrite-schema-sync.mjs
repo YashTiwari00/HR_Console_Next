@@ -690,6 +690,14 @@ function isAlreadyExists(err) {
   );
 }
 
+function hasSameElements(left = [], right = []) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
 async function ensureCollection(databases, collectionId) {
   try {
     await databases.getCollection(databaseId, collectionId);
@@ -831,6 +839,8 @@ async function main() {
       createdCollection: false,
       missing: [],
       created: [],
+      drifted: [],
+      updated: [],
       missingIndexes: [],
       createdIndexes: [],
       failed: [],
@@ -846,9 +856,12 @@ async function main() {
     }
 
     let existingAttributes = [];
+    let existingAttributesByKey = new Map();
     try {
       const list = await databases.listAttributes(databaseId, collectionId);
-      existingAttributes = (list.attributes || []).map((a) => a.key);
+      const attributes = list.attributes || [];
+      existingAttributes = attributes.map((a) => a.key);
+      existingAttributesByKey = new Map(attributes.map((a) => [a.key, a]));
     } catch (err) {
       row.failed.push(`listAttributes failed: ${String(err?.message || err)}`);
       summary.push(row);
@@ -856,7 +869,39 @@ async function main() {
     }
 
     for (const attr of attrs) {
-      if (existingAttributes.includes(attr.key)) continue;
+      const existingAttr = existingAttributesByKey.get(attr.key);
+      if (existingAttr) {
+        const existingIsEnum = existingAttr.type === "enum" || existingAttr.format === "enum" || Array.isArray(existingAttr.elements);
+        if (attr.type === "enum" && existingIsEnum) {
+          const expectedElements = attr.elements || [];
+          const currentElements = existingAttr.elements || [];
+          const expectedRequired = Boolean(attr.required);
+          const currentRequired = Boolean(existingAttr.required);
+
+          if (!hasSameElements(expectedElements, currentElements) || expectedRequired !== currentRequired) {
+            row.drifted.push(attr.key);
+
+            if (mode === "apply") {
+              try {
+                const enumDefault = attr.default === undefined ? null : attr.default;
+                await databases.updateEnumAttribute(
+                  databaseId,
+                  collectionId,
+                  attr.key,
+                  expectedElements,
+                  expectedRequired,
+                  enumDefault
+                );
+                row.updated.push(attr.key);
+              } catch (err) {
+                row.failed.push(`${attr.key}: ${String(err?.message || err)}`);
+              }
+            }
+          }
+        }
+        continue;
+      }
+
       row.missing.push(attr.key);
 
       if (mode !== "apply") continue;
@@ -910,6 +955,10 @@ async function main() {
     console.log(`  missing attrs: ${row.missing.length ? row.missing.join(", ") : "none"}`);
     if (row.created.length) {
       console.log(`  created attrs: ${row.created.join(", ")}`);
+    }
+    console.log(`  drifted attrs: ${row.drifted.length ? row.drifted.join(", ") : "none"}`);
+    if (row.updated.length) {
+      console.log(`  updated attrs: ${row.updated.join(", ")}`);
     }
     console.log(
       `  missing indexes: ${row.missingIndexes.length ? row.missingIndexes.join(", ") : "none"}`

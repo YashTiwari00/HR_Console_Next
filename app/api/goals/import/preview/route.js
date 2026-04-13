@@ -96,12 +96,21 @@ async function parseRequestPayload(request) {
     const formData = await request.formData();
     const cycleId = toSafeString(formData.get("cycleId"));
     const googleSheetUrl = toSafeString(formData.get("googleSheetUrl"));
+    const defaults = {
+      employeeId: toSafeString(formData.get("employeeId")),
+      frameworkType: toSafeString(formData.get("frameworkType")),
+      weightage: toSafeString(formData.get("weightage")),
+      dueDate: toSafeString(formData.get("dueDate")),
+      managerId: toSafeString(formData.get("managerId")),
+      manualAssign: String(formData.get("manualAssign") || "").trim().toLowerCase() === "true",
+      allowUnknownCycle: String(formData.get("allowUnknownCycle") || "").trim().toLowerCase() === "true",
+    };
     const file = formData.get("file");
 
     if (googleSheetUrl) {
       try {
         const rows = await fetchGoogleSheetData(googleSheetUrl);
-        return { rows, cycleId };
+        return { rows, cycleId, defaults };
       } catch (error) {
         throw mapGoogleSheetError(error);
       }
@@ -109,30 +118,39 @@ async function parseRequestPayload(request) {
 
     if (file) {
       const rows = await parseRowsFromFile(file);
-      return { rows, cycleId };
+      return { rows, cycleId, defaults };
     }
 
-    return { rows: [], cycleId };
+    return { rows: [], cycleId, defaults };
   }
 
   const body = await request.json().catch(() => ({}));
   const cycleId = toSafeString(body?.cycleId);
   const googleSheetUrl = toSafeString(body?.googleSheetUrl);
+  const defaults = {
+    employeeId: toSafeString(body?.defaults?.employeeId || body?.employeeId),
+    frameworkType: toSafeString(body?.defaults?.frameworkType || body?.frameworkType),
+    weightage: toSafeString(body?.defaults?.weightage || body?.weightage),
+    dueDate: toSafeString(body?.defaults?.dueDate || body?.dueDate),
+    managerId: toSafeString(body?.defaults?.managerId || body?.managerId),
+    manualAssign: Boolean(body?.defaults?.manualAssign),
+    allowUnknownCycle: Boolean(body?.defaults?.allowUnknownCycle),
+  };
 
   if (googleSheetUrl) {
     try {
       const rows = await fetchGoogleSheetData(googleSheetUrl);
-      return { rows, cycleId };
+      return { rows, cycleId, defaults };
     } catch (error) {
       throw mapGoogleSheetError(error);
     }
   }
 
   if (Array.isArray(body?.rows)) {
-    return { rows: body.rows, cycleId };
+    return { rows: body.rows, cycleId, defaults };
   }
 
-  return { rows: [], cycleId };
+  return { rows: [], cycleId, defaults };
 }
 
 export async function POST(request) {
@@ -140,7 +158,7 @@ export async function POST(request) {
     const { profile, databases } = await requireAuth(request);
     requireRole(profile, ["employee", "manager", "hr"]);
 
-    const { rows, cycleId } = await parseRequestPayload(request);
+    const { rows, cycleId, defaults } = await parseRequestPayload(request);
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "rows payload is required" }, { status: 400 });
@@ -153,6 +171,7 @@ export async function POST(request) {
       profile,
       rows,
       fallbackCycleId: cycleId,
+      defaults,
     });
 
     return NextResponse.json(

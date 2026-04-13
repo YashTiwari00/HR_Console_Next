@@ -3,12 +3,13 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { Container, Grid, Stack } from "@/src/components/layout";
-import { BulkGoalAiReviewPanel, ExplainabilityDrawer, GoalLineageView, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
+import { BulkGoalAiReviewPanel, BulkGoalDashboardImportCard, ExplainabilityDrawer, FormSection, GoalLineageView, type GoalAiDraft, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea, Tooltip } from "@/src/components/ui";
 import { useAiMode } from "@/src/context/AiModeContext";
 import {
   BulkGoalAnalysisItem,
   BulkGoalInput,
+  createManagerKpiTemplate,
   createGoalCascade,
   createGoal,
   fetchGoalFeedback,
@@ -73,9 +74,23 @@ export default function ManagerGoalsPage() {
   const [bulkSourceGoals, setBulkSourceGoals] = useState<BulkGoalInput[]>([]);
   const [bulkAnalysis, setBulkAnalysis] = useState<BulkGoalAnalysisItem[]>([]);
   const [bulkDrafts, setBulkDrafts] = useState<GoalAiDraft[]>([]);
+  const [bulkImportMode, setBulkImportMode] = useState<"excel_ai" | "google_sheet">("excel_ai");
   const [managerTeamMemberIds, setManagerTeamMemberIds] = useState<string[]>([]);
   const [distributingGoalId, setDistributingGoalId] = useState<string | null>(null);
   const [lineageGoalId, setLineageGoalId] = useState<string | null>(null);
+  const [submittingTemplate, setSubmittingTemplate] = useState(false);
+  const [templateSubmitted, setTemplateSubmitted] = useState(false);
+  const [templateCooldownSeconds, setTemplateCooldownSeconds] = useState(0);
+  const [kpiTemplateForm, setKpiTemplateForm] = useState({
+    title: "",
+    description: "",
+    role: "",
+    department: "",
+    domain: "",
+    kpiMetrics: "",
+    defaultWeightage: "",
+    tags: "",
+  });
 
   function readCell(row: Record<string, unknown>, keys: string[]) {
     const entries = Object.entries(row);
@@ -563,6 +578,67 @@ export default function ManagerGoalsPage() {
     }));
   }
 
+  async function handleSubmitKpiTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submittingTemplate || templateCooldownSeconds > 0) {
+      return;
+    }
+
+    setSubmittingTemplate(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const parsedWeightage = kpiTemplateForm.defaultWeightage.trim()
+        ? Number.parseInt(kpiTemplateForm.defaultWeightage, 10)
+        : undefined;
+
+      const tags = kpiTemplateForm.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+
+      await createManagerKpiTemplate({
+        title: kpiTemplateForm.title.trim(),
+        description: kpiTemplateForm.description.trim(),
+        role: kpiTemplateForm.role.trim(),
+        department: kpiTemplateForm.department.trim(),
+        domain: kpiTemplateForm.domain.trim() || undefined,
+        kpi_metrics: kpiTemplateForm.kpiMetrics.trim(),
+        default_weightage: parsedWeightage,
+        tags,
+      });
+
+      setKpiTemplateForm({
+        title: "",
+        description: "",
+        role: "",
+        department: "",
+        domain: "",
+        kpiMetrics: "",
+        defaultWeightage: "",
+        tags: "",
+      });
+      setTemplateSubmitted(true);
+      setTemplateCooldownSeconds(10);
+      setSuccess("Submitted for HR approval");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit KPI template.");
+    } finally {
+      setSubmittingTemplate(false);
+    }
+  }
+
+  useEffect(() => {
+    if (templateCooldownSeconds <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setTemplateCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [templateCooldownSeconds]);
+
   return (
     <Container maxWidth="xl">
       <Stack gap="6">
@@ -580,51 +656,82 @@ export default function ManagerGoalsPage() {
       {success && <Alert variant="success" title="Done" description={success} onDismiss={() => setSuccess("")} />}
       {aiError && <Alert variant="warning" title="AI suggestion issue" description={aiError} onDismiss={() => setAiError("")} />}
 
-      <Card title="Bulk Goal Import & Allocation" description="Upload Excel goals, review AI improvements, and apply allocation suggestions.">
-        <Stack gap="3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              type="file"
-              label="Upload Excel (.xlsx, .xls)"
-              accept=".xlsx,.xls"
-              onChange={handleBulkFileUpload}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => analyzeWorkbookGoals(bulkSourceGoals)}
-              loading={bulkLoading}
-              disabled={bulkSourceGoals.length === 0}
-            >
-              Re-run AI Analysis
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSaveBulkGoals}
-              loading={bulkSaving}
-              disabled={bulkDrafts.length === 0}
-            >
-              Save Goals
-            </Button>
-          </div>
-          <p className="caption">
-            Expected columns in first sheet: title, description, weight or weightage. Max 10 goals per upload.
-          </p>
-          {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
-          <BulkGoalAiReviewPanel
-            role="manager"
-            items={bulkAnalysis}
-            drafts={bulkDrafts}
-            loading={bulkLoading}
-            fallbackUsed={bulkFallbackUsed}
-            error={bulkError}
-            onDraftChange={handleBulkDraftChange}
-            onApplySuggestion={handleApplyBulkSuggestion}
-            onApplyAll={handleApplyAllBulkSuggestions}
-            onDismissError={() => setBulkError("")}
-          />
-        </Stack>
+      <Card title="Goal Import Options" description="Switch between Excel AI allocation import and Google Sheet import.">
+        <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
+          <Button
+            type="button"
+            size="sm"
+            variant={bulkImportMode === "excel_ai" ? undefined : "secondary"}
+            onClick={() => setBulkImportMode("excel_ai")}
+          >
+            Bulk Goal Import & Allocation
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={bulkImportMode === "google_sheet" ? undefined : "secondary"}
+            onClick={() => setBulkImportMode("google_sheet")}
+          >
+            Google Sheet Goal Import
+          </Button>
+        </div>
       </Card>
+
+      {bulkImportMode === "excel_ai" ? (
+        <Card title="Bulk Goal Import & Allocation" description="Upload Excel goals, review AI improvements, and apply allocation suggestions.">
+          <Stack gap="3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="file"
+                label="Upload Excel (.xlsx, .xls)"
+                accept=".xlsx,.xls"
+                onChange={handleBulkFileUpload}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => analyzeWorkbookGoals(bulkSourceGoals)}
+                loading={bulkLoading}
+                disabled={bulkSourceGoals.length === 0}
+              >
+                Re-run AI Analysis
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveBulkGoals}
+                loading={bulkSaving}
+                disabled={bulkDrafts.length === 0}
+              >
+                Save Goals
+              </Button>
+            </div>
+            <p className="caption">
+              Expected columns in first sheet: title, description, weight or weightage. Max 10 goals per upload.
+            </p>
+            {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
+            <BulkGoalAiReviewPanel
+              role="manager"
+              items={bulkAnalysis}
+              drafts={bulkDrafts}
+              loading={bulkLoading}
+              fallbackUsed={bulkFallbackUsed}
+              error={bulkError}
+              onDraftChange={handleBulkDraftChange}
+              onApplySuggestion={handleApplyBulkSuggestion}
+              onApplyAll={handleApplyAllBulkSuggestions}
+              onDismissError={() => setBulkError("")}
+            />
+          </Stack>
+        </Card>
+      ) : (
+        <BulkGoalDashboardImportCard
+          title="Google Sheet Goal Import"
+          description="Import goals from a Google Sheet URL, preview the rows, and commit directly from your goals workspace."
+          allowedSources={["google_sheet"]}
+          managerCascadeMode
+          onSaved={loadGoals}
+        />
+      )}
 
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Create Goal" description="Start with a clear, measurable outcome.">
@@ -749,6 +856,115 @@ export default function ManagerGoalsPage() {
           </Stack>
         </Card>
       </Grid>
+
+      <div id="kpi-template-submission" />
+      <Card title="Submit KPI Template" description="Propose a reusable KPI template for HR approval and library inclusion.">
+        <FormSection
+          title="Manager Submission"
+          description="One reusable KPI template per intent. HR will review before publishing to the goal library."
+        >
+          <form className="space-y-3" onSubmit={handleSubmitKpiTemplate}>
+            <Grid cols={1} colsMd={2} gap="2">
+              <Input
+                label="Template Title"
+                value={kpiTemplateForm.title}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, title: event.target.value }))
+                }
+                required
+              />
+              <Input
+                label="Role"
+                value={kpiTemplateForm.role}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, role: event.target.value }))
+                }
+                placeholder="e.g. senior sales executive"
+                required
+              />
+            </Grid>
+
+            <Grid cols={1} colsMd={2} gap="2">
+              <Input
+                label="Department"
+                value={kpiTemplateForm.department}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, department: event.target.value }))
+                }
+                placeholder="e.g. sales"
+                required
+              />
+              <Input
+                label="Domain (optional)"
+                value={kpiTemplateForm.domain}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, domain: event.target.value }))
+                }
+                placeholder="e.g. enterprise"
+              />
+            </Grid>
+
+            <Textarea
+              label="Description"
+              value={kpiTemplateForm.description}
+              onChange={(event) =>
+                setKpiTemplateForm((prev) => ({ ...prev, description: event.target.value }))
+              }
+              required
+            />
+
+            <Textarea
+              label="KPI Metrics"
+              value={kpiTemplateForm.kpiMetrics}
+              onChange={(event) =>
+                setKpiTemplateForm((prev) => ({ ...prev, kpiMetrics: event.target.value }))
+              }
+              helperText="Add measurable KPI definitions (JSON or plain text)."
+              placeholder="Example: Revenue target >= 12%; Customer retention >= 90%"
+              required
+            />
+
+            <Grid cols={1} colsMd={2} gap="2">
+              <Input
+                label="Default Weightage (optional)"
+                type="number"
+                min={1}
+                max={100}
+                value={kpiTemplateForm.defaultWeightage}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, defaultWeightage: event.target.value }))
+                }
+              />
+              <Input
+                label="Tags (optional)"
+                value={kpiTemplateForm.tags}
+                onChange={(event) =>
+                  setKpiTemplateForm((prev) => ({ ...prev, tags: event.target.value }))
+                }
+                helperText="Comma separated tags."
+                placeholder="quarterly, growth, customer"
+              />
+            </Grid>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                loading={submittingTemplate}
+                disabled={submittingTemplate || submitting || templateCooldownSeconds > 0}
+              >
+                Submit for HR Approval
+              </Button>
+              <p className="caption">
+                {templateCooldownSeconds > 0
+                  ? `Please wait ${templateCooldownSeconds}s before submitting another template.`
+                  : templateSubmitted
+                    ? "Submitted for HR approval"
+                    : "Submitted templates appear under HR Pending KPI Templates."}
+              </p>
+            </div>
+          </form>
+        </FormSection>
+      </Card>
 
       <Card title="My Goals" description="Submit drafts and track approvals.">
         <Stack gap="2">

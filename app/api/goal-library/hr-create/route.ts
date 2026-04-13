@@ -1,5 +1,6 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { ID, databaseId } from "@/lib/appwriteServer";
+import { findDuplicateGoalTemplate } from "@/lib/services/goalLibraryDuplicate";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 
 type CreatePayload = {
@@ -85,6 +86,24 @@ export async function POST(request: Request) {
 
     if (!collectionId) {
       return Response.json({ error: "Collection configuration is missing." }, { status: 500 });
+    }
+
+    const duplicate = await findDuplicateGoalTemplate({
+      databases,
+      dbId,
+      collectionId,
+      title,
+      role,
+      department,
+    });
+
+    if (duplicate) {
+      return Response.json(
+        {
+          error: "A KPI template with the same title, role, and department already exists.",
+        },
+        { status: 409 }
+      );
     }
 
     const createdDocument = await databases.createDocument(

@@ -95,9 +95,8 @@ function priorityBucket(template: GoalLibraryTemplate) {
   if (template.approved && template.source_type === "hr") return 1;
   if (template.approved && template.source_type === "leadership") return 2;
   if (template.approved && template.source_type === "manager") return 3;
-  if (template.source_type === "system") return 4;
-  if (!template.approved && template.source_type === "manager") return 5;
-  return 6;
+  if (template.approved && template.source_type === "system") return 4;
+  return 5;
 }
 
 function matchTier(template: GoalLibraryTemplate, role: string, department: string) {
@@ -182,9 +181,16 @@ export async function getGoalLibraryTemplates(input: GoalLibraryInput): Promise<
 
     const approvedTemplates = ranked.filter((template) => template.approved);
     const unapprovedTemplates = ranked.filter((template) => !template.approved);
+    const prioritizedApprovedTemplates = approvedTemplates.filter(
+      (template) =>
+        template.source_type === "hr" ||
+        template.source_type === "leadership" ||
+        template.source_type === "manager" ||
+        template.source_type === "system"
+    );
 
     return {
-      templates: ranked.slice(0, 5),
+      templates: prioritizedApprovedTemplates.slice(0, 5),
       approvedTemplates,
       unapprovedTemplates,
     };

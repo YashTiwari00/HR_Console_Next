@@ -4,6 +4,7 @@ import { ID, Query, databaseId } from "@/lib/appwriteServer";
 import { normalizeCycleId } from "@/lib/cycle";
 import { assertFrameworkAllowed, getFrameworkPolicy } from "@/lib/frameworkPolicies";
 import { createGoalDocumentCompat } from "@/app/api/goals/_lib/cascade";
+import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
 
 const TEMPLATE_COLUMNS = [
@@ -31,25 +32,56 @@ function toIsoOrNull(value) {
   return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
 }
 
-function normalizeRow(row, fallbackCycleId) {
+function toCycleIdWithFallback(input, fallbackCycleId) {
+  const normalizedInput = String(input || "").trim().toUpperCase();
+  if (/^Q[1-4]-\d{4}$/.test(normalizedInput)) {
+    return normalizedInput;
+  }
+
+  const normalizedFallback = String(fallbackCycleId || "").trim().toUpperCase();
+  if (/^Q[1-4]-\d{4}$/.test(normalizedFallback)) {
+    return normalizedFallback;
+  }
+
+  return normalizeCycleId(normalizedInput, new Date());
+}
+
+function toIntOrNaN(value) {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isInteger(parsed) ? parsed : Number.NaN;
+}
+
+function normalizeRow(row, fallbackCycleId, defaults = {}) {
+  const defaultFrameworkType = String(defaults?.frameworkType || "").trim();
+  const defaultManagerId = String(defaults?.managerId || "").trim();
+  const defaultEmployeeId = String(defaults?.employeeId || "").trim();
+  const defaultWeightage = toIntOrNaN(defaults?.weightage);
+
+  const rowWeightage = toIntOrNaN(row?.weightage);
+
   return {
-    employeeId: String(row?.employeeId || "").trim(),
+    employeeId: String(row?.employeeId || defaultEmployeeId || "").trim(),
     title: String(row?.title || "").trim(),
     description: String(row?.description || "").trim(),
-    frameworkType: String(row?.frameworkType || "").trim(),
-    weightage: Number.parseInt(String(row?.weightage || ""), 10),
-    cycleId: normalizeCycleId(String(row?.cycleId || "").trim(), fallbackCycleId),
-    dueDate: toIsoOrNull(row?.dueDate),
+    frameworkType: String(row?.frameworkType || defaultFrameworkType || "").trim(),
+    weightage: Number.isInteger(rowWeightage)
+      ? rowWeightage
+      : Number.isInteger(defaultWeightage)
+      ? defaultWeightage
+      : Number.NaN,
+    cycleId: toCycleIdWithFallback(row?.cycleId, fallbackCycleId),
+    dueDate: toIsoOrNull(row?.dueDate || defaults?.dueDate),
     lineageRef: String(row?.lineageRef || "").trim(),
     aiSuggested: toBoolean(row?.aiSuggested),
-    managerId: String(row?.managerId || "").trim(),
+    managerId: String(row?.managerId || defaultManagerId || "").trim(),
   };
 }
 
-function validateNormalizedRow(input) {
+function validateNormalizedRow(input, options = {}) {
+  const requireEmployeeId = options?.requireEmployeeId !== false;
   const errors = [];
 
-  if (!input.employeeId) errors.push("employeeId is required");
+  if (requireEmployeeId && !input.employeeId) errors.push("employeeId is required");
   if (!input.title) errors.push("title is required");
   if (!input.description) errors.push("description is required");
   if (!input.frameworkType) errors.push("frameworkType is required");
@@ -103,13 +135,15 @@ export function getTemplateColumns() {
   return [...TEMPLATE_COLUMNS];
 }
 
-export async function previewImportRows({ databases, profile, rows, fallbackCycleId }) {
+export async function previewImportRows({ databases, profile, rows, fallbackCycleId, defaults }) {
   const role = String(profile?.role || "").trim();
   const profileId = String(profile?.$id || "").trim();
+  const managerManualAssign = role === "manager" && Boolean(defaults?.manualAssign);
+  const allowUnknownCycle = Boolean(defaults?.allowUnknownCycle);
   const policy = await getFrameworkPolicy(databases);
 
   const normalizedRows = (Array.isArray(rows) ? rows : []).map((row) =>
-    normalizeRow(row, fallbackCycleId)
+    normalizeRow(row, fallbackCycleId, defaults)
   );
   const existingCycleNames = await getExistingCycleNames(
     databases,
@@ -120,9 +154,12 @@ export async function previewImportRows({ databases, profile, rows, fallbackCycl
 
   for (let index = 0; index < normalizedRows.length; index += 1) {
     const row = normalizedRows[index];
-    const errors = validateNormalizedRow(row);
+    const errors = validateNormalizedRow(row, {
+      requireEmployeeId: !managerManualAssign,
+    });
 
-    if (row.cycleId && !existingCycleNames.has(row.cycleId)) {
+    const shouldEnforceCycleExistence = !managerManualAssign && !allowUnknownCycle;
+    if (shouldEnforceCycleExistence && row.cycleId && !existingCycleNames.has(row.cycleId)) {
       errors.push("cycleId is invalid");
     }
 
@@ -145,10 +182,12 @@ export async function previewImportRows({ databases, profile, rows, fallbackCycl
     }
 
     if (role === "manager") {
-      try {
-        await assertManagerCanAccessEmployee(databases, profileId, row.employeeId);
-      } catch {
-        errors.push("manager cannot import for requested employee");
+      if (row.employeeId) {
+        try {
+          await assertManagerCanAccessEmployee(databases, profileId, row.employeeId);
+        } catch {
+          errors.push("manager cannot import for requested employee");
+        }
       }
     }
 
@@ -246,6 +285,30 @@ export async function commitImportRows({ databases, profile, previewResult }) {
 
       pendingWeightAddByKey.set(weightKey, alreadyPlanned + row.weightage);
       successes.push({ rowNumber: rowResult.rowNumber, goalId: created.$id });
+
+      try {
+        const goalId = String(created?.$id || "").trim();
+        const goalTitle = String(created?.title || row.title || "Untitled Goal").trim();
+        const managerName = String(profile?.name || profile?.email || "Your manager").trim();
+        const dateKey = new Date().toISOString().slice(0, 10);
+
+        await sendInAppAndQueueEmail(databases, {
+          userId: String(row.employeeId || "").trim(),
+          triggerType: "goal_added",
+          title: "New goal assigned",
+          message: `${managerName} assigned you a goal: "${goalTitle}".`,
+          actionUrl: "/employee/goals",
+          dedupeKey: `goal-added-import-${goalId}-${dateKey}`,
+          metadata: {
+            goalId,
+            cycleId: String(row.cycleId || "").trim(),
+            recipientRole: "employee",
+            source: "bulk_import",
+          },
+        });
+      } catch {
+        // Notification failures should not block goal assignment.
+      }
     } catch (error) {
       failures.push({
         rowNumber: rowResult.rowNumber,

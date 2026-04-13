@@ -3,6 +3,7 @@ import { GOAL_LEVELS } from "@/lib/appwriteSchema";
 import { Query, databaseId } from "@/lib/appwriteServer";
 import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import { assertManagerCanAccessEmployee } from "@/lib/teamAccess";
+import { sendInAppAndQueueEmail } from "@/app/api/notifications/_lib/workflows";
 import {
   buildCascadeLineage,
   buildCascadePayload,
@@ -306,6 +307,31 @@ export async function POST(request) {
 
         const child = await createGoalDocumentCompat(databases, payload);
         created.push(child);
+
+        try {
+          const goalId = String(child?.$id || "").trim();
+          const goalTitle = String(child?.title || title || "Untitled Goal").trim();
+          const managerName = String(profile?.name || profile?.email || "Your manager").trim();
+          const dateKey = new Date().toISOString().slice(0, 10);
+
+          await sendInAppAndQueueEmail(databases, {
+            userId: String(row.employeeId || "").trim(),
+            triggerType: "goal_added",
+            title: "New cascaded goal assigned",
+            message: `${managerName} cascaded a goal to you: "${goalTitle}".`,
+            actionUrl: "/employee/goals",
+            dedupeKey: `goal-added-cascade-${goalId}-${dateKey}`,
+            metadata: {
+              goalId,
+              parentGoalId,
+              cycleId,
+              recipientRole: "employee",
+              source: "cascade",
+            },
+          });
+        } catch {
+          // Notification failures should not block cascade creation.
+        }
       }
     } catch (error) {
       await Promise.allSettled(

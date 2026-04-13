@@ -14,6 +14,7 @@ import {
   commitBulkGoalsImport,
   type BulkGoalImportPreviewRow,
   type BulkGoalImportRowInput,
+  fetchGoalCycles,
   fetchGoals,
   fetchMe,
   fetchTeamMembers,
@@ -64,6 +65,7 @@ export default function ManagerTeamGoalsPage() {
   const [bulkCycleId, setBulkCycleId] = useState(getCycleIdFromDate());
   const [bulkFrameworkType, setBulkFrameworkType] = useState("OKR");
   const [bulkDueDate, setBulkDueDate] = useState("");
+  const [bulkCycleOptions, setBulkCycleOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [bulkSourceType, setBulkSourceType] = useState<BulkImportSource>("excel");
   const [bulkGoogleSheetUrl, setBulkGoogleSheetUrl] = useState("");
   const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -128,6 +130,39 @@ export default function ManagerTeamGoalsPage() {
     loadPage();
   }, [loadPage]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadCycleOptions() {
+      try {
+        const response = await fetchGoalCycles();
+        if (!active) return;
+
+        const options = (response.data || [])
+          .map((item) => String(item?.name || "").trim())
+          .filter(Boolean)
+          .map((name) => ({ value: name, label: name }));
+
+        if (options.length > 0) {
+          setBulkCycleOptions(options);
+          setBulkCycleId((prev) => {
+            if (options.some((option) => option.value === prev)) return prev;
+            return options[0].value;
+          });
+        }
+      } catch {
+        if (!active) return;
+        setBulkCycleOptions([]);
+      }
+    }
+
+    loadCycleOptions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const teamMemberById = useMemo(() => {
     const map = new Map<string, TeamMemberItem>();
     teamMembers.forEach((member) => map.set(member.$id, member));
@@ -174,7 +209,7 @@ export default function ManagerTeamGoalsPage() {
           weight: Number.isInteger(weight) && weight > 0 ? weight : 10,
         } as TeamBulkGoalRow;
       })
-      .filter((item) => item.employeeId && item.title && item.description);
+      .filter((item) => item.title && item.description);
   }
 
   function isGoogleSheetUrl(url: string) {
@@ -232,6 +267,13 @@ export default function ManagerTeamGoalsPage() {
               return previewGoalsImport({
                 googleSheetUrl: bulkGoogleSheetUrl,
                 cycleId: bulkCycleId,
+                defaults: {
+                  frameworkType: bulkFrameworkType,
+                  weightage: 10,
+                  dueDate: bulkDueDate || undefined,
+                  managerId: currentUserId || undefined,
+                  manualAssign: true,
+                },
               });
             })()
           : await (async () => {
@@ -246,7 +288,7 @@ export default function ManagerTeamGoalsPage() {
 
               const allowedEmployeeIds = new Set(teamMembers.map((member) => String(member.$id || "").trim()));
               const invalidEmployeeRow = sourceRows.find(
-                (row) => !allowedEmployeeIds.has(String(row.employeeId || "").trim())
+                (row) => row.employeeId && !allowedEmployeeIds.has(String(row.employeeId || "").trim())
               );
               if (invalidEmployeeRow) {
                 throw new Error(`employeeId ${invalidEmployeeRow.employeeId} is not part of your team scope.`);
@@ -265,7 +307,17 @@ export default function ManagerTeamGoalsPage() {
                 managerId: currentUserId || "",
               }));
 
-              return previewBulkGoalsImport({ rows, cycleId: bulkCycleId });
+              return previewBulkGoalsImport({
+                rows,
+                cycleId: bulkCycleId,
+                defaults: {
+                  frameworkType: bulkFrameworkType,
+                  weightage: 10,
+                  dueDate: bulkDueDate || undefined,
+                  managerId: currentUserId || undefined,
+                  manualAssign: true,
+                },
+              });
             })();
 
       setBulkPreviewRows(preview.rows || []);
@@ -294,18 +346,35 @@ export default function ManagerTeamGoalsPage() {
     setSuccess("");
 
     try {
+      const rowsWithAssignedEmployees = bulkCommitRows.map((row) => ({
+        ...row,
+        employeeId: String(row?.employeeId || "").trim(),
+      }));
+
+      const missingAssignee = rowsWithAssignedEmployees.find((row) => !row.employeeId);
+      if (missingAssignee) {
+        throw new Error("Assign an employee for each row in preview before saving.");
+      }
+
       const idempotencyKey =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
       const result = await commitBulkGoalsImport({
-        data: bulkCommitRows,
+        data: rowsWithAssignedEmployees,
         cycleId: bulkCycleId,
         idempotencyKey,
         templateVersion: "v1",
         sourceType: bulkSourceType,
         sourceUrl: bulkSourceType === "google_sheet" ? String(bulkGoogleSheetUrl || "").trim() : undefined,
+        defaults: {
+          frameworkType: bulkFrameworkType,
+          weightage: 10,
+          dueDate: bulkDueDate || undefined,
+          managerId: currentUserId || undefined,
+          manualAssign: true,
+        },
       });
 
       const successRows = Number(result?.summary?.successRows || 0);
@@ -318,6 +387,35 @@ export default function ManagerTeamGoalsPage() {
     } finally {
       setBulkSaving(false);
     }
+  }
+
+  function handleAssignEmployee(rowNumber: number, employeeId: string) {
+    const safeEmployeeId = String(employeeId || "").trim();
+
+    setBulkPreviewRows((prev) =>
+      prev.map((row) =>
+        row.rowNumber === rowNumber
+          ? {
+              ...row,
+              normalized: {
+                ...row.normalized,
+                employeeId: safeEmployeeId,
+              },
+            }
+          : row
+      )
+    );
+
+    setBulkCommitRows((prev) =>
+      prev.map((row, index) =>
+        index + 1 === rowNumber
+          ? {
+              ...row,
+              employeeId: safeEmployeeId,
+            }
+          : row
+      )
+    );
   }
 
   function startEdit(goal: TeamGoalItem) {
@@ -420,10 +518,11 @@ export default function ManagerTeamGoalsPage() {
             )}
 
             <Grid cols={1} colsMd={3} gap="2">
-              <Input
+              <Dropdown
                 label="Cycle ID"
                 value={bulkCycleId}
-                onChange={(event) => setBulkCycleId(event.target.value)}
+                options={bulkCycleOptions.length > 0 ? bulkCycleOptions : [{ value: bulkCycleId, label: bulkCycleId }]}
+                onChange={(value) => setBulkCycleId(value)}
               />
               <Dropdown
                 label="Framework"
@@ -460,7 +559,7 @@ export default function ManagerTeamGoalsPage() {
             </div>
 
             <p className="caption">
-              Excel expected columns: employeeId, title, description, weight or weightage.
+              Excel expected columns: title, description, weight or weightage. Employee ID is optional and can be assigned in preview.
             </p>
             {bulkFileName && <p className="caption">Uploaded file: {bulkFileName}</p>}
 
@@ -485,7 +584,18 @@ export default function ManagerTeamGoalsPage() {
                       {bulkPreviewRows.slice(0, 12).map((row) => (
                         <tr key={row.rowNumber} className="border-t border-[var(--color-border)]">
                           <td className="px-3 py-2">{row.rowNumber}</td>
-                          <td className="px-3 py-2">{row.normalized?.employeeId || "-"}</td>
+                          <td className="px-3 py-2">
+                            <Dropdown
+                              options={teamMembers.map((member) => ({
+                                value: String(member.$id || ""),
+                                label: member.name || String(member.$id || ""),
+                                description: String(member.$id || ""),
+                              }))}
+                              value={String(row.normalized?.employeeId || "")}
+                              onChange={(value) => handleAssignEmployee(row.rowNumber, value)}
+                              placeholder="Select employee"
+                            />
+                          </td>
                           <td className="px-3 py-2">{row.normalized?.title || "-"}</td>
                           <td className="px-3 py-2">{row.normalized?.weightage ?? "-"}</td>
                           <td className="px-3 py-2">{row.valid ? "Valid" : "Invalid"}</td>

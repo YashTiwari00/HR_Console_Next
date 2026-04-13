@@ -8,9 +8,11 @@ import TrainingNeedsTable from "@/src/components/patterns/TrainingNeedsTable";
 import { Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader, RatingDropWarningSection } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card } from "@/src/components/ui";
+import { Alert, Badge, Button, Card, Input } from "@/src/components/ui";
 import {
+  ApprovedKpiTemplateItem,
   approveKpiTemplate,
+  fetchApprovedKpiTemplates,
   fetchPendingKpiTemplates,
   fetchGoals,
   fetchHrManagers,
@@ -43,6 +45,15 @@ interface PendingKpiTemplateRow extends Record<string, unknown> {
   department: string;
 }
 
+interface ApprovedKpiTemplateRow extends Record<string, unknown> {
+  templateId: string;
+  title: string;
+  role: string;
+  department: string;
+  sourceType: string;
+  approvedBy: string;
+}
+
 type OrgGoalItem = GoalItem & { employeeId?: string };
 type HeatMapState = "on_track" | "behind" | "completed" | "no_update";
 type HeatMapFilter = "all" | HeatMapState;
@@ -58,8 +69,12 @@ export default function HrDashboardPage() {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [pendingTemplates, setPendingTemplates] = useState<PendingKpiTemplateItem[]>([]);
+  const [approvedTemplates, setApprovedTemplates] = useState<ApprovedKpiTemplateItem[]>([]);
   const [approvingTemplateId, setApprovingTemplateId] = useState("");
+  const [approvedRoleFilter, setApprovedRoleFilter] = useState("");
+  const [approvedDepartmentFilter, setApprovedDepartmentFilter] = useState("");
   const [showTNA, setShowTNA] = useState(false);
 
   const loadDashboard = useCallback(async () => {
@@ -67,12 +82,13 @@ export default function HrDashboardPage() {
     setError("");
 
     try {
-      const [nextRows, nextGoals, nextUpdates, nextMembers, nextPendingTemplates, nextRatingDrops] = await Promise.all([
+      const [nextRows, nextGoals, nextUpdates, nextMembers, nextPendingTemplates, nextApprovedTemplates, nextRatingDrops] = await Promise.all([
         fetchHrManagers(),
         fetchGoals("all"),
         fetchProgressUpdates(undefined, "all"),
         fetchTeamMembers(undefined, { includeManagers: true }),
         fetchPendingKpiTemplates(),
+        fetchApprovedKpiTemplates(),
         fetchRatingDropInsights({ limit: 200 }),
       ]);
 
@@ -81,6 +97,7 @@ export default function HrDashboardPage() {
       setOrgUpdates(nextUpdates);
       setOrgMembers(nextMembers);
       setPendingTemplates(nextPendingTemplates);
+      setApprovedTemplates(nextApprovedTemplates);
       setOrgRatingDropInsights(nextRatingDrops.rows || []);
 
       if (nextRows.length > 0) {
@@ -129,6 +146,36 @@ export default function HrDashboardPage() {
         department: String(item.department || "").trim(),
       })),
     [pendingTemplates]
+  );
+
+  const filteredApprovedTemplates = useMemo(() => {
+    const roleFilter = approvedRoleFilter.trim().toLowerCase();
+    const departmentFilter = approvedDepartmentFilter.trim().toLowerCase();
+
+    return approvedTemplates.filter((item) => {
+      const role = String(item.role || "").trim().toLowerCase();
+      const department = String(item.department || "").trim().toLowerCase();
+
+      const roleMatch = roleFilter ? role.includes(roleFilter) : true;
+      const departmentMatch = departmentFilter
+        ? department.includes(departmentFilter)
+        : true;
+
+      return roleMatch && departmentMatch;
+    });
+  }, [approvedDepartmentFilter, approvedRoleFilter, approvedTemplates]);
+
+  const approvedTemplateRows = useMemo<ApprovedKpiTemplateRow[]>(
+    () =>
+      filteredApprovedTemplates.map((item) => ({
+        templateId: String(item.$id || "").trim(),
+        title: String(item.title || "").trim(),
+        role: String(item.role || "").trim(),
+        department: String(item.department || "").trim(),
+        sourceType: String(item.source_type || "manager").trim() || "manager",
+        approvedBy: String(item.approved_by || "-").trim() || "-",
+      })),
+    [filteredApprovedTemplates]
   );
 
   const selectedManager = useMemo(
@@ -272,7 +319,38 @@ export default function HrDashboardPage() {
     [selectedManagerId]
   );
 
-  const pendingTemplateColumns = useMemo<DataTableColumn<PendingKpiTemplateRow>[]>(
+  const pendingTemplateColumns: DataTableColumn<PendingKpiTemplateRow>[] = [
+    {
+      key: "title",
+      header: "Title",
+    },
+    {
+      key: "role",
+      header: "Role",
+    },
+    {
+      key: "department",
+      header: "Department",
+    },
+    {
+      key: "templateId",
+      header: "Action",
+      align: "right",
+      render: (_value: unknown, row: PendingKpiTemplateRow) => (
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => handleApproveTemplate(row.templateId)}
+          loading={approvingTemplateId === row.templateId}
+          disabled={approvingTemplateId.length > 0}
+        >
+          Approve
+        </Button>
+      ),
+    },
+  ];
+
+  const approvedTemplateColumns = useMemo<DataTableColumn<ApprovedKpiTemplateRow>[]>(
     () => [
       {
         key: "title",
@@ -287,23 +365,22 @@ export default function HrDashboardPage() {
         header: "Department",
       },
       {
-        key: "templateId",
-        header: "Action",
-        align: "right",
-        render: (_value: unknown, row: PendingKpiTemplateRow) => (
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => handleApproveTemplate(row.templateId)}
-            loading={approvingTemplateId === row.templateId}
-            disabled={approvingTemplateId.length > 0}
-          >
-            Approve
-          </Button>
-        ),
+        key: "sourceType",
+        header: "Source",
+        render: (_value: unknown, row: ApprovedKpiTemplateRow) => {
+          const source = row.sourceType.toLowerCase();
+          const badgeVariant =
+            source === "hr" ? "success" : source === "leadership" ? "info" : "default";
+
+          return <Badge variant={badgeVariant}>{row.sourceType}</Badge>;
+        },
+      },
+      {
+        key: "approvedBy",
+        header: "Approved By",
       },
     ],
-    [approvingTemplateId]
+    []
   );
 
   const handleApproveTemplate = useCallback(
@@ -313,12 +390,15 @@ export default function HrDashboardPage() {
 
       setApprovingTemplateId(normalizedId);
       setError("");
+      setSuccess("");
 
       try {
         const result = await approveKpiTemplate(normalizedId);
+        const refreshedApprovedTemplates = await fetchApprovedKpiTemplates();
         setPendingTemplates((prev) =>
           prev.filter((item) => String(item.$id || "").trim() !== normalizedId)
         );
+        setApprovedTemplates(refreshedApprovedTemplates);
         if (result?.message) {
           setSuccess(result.message);
         }
@@ -519,6 +599,14 @@ export default function HrDashboardPage() {
       />
 
       {error && <Alert variant="error" title="Unable to load" description={error} onDismiss={() => setError("")} />}
+      {success && (
+        <Alert
+          variant="success"
+          title="Action completed"
+          description={success}
+          onDismiss={() => setSuccess("")}
+        />
+      )}
 
       <Card
         title="Policy Management"
@@ -560,7 +648,7 @@ export default function HrDashboardPage() {
         />
       </Card>
 
-      <Card title="Pending KPI Templates" description="Manager-submitted templates awaiting HR approval.">
+      <Card title="Pending Templates" description="Manager submissions in governance queue.">
         <DataTable
           columns={pendingTemplateColumns}
           rows={pendingTemplateRows}
@@ -568,6 +656,32 @@ export default function HrDashboardPage() {
           rowKey={(row) => row.templateId}
           emptyMessage="No pending KPI templates."
         />
+      </Card>
+
+      <Card title="Approved Templates" description="Read-only KPI library with role and department filters.">
+        <Stack gap="3">
+          <Grid cols={1} colsMd={2} gap="2">
+            <Input
+              label="Role filter"
+              value={approvedRoleFilter}
+              onChange={(event) => setApprovedRoleFilter(event.target.value)}
+              placeholder="e.g. senior sales executive"
+            />
+            <Input
+              label="Department filter"
+              value={approvedDepartmentFilter}
+              onChange={(event) => setApprovedDepartmentFilter(event.target.value)}
+              placeholder="e.g. sales"
+            />
+          </Grid>
+          <DataTable
+            columns={approvedTemplateColumns}
+            rows={approvedTemplateRows}
+            loading={loading}
+            rowKey={(row) => row.templateId}
+            emptyMessage="No approved KPI templates for the selected filters."
+          />
+        </Stack>
       </Card>
 
       <RatingDropWarningSection

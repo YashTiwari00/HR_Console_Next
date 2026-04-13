@@ -273,6 +273,14 @@ export default function EmployeeGoalsPage() {
               return previewGoalsImport({
                 googleSheetUrl: bulkGoogleSheetUrl,
                 cycleId: goalForm.cycleId,
+                defaults: {
+                  employeeId: bulkEmployeeId || undefined,
+                  frameworkType: goalForm.frameworkType,
+                  weightage: 10,
+                  dueDate: goalForm.dueDate || undefined,
+                  managerId: goalForm.managerId || undefined,
+                  allowUnknownCycle: true,
+                },
               });
             })()
           : await (async () => {
@@ -331,6 +339,14 @@ export default function EmployeeGoalsPage() {
         templateVersion: "v1",
         sourceType: bulkSourceType,
         sourceUrl: bulkSourceType === "google_sheet" ? String(bulkGoogleSheetUrl || "").trim() : undefined,
+        defaults: {
+          employeeId: bulkEmployeeId || undefined,
+          frameworkType: goalForm.frameworkType,
+          weightage: 10,
+          dueDate: goalForm.dueDate || undefined,
+          managerId: goalForm.managerId || undefined,
+          allowUnknownCycle: true,
+        },
       });
 
       const createdGoalIds = (result?.summary?.successes || [])

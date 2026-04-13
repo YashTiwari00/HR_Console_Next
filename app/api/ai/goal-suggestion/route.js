@@ -264,10 +264,14 @@ export async function POST(request) {
       query: contextInputText || undefined,
     });
 
-    if ((libraryResult.templates || []).length > 0) {
+    const librarySuggestions = Array.isArray(libraryResult?.templates)
+      ? libraryResult.templates
+      : [];
+
+    if (librarySuggestions.length > 0) {
       return Response.json({
         data: {
-          suggestions: libraryResult.templates,
+          suggestions: librarySuggestions,
           source: "library",
         },
         source: "library",

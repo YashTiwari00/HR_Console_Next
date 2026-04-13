@@ -433,6 +433,9 @@ export default function ManagerPage() {
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/team-analytics">
               Open Team Analytics
             </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/goals#kpi-template-submission">
+              Submit KPI Template
+            </Link>
           </Stack>
         </Card>
 

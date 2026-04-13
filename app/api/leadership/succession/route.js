@@ -6,7 +6,7 @@ import { buildTalentSnapshots } from "@/app/api/_lib/talentSnapshot";
 const PERFORMANCE_BANDS = ["high", "medium", "low"];
 const POTENTIAL_BANDS = ["high", "medium", "low"];
 const PAGE_LIMIT = 100;
-const CRITICAL_ROLES = new Set(["manager", "leadership", "region-admin"]);
+const CRITICAL_ROLES = new Set(["manager", "leadership"]);
 
 function toPct(numerator, denominator) {
   if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {

@@ -21,6 +21,10 @@ function normalizeSourceType(value) {
   return null;
 }
 
+function toSafeString(value) {
+  return String(value || "").trim();
+}
+
 export async function POST(request) {
   try {
     const { profile, databases } = await requireAuth(request);
@@ -36,6 +40,15 @@ export async function POST(request) {
     const idempotencyKey = normalizedIdempotencyKey(request, body);
     const sourceType = normalizeSourceType(body?.sourceType);
     const sourceUrl = String(body?.sourceUrl || "").trim();
+    const defaults = {
+      employeeId: toSafeString(body?.defaults?.employeeId || body?.employeeId),
+      frameworkType: toSafeString(body?.defaults?.frameworkType || body?.frameworkType),
+      weightage: toSafeString(body?.defaults?.weightage || body?.weightage),
+      dueDate: toSafeString(body?.defaults?.dueDate || body?.dueDate),
+      managerId: toSafeString(body?.defaults?.managerId || body?.managerId),
+      manualAssign: Boolean(body?.defaults?.manualAssign),
+      allowUnknownCycle: Boolean(body?.defaults?.allowUnknownCycle),
+    };
 
     if (!idempotencyKey) {
       return NextResponse.json(
@@ -81,6 +94,7 @@ export async function POST(request) {
       profile,
       rows,
       fallbackCycleId: cycleId,
+      defaults,
     });
 
     const commitResult = await commitImportRows({

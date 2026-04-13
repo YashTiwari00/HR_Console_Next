@@ -243,10 +243,33 @@ export interface HrManagerSummary {
 export interface PendingKpiTemplateItem {
   $id: string;
   title: string;
+  description?: string;
   role: string;
   department: string;
+  domain?: string;
+  kpi_metrics?: string;
+  default_weightage?: number;
+  tags?: string[];
   source_type?: string;
   approved?: boolean;
+  approved_by?: string | null;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface ApprovedKpiTemplateItem extends PendingKpiTemplateItem {
+  approved: true;
+}
+
+export interface CreateManagerKpiTemplateInput {
+  title: string;
+  description: string;
+  department: string;
+  role: string;
+  domain?: string;
+  kpi_metrics: string;
+  default_weightage?: number;
+  tags?: string[];
 }
 
 export interface HrEmployeeDrilldown {
@@ -1224,6 +1247,15 @@ export interface CalibrationTimelineItem {
   };
 }
 
+export interface GoalCycleOption {
+  id: string;
+  name: string;
+  state: string | null;
+  periodType: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}
+
 function toTrajectoryTrendLabel(value: unknown): TrajectoryTrendLabel {
   const text = String(value || "").trim().toLowerCase();
   if (text === "improving") return "improving";
@@ -2118,6 +2150,28 @@ export async function fetchPendingKpiTemplates() {
   return (payload?.data || []) as PendingKpiTemplateItem[];
 }
 
+export async function fetchApprovedKpiTemplates(filters?: {
+  role?: string;
+  department?: string;
+}) {
+  const query = new URLSearchParams();
+
+  if (filters?.role) {
+    query.set("role", filters.role.trim().toLowerCase());
+  }
+
+  if (filters?.department) {
+    query.set("department", filters.department.trim().toLowerCase());
+  }
+
+  const queryString = query.toString();
+  const payload = await requestJson(
+    queryString ? `/api/goal-library/approved?${queryString}` : "/api/goal-library/approved"
+  );
+
+  return (payload?.data || []) as ApprovedKpiTemplateItem[];
+}
+
 export async function approveKpiTemplate(templateId: string) {
   const payload = await requestJson("/api/goal-library/approve", {
     method: "POST",
@@ -2377,6 +2431,13 @@ export async function createGoal(input: {
   });
 }
 
+export async function createManagerKpiTemplate(input: CreateManagerKpiTemplateInput) {
+  return requestJson("/api/goal-library/manager-create", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function createTeamGoal(input: {
   employeeId: string;
   title: string;
@@ -2478,6 +2539,15 @@ export async function previewBulkGoalsImport(input: {
   rows?: BulkGoalImportRowInput[];
   googleSheetUrl?: string;
   cycleId?: string;
+  defaults?: {
+    employeeId?: string;
+    frameworkType?: string;
+    weightage?: number | string;
+    dueDate?: string;
+    managerId?: string;
+    manualAssign?: boolean;
+    allowUnknownCycle?: boolean;
+  };
 }) {
   const payload = await requestJson("/api/goals/import/preview", {
     method: "POST",
@@ -2491,6 +2561,15 @@ export async function previewGoalsImport(input: {
   file?: File | null;
   googleSheetUrl?: string;
   cycleId?: string;
+  defaults?: {
+    employeeId?: string;
+    frameworkType?: string;
+    weightage?: number | string;
+    dueDate?: string;
+    managerId?: string;
+    manualAssign?: boolean;
+    allowUnknownCycle?: boolean;
+  };
 }) {
   const safeGoogleSheetUrl = String(input?.googleSheetUrl || "").trim();
   const safeCycleId = String(input?.cycleId || "").trim();
@@ -2499,6 +2578,7 @@ export async function previewGoalsImport(input: {
     return previewBulkGoalsImport({
       googleSheetUrl: safeGoogleSheetUrl,
       cycleId: safeCycleId || undefined,
+      defaults: input?.defaults,
     });
   }
 
@@ -2528,6 +2608,15 @@ export async function commitBulkGoalsImport(input: {
   sourceType?: "excel" | "google_sheet";
   sourceUrl?: string;
   cycleId?: string;
+  defaults?: {
+    employeeId?: string;
+    frameworkType?: string;
+    weightage?: number | string;
+    dueDate?: string;
+    managerId?: string;
+    manualAssign?: boolean;
+    allowUnknownCycle?: boolean;
+  };
 }) {
   const payload = await requestJson("/api/goals/import/commit", {
     method: "POST",
@@ -3164,6 +3253,14 @@ export async function fetchCalibrationTimeline(sessionId: string) {
 
   return {
     data: (payload?.data || []) as CalibrationTimelineItem[],
+    meta: payload?.meta || {},
+  };
+}
+
+export async function fetchGoalCycles() {
+  const payload = await requestJson("/api/hr/cycles");
+  return {
+    data: (payload?.data || []) as GoalCycleOption[],
     meta: payload?.meta || {},
   };
 }

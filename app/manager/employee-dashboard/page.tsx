@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
-import { BulkGoalDashboardImportCard, PageHeader } from "@/src/components/patterns";
+import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import {
   CheckInItem,
@@ -79,12 +79,6 @@ export default function ManagerEmployeeDashboardPage() {
         </Card>
       </Grid>
 
-      <BulkGoalDashboardImportCard
-        title="Bulk Goal Upload"
-        description="Upload goals in Excel, review AI improvements, and save directly from dashboard."
-        onSaved={loadData}
-      />
-
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Employee Workspaces" description="Use focused pages for your personal workflow.">
           <Stack gap="2">
@@ -102,6 +96,9 @@ export default function ManagerEmployeeDashboardPage() {
             </Link>
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/timeline">
               Open My Cycle Timeline
+            </Link>
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/goals#kpi-template-submission">
+              Submit KPI Template
             </Link>
           </Stack>
         </Card>

@@ -66,7 +66,7 @@ async function listAllDocuments(databases, collectionId, queries = []) {
   return all;
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     const { profile, databases } = await requireAuth(request);
     requireRole(profile, ["leadership"]);
@@ -79,10 +79,10 @@ export async function GET() {
         Query.orderDesc("$createdAt"),
       ]),
       listAllDocuments(databases, appwriteConfig.progressUpdatesCollectionId, [
-        Query.orderDesc("createdAt"),
+        Query.orderDesc("$createdAt"),
       ]),
       listAllDocuments(databases, appwriteConfig.checkInsCollectionId, [
-        Query.orderDesc("scheduledAt"),
+        Query.orderDesc("$createdAt"),
       ]),
     ]);
 

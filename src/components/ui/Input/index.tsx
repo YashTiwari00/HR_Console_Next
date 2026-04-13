@@ -13,6 +13,16 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, helperText, className, id, ...props }, ref) => {
     const generatedId = useId();
     const inputId = id ?? (label ? generatedId : undefined);
+    const normalizedProps = { ...props };
+
+    // Keep the input mode stable when callers pass value as undefined/null.
+    if (
+      "value" in normalizedProps &&
+      normalizedProps.value == null &&
+      normalizedProps.type !== 'file'
+    ) {
+      normalizedProps.value = '';
+    }
 
     return (
       <div className="flex flex-col gap-1">
@@ -50,7 +60,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
               ? `${inputId}-helper`
               : undefined
           }
-          {...props}
+          {...normalizedProps}
         />
 
         {error && (
