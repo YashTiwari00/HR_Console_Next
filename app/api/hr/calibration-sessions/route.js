@@ -4,15 +4,10 @@ import { errorResponse, requireAuth, requireRole } from "@/lib/serverAuth";
 import {
   createCalibrationSessionCompat,
   isMissingCollectionError,
+  normalizeCalibrationStatus,
+  shapeCalibrationSession,
   toIsoOrNow,
 } from "@/app/api/hr/calibration-sessions/_lib/service";
-
-function normalizeStatus(value) {
-  const status = String(value || "draft").trim().toLowerCase();
-  if (status === "active") return "active";
-  if (status === "closed") return "closed";
-  return "draft";
-}
 
 function toLimit(value, fallback = 50) {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -32,7 +27,12 @@ export async function GET(request) {
 
     const queries = [Query.orderDesc("updatedAt"), Query.limit(limit)];
     if (cycleId) queries.push(Query.equal("cycleId", cycleId));
-    if (status) queries.push(Query.equal("status", normalizeStatus(status)));
+    if (status) {
+      const normalizedStatus = normalizeCalibrationStatus(status, "");
+      if (normalizedStatus) {
+        queries.push(Query.equal("status", normalizedStatus));
+      }
+    }
 
     let rows;
     try {
@@ -56,19 +56,7 @@ export async function GET(request) {
     }
 
     return Response.json({
-      data: rows.map((item) => ({
-        id: item.$id,
-        name: item.name,
-        cycleId: item.cycleId,
-        status: item.status,
-        scope: item.scope || "",
-        notes: item.notes || "",
-        version: Number(item.version || 1),
-        createdBy: item.createdBy || null,
-        updatedBy: item.updatedBy || null,
-        createdAt: item.createdAt || item.$createdAt,
-        updatedAt: item.updatedAt || item.$updatedAt,
-      })),
+      data: rows.map((item) => shapeCalibrationSession(item)),
       meta: {
         skipped: false,
       },
@@ -86,7 +74,7 @@ export async function POST(request) {
     const body = await request.json();
     const name = String(body?.name || "").trim();
     const cycleId = String(body?.cycleId || "").trim();
-    const status = normalizeStatus(body?.status);
+    const status = "draft";
     const scope = String(body?.scope || "").trim();
     const notes = String(body?.notes || "").trim();
 
@@ -120,19 +108,7 @@ export async function POST(request) {
 
     return Response.json(
       {
-        data: {
-          id: created.$id,
-          name: created.name,
-          cycleId: created.cycleId,
-          status: created.status,
-          scope: created.scope || "",
-          notes: created.notes || "",
-          version: Number(created.version || 1),
-          createdBy: created.createdBy || null,
-          updatedBy: created.updatedBy || null,
-          createdAt: created.createdAt || created.$createdAt,
-          updatedAt: created.updatedAt || created.$updatedAt,
-        },
+        data: shapeCalibrationSession(created),
       },
       { status: 201 }
     );

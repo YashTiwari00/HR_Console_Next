@@ -6,6 +6,24 @@ import {
   isUnknownAttributeError,
 } from "@/app/api/notifications/_lib/engine";
 
+function isQueryCompatibilityError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("invalid query") ||
+    message.includes("attribute not found") ||
+    message.includes("unknown attribute") ||
+    message.includes("not indexed") ||
+    message.includes("index")
+  );
+}
+
+function isReadFlagTruthy(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  const text = String(value || "").trim().toLowerCase();
+  return text === "true" || text === "1" || text === "yes";
+}
+
 function uniqueCollectionIds() {
   const ids = [
     String(appwriteConfig.notificationsCollectionId || "").trim(),
@@ -82,22 +100,35 @@ async function listCollectionRows(databases, collectionId, { userId, limit, incl
       return [];
     }
 
-    if (!isUnknownAttributeError(error)) {
-      throw error;
-    }
-
     const fallbackQueries = [
       Query.equal("userId", String(userId || "").trim()),
       Query.orderDesc("$createdAt"),
       Query.limit(Math.max(1, Math.min(100, Number(limit) || 25))),
     ];
 
-    const fallbackResult = await databases.listDocuments(databaseId, collectionId, fallbackQueries);
-    if (!includeRead) {
-      return fallbackResult.documents.filter((item) => !Boolean(item.isRead));
-    }
+    try {
+      const fallbackResult = await databases.listDocuments(databaseId, collectionId, fallbackQueries);
+      if (!includeRead) {
+        return fallbackResult.documents.filter((item) => !isReadFlagTruthy(item.isRead));
+      }
 
-    return fallbackResult.documents;
+      return fallbackResult.documents;
+    } catch (fallbackError) {
+      if (
+        isMissingCollectionError(fallbackError, collectionId) ||
+        isPermissionDeniedError(fallbackError) ||
+        isUnknownAttributeError(fallbackError) ||
+        isQueryCompatibilityError(fallbackError)
+      ) {
+        return [];
+      }
+
+      if (isUnknownAttributeError(error) || isQueryCompatibilityError(error)) {
+        return [];
+      }
+
+      throw fallbackError;
+    }
   }
 }
 

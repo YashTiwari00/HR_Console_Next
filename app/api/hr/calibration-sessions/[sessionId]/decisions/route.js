@@ -5,6 +5,7 @@ import {
   createCalibrationDecisionCompat,
   isMissingCollectionError,
   listCalibrationDecisionsBySession,
+  normalizeCalibrationStatus,
   toIsoOrNow,
 } from "@/app/api/hr/calibration-sessions/_lib/service";
 
@@ -17,6 +18,42 @@ function toRating(value, required = false) {
     return null;
   }
   return parsed;
+}
+
+function normalizeDecisionMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (!mode) return null;
+  if (mode === "suggestion" || mode === "decision_support") return mode;
+  return null;
+}
+
+async function getCalibrationSessionOrResponse(databases, sessionId) {
+  try {
+    const session = await databases.getDocument(
+      databaseId,
+      appwriteConfig.calibrationSessionsCollectionId,
+      sessionId
+    );
+    return { session };
+  } catch (error) {
+    if (isMissingCollectionError(error, appwriteConfig.calibrationSessionsCollectionId)) {
+      return {
+        response: Response.json(
+          { error: "calibration_sessions collection is not available. Run schema apply first." },
+          { status: 409 }
+        ),
+      };
+    }
+
+    const message = String(error?.message || "").toLowerCase();
+    if (message.includes("not found") || message.includes("could not be found")) {
+      return {
+        response: Response.json({ error: "Calibration session not found." }, { status: 404 }),
+      };
+    }
+
+    throw error;
+  }
 }
 
 export async function GET(request, context) {
@@ -69,6 +106,8 @@ export async function GET(request, context) {
         finalRating: item.finalRating ?? null,
         rationale: item.rationale || "",
         changed: Boolean(item.changed),
+        mode: item.mode || null,
+        aiSuggestedRating: item.aiSuggestedRating ?? null,
         version: Number(item.version || 1),
         decidedBy: item.decidedBy || null,
         decidedAt: item.decidedAt || item.$createdAt,
@@ -94,17 +133,43 @@ export async function POST(request, context) {
       return Response.json({ error: "sessionId is required." }, { status: 400 });
     }
 
+    const sessionLookup = await getCalibrationSessionOrResponse(databases, sessionId);
+    if (sessionLookup.response) {
+      return sessionLookup.response;
+    }
+
+    const sessionStatus = normalizeCalibrationStatus(sessionLookup.session?.status, "draft");
+    if (sessionStatus === "locked" || sessionStatus === "closed") {
+      return Response.json({ error: "Session is locked" }, { status: 400 });
+    }
+
     const body = await request.json();
     const employeeId = String(body?.employeeId || "").trim();
     const managerId = String(body?.managerId || "").trim();
     const previousRating = toRating(body?.previousRating, false);
     const proposedRating = toRating(body?.proposedRating, true);
     const finalRating = toRating(body?.finalRating, false);
+    const aiSuggestedRating = toRating(body?.aiSuggestedRating, false);
     const rationale = String(body?.rationale || "").trim();
+    const mode = normalizeDecisionMode(body?.mode);
 
     if (!employeeId || !proposedRating || !rationale) {
       return Response.json(
         { error: "employeeId, proposedRating and rationale are required." },
+        { status: 400 }
+      );
+    }
+
+    if (body?.mode !== undefined && mode === null) {
+      return Response.json(
+        { error: "mode must be one of: suggestion, decision_support." },
+        { status: 400 }
+      );
+    }
+
+    if (body?.aiSuggestedRating !== undefined && aiSuggestedRating === null) {
+      return Response.json(
+        { error: "aiSuggestedRating must be an integer between 1 and 5." },
         { status: 400 }
       );
     }
@@ -141,6 +206,8 @@ export async function POST(request, context) {
           previousRating !== null && finalRating !== null
             ? previousRating !== finalRating
             : previousRating !== null && previousRating !== proposedRating,
+        mode: mode || undefined,
+        aiSuggestedRating: aiSuggestedRating ?? undefined,
         version: existingCount + 1,
         decidedBy: String(profile.$id || "").trim(),
         decidedAt: toIsoOrNow(body?.decidedAt),
@@ -167,6 +234,8 @@ export async function POST(request, context) {
           finalRating: created.finalRating ?? null,
           rationale: created.rationale || "",
           changed: Boolean(created.changed),
+          mode: created.mode || null,
+          aiSuggestedRating: created.aiSuggestedRating ?? null,
           version: Number(created.version || 1),
           decidedBy: created.decidedBy || null,
           decidedAt: created.decidedAt || created.$createdAt,

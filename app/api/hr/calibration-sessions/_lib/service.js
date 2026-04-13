@@ -1,6 +1,8 @@
 import { appwriteConfig } from "@/lib/appwrite";
 import { ID, Query, databaseId } from "@/lib/appwriteServer";
 
+const CALIBRATION_STATUS_FLOW = ["draft", "active", "locked", "closed"];
+
 function isUnknownAttributeError(error) {
   const message = String(error?.message || "").toLowerCase();
   return message.includes("attribute not found in schema") || message.includes("unknown attribute");
@@ -49,6 +51,48 @@ async function createCompat(databases, collectionId, payload) {
   throw new Error("Unable to create calibration document with compatible schema fallback.");
 }
 
+async function updateCompat(databases, collectionId, documentId, payload) {
+  let nextPayload = { ...payload };
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      return await databases.updateDocument(databaseId, collectionId, documentId, nextPayload);
+    } catch (error) {
+      if (!isUnknownAttributeError(error)) {
+        throw error;
+      }
+
+      const unknown = extractUnknownAttribute(error);
+      if (!unknown || !(unknown in nextPayload)) {
+        throw error;
+      }
+
+      const rest = { ...nextPayload };
+      delete rest[unknown];
+      nextPayload = rest;
+    }
+  }
+
+  throw new Error("Unable to update calibration document with compatible schema fallback.");
+}
+
+export function normalizeCalibrationStatus(value, fallback = "draft") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return CALIBRATION_STATUS_FLOW.includes(normalized) ? normalized : fallback;
+}
+
+export function canTransitionCalibrationStatus(fromStatus, toStatus) {
+  const from = normalizeCalibrationStatus(fromStatus, "");
+  const to = normalizeCalibrationStatus(toStatus, "");
+
+  if (!from || !to) return false;
+  if (from === to) return true;
+
+  const fromIndex = CALIBRATION_STATUS_FLOW.indexOf(from);
+  const toIndex = CALIBRATION_STATUS_FLOW.indexOf(to);
+  return toIndex === fromIndex + 1;
+}
+
 export function toIsoOrNow(value) {
   const raw = String(value || "").trim();
   if (!raw) return new Date().toISOString();
@@ -60,8 +104,26 @@ export async function createCalibrationSessionCompat(databases, payload) {
   return createCompat(databases, appwriteConfig.calibrationSessionsCollectionId, payload);
 }
 
+export async function updateCalibrationSessionCompat(databases, sessionId, payload) {
+  return updateCompat(
+    databases,
+    appwriteConfig.calibrationSessionsCollectionId,
+    String(sessionId || "").trim(),
+    payload
+  );
+}
+
 export async function createCalibrationDecisionCompat(databases, payload) {
   return createCompat(databases, appwriteConfig.calibrationDecisionsCollectionId, payload);
+}
+
+export async function updateCalibrationDecisionCompat(databases, decisionId, payload) {
+  return updateCompat(
+    databases,
+    appwriteConfig.calibrationDecisionsCollectionId,
+    String(decisionId || "").trim(),
+    payload
+  );
 }
 
 export async function listCalibrationDecisionsBySession(databases, sessionId, limit = 200) {
@@ -95,4 +157,20 @@ export function shapeCalibrationTimeline(decisions) {
       version: Number(item.version || 1),
     },
   }));
+}
+
+export function shapeCalibrationSession(item) {
+  return {
+    id: item.$id,
+    name: item.name,
+    cycleId: item.cycleId,
+    status: normalizeCalibrationStatus(item.status, "draft"),
+    scope: item.scope || "",
+    notes: item.notes || "",
+    version: Number(item.version || 1),
+    createdBy: item.createdBy || null,
+    updatedBy: item.updatedBy || null,
+    createdAt: item.createdAt || item.$createdAt,
+    updatedAt: item.updatedAt || item.$updatedAt,
+  };
 }

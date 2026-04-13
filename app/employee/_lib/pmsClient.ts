@@ -1205,7 +1205,7 @@ export interface CalibrationSessionItem {
   id: string;
   name: string;
   cycleId: string;
-  status: "draft" | "active" | "closed";
+  status: "draft" | "active" | "locked" | "closed";
   scope?: string;
   notes?: string;
   version: number;
@@ -1223,6 +1223,8 @@ export interface CalibrationDecisionItem {
   previousRating?: number | null;
   proposedRating?: number | null;
   finalRating?: number | null;
+  mode?: AiMode | null;
+  aiSuggestedRating?: number | null;
   rationale: string;
   changed: boolean;
   version: number;
@@ -1244,6 +1246,45 @@ export interface CalibrationTimelineItem {
     changed?: boolean;
     rationale?: string;
     version?: number;
+  };
+}
+
+export interface CalibrationBulkDecisionItem {
+  decisionId: string;
+  employeeId: string;
+  employeeName: string;
+  managerId?: string | null;
+  managerName?: string | null;
+  previousRating?: number | null;
+  proposedRating?: number | null;
+  finalRating?: number | null;
+  mode?: AiMode | null;
+  aiSuggestedRating?: number | null;
+  drift?: number;
+  changed: boolean;
+  rationale: string;
+  decidedAt?: string | null;
+}
+
+export interface CalibrationBulkDecisionMeta {
+  total: number;
+  avgDrift?: number;
+  positiveDriftCount?: number;
+  negativeDriftCount?: number;
+}
+
+export interface CalibrationDistributionBucket {
+  count: number;
+  percent: number;
+}
+
+export interface CalibrationDistributionResponse {
+  distribution: {
+    1: CalibrationDistributionBucket;
+    2: CalibrationDistributionBucket;
+    3: CalibrationDistributionBucket;
+    4: CalibrationDistributionBucket;
+    5: CalibrationDistributionBucket;
   };
 }
 
@@ -3180,7 +3221,7 @@ export async function enqueueNotificationJob(input: {
 
 export async function fetchCalibrationSessions(input?: {
   cycleId?: string;
-  status?: "draft" | "active" | "closed";
+  status?: "draft" | "active" | "locked" | "closed";
   limit?: number;
 }) {
   const params = new URLSearchParams();
@@ -3200,7 +3241,7 @@ export async function fetchCalibrationSessions(input?: {
 export async function createCalibrationSession(input: {
   name: string;
   cycleId: string;
-  status?: "draft" | "active" | "closed";
+  status?: "draft" | "active" | "locked" | "closed";
   scope?: string;
   notes?: string;
 }) {
@@ -3231,15 +3272,19 @@ export async function createCalibrationDecision(
     previousRating?: number | null;
     proposedRating: number;
     finalRating?: number | null;
+    aiSuggestedRating?: number | null;
     rationale: string;
   },
-  mode: AiMode = "suggestion"
+  mode?: AiMode
 ) {
   const payload = await requestJson(
     `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/decisions`,
     {
       method: "POST",
-      body: JSON.stringify({ ...input, mode }),
+      body: JSON.stringify({
+        ...input,
+        ...(mode ? { mode } : {}),
+      }),
     }
   );
 
@@ -3255,6 +3300,67 @@ export async function fetchCalibrationTimeline(sessionId: string) {
     data: (payload?.data || []) as CalibrationTimelineItem[],
     meta: payload?.meta || {},
   };
+}
+
+export async function fetchCalibrationBulkDecisions(
+  sessionId: string,
+  input?: {
+    managerId?: string;
+    department?: string;
+    ratingBucket?: string;
+  }
+) {
+  const params = new URLSearchParams();
+  if (input?.managerId) params.set("managerId", input.managerId);
+  if (input?.department) params.set("department", input.department);
+  if (input?.ratingBucket) params.set("ratingBucket", input.ratingBucket);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/bulk-decisions${query}`
+  );
+
+  return {
+    data: (payload?.data || []) as CalibrationBulkDecisionItem[],
+    meta: (payload?.meta || { total: 0 }) as CalibrationBulkDecisionMeta,
+  };
+}
+
+export async function fetchCalibrationDistribution(sessionId: string) {
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/distribution`
+  );
+
+  return (payload || {
+    distribution: {
+      1: { count: 0, percent: 0 },
+      2: { count: 0, percent: 0 },
+      3: { count: 0, percent: 0 },
+      4: { count: 0, percent: 0 },
+      5: { count: 0, percent: 0 },
+    },
+  }) as CalibrationDistributionResponse;
+}
+
+export async function bulkUpdateCalibrationDecisions(
+  sessionId: string,
+  decisions: Array<{
+    decisionId: string;
+    finalRating: number;
+    rationale: string;
+    mode?: AiMode;
+    aiSuggestedRating?: number | null;
+  }>
+) {
+  const payload = await requestJson(
+    `/api/hr/calibration-sessions/${encodeURIComponent(sessionId)}/bulk-update`,
+    {
+      method: "POST",
+      body: JSON.stringify({ decisions }),
+    }
+  );
+
+  return payload as { updated: number; skipped: number };
 }
 
 export async function fetchGoalCycles() {
