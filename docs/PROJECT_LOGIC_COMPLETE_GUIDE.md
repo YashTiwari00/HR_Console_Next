@@ -26,15 +26,18 @@ Source intent and product requirements are captured in [Guide.md](../Guide.md).
 ## 2. Tech stack and runtime architecture
 
 ### 2.1 Frontend stack
-- Next.js 16 App Router
-- React 19
-- TypeScript on major app pages/components
+- Next.js 16.1.6 (App Router)
+- React 19.2.3
+- React DOM 19.2.3
+- TypeScript 5 on major app pages/components (mixed TS/JS codebase)
+- Tailwind CSS 4 with PostCSS (`@tailwindcss/postcss`)
 - Role layouts under `app/employee`, `app/manager`, `app/hr`, `app/leadership`
 
 ### 2.2 Backend stack inside same app
 - Next.js Route Handlers under `app/api/*`
 - Server-side Appwrite SDK (`node-appwrite`) for secure DB/storage operations
 - Browser Appwrite SDK (`appwrite`) for client auth/JWT convenience
+- Node.js runtime for server routes and scripts
 
 ### 2.3 AI stack
 - OpenRouter wrapper in `lib/openrouter.js`
@@ -53,6 +56,12 @@ Source intent and product requirements are captured in [Guide.md](../Guide.md).
 - Pattern components: `src/components/patterns/*`
 - Theme provider + CSS tokens: `src/theme/ThemeProvider.tsx`, `styles/tokens.css`
 - UX rules guidance: [UI-RULES.md](../UI-RULES.md)
+
+### 2.6 Integrations and utility packages
+- Google APIs via `googleapis` (Calendar, Free/Busy, Meet request lifecycle)
+- Spreadsheet handling via `xlsx` (import/export workflows)
+- Email delivery via `nodemailer` (SMTP)
+- FullCalendar stack: `@fullcalendar/react`, `@fullcalendar/timegrid`, `@fullcalendar/interaction`
 
 ---
 
@@ -138,6 +147,7 @@ All server endpoints are in `app/api/*` and grouped by concern:
 - `lib/finalRatings.js`: score persistence and rating visibility toggles.
 - `lib/openrouter.js`: OpenRouter call/stream wrapper.
 - `lib/appwriteSchema.js`: constants for statuses, frameworks, collections.
+- `src/lib/csvExport.ts`: shared client-side CSV builder/downloader helpers used by HR report surfaces.
 
 ### 4.5 Services
 - `services/authService.js`: client auth orchestration (OAuth start, callback finalize, role redirect, logout).
@@ -881,6 +891,7 @@ Examples:
 - `app/hr/succession/page.tsx`: succession pipeline, readiness review, and override workflows.
 - `app/hr/training-needs/page.tsx`: team-level training needs analysis and export actions.
 - `app/hr/team-analytics/page.tsx`: manager/team-level KPI analytics view.
+- HR report exports are now standardized as per-report-block CSV actions using consistent button labeling (`Download CSV: <report>`).
 
 ### Manager drilldown (`app/hr/managers/[managerId]/page.tsx`)
 - Deep view for one manager's team and cycle health.
@@ -1376,6 +1387,12 @@ This update extends the project from a core PMS flow into a policy-driven, timel
 - Goal bulk import now supports both file-based rows and Google Sheet URL ingestion in preview/commit workflows.
 - Goal import commit persists source metadata (`sourceType` in `excel | google_sheet`, plus optional source URL) with idempotent replay handling.
 - Notification email delivery now uses Nodemailer (Gmail SMTP via `EMAIL_USER` and `EMAIL_PASS`) while preserving existing scheduler and dedupe semantics.
+
+### N) HR report export standardization
+- Added shared CSV utility (`src/lib/csvExport.ts`) to centralize CSV escaping, generation, and browser download behavior.
+- Standardized HR export UX to per-report-block actions with consistent labels (`Download CSV: ...`) across HR dashboard/report pages.
+- Applied CSV export coverage across HR reporting surfaces including: dashboard blocks, team analytics, calibration, succession, 9-box, AI governance, notifications, approvals, check-ins, team assignments, and manager drilldown views.
+- Preserved existing training-needs export flow while aligning button naming and behavior with the shared convention.
 
 ---
 
