@@ -404,7 +404,6 @@ export default function TrainingNeedsTable({ cycleId, managerId, className }: Tr
     ],
     [bulkLoading, handleGenerateRowSuggestions, limitReached, rowLoadingMap]
   );
-
   const hasSuggestions = rows.some((row) => (row.suggestions || []).length > 0 || row.aiError);
 
   if (loading) {
@@ -458,7 +457,7 @@ export default function TrainingNeedsTable({ cycleId, managerId, className }: Tr
               disabled={bulkLoading}
               onClick={() => void handleExportCsv()}
             >
-              Export CSV
+              Download CSV: Training Needs
             </Button>
           </div>
         </div>

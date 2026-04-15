@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Grid, Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Input, Textarea } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   createNotificationTemplate,
   enqueueNotificationJob,
@@ -177,15 +178,54 @@ export default function HrNotificationsPage() {
     }
   }
 
+  function handleExportTemplatesCsv() {
+    const csv = buildCsv(templates, [
+      { key: "id", header: "Template ID", value: (row) => row.id },
+      { key: "name", header: "Name", value: (row) => row.name },
+      { key: "triggerType", header: "Trigger", value: (row) => row.triggerType },
+      { key: "channel", header: "Channel", value: (row) => row.channel },
+      { key: "subject", header: "Subject", value: (row) => row.subject || "" },
+      { key: "body", header: "Body", value: (row) => row.body || "" },
+      { key: "isEnabled", header: "Enabled", value: (row) => row.isEnabled ? "yes" : "no" },
+      { key: "suppressWindowMinutes", header: "Suppress Window Minutes", value: (row) => row.suppressWindowMinutes ?? "" },
+    ]);
+    downloadCsvFile(csv, `hr-notification-templates-${dateStamp()}.csv`);
+  }
+
+  function handleExportJobsCsv() {
+    const csv = buildCsv(jobs, [
+      { key: "id", header: "Job ID", value: (row) => row.id },
+      { key: "userId", header: "User ID", value: (row) => row.userId },
+      { key: "templateId", header: "Template ID", value: (row) => row.templateId || "" },
+      { key: "triggerType", header: "Trigger", value: (row) => row.triggerType },
+      { key: "channel", header: "Channel", value: (row) => row.channel },
+      { key: "status", header: "Status", value: (row) => row.status },
+      { key: "attemptCount", header: "Attempt Count", value: (row) => row.attemptCount ?? 0 },
+      { key: "maxAttempts", header: "Max Attempts", value: (row) => row.maxAttempts ?? 0 },
+      { key: "scheduledAt", header: "Scheduled At", value: (row) => row.scheduledAt },
+      { key: "processedAt", header: "Processed At", value: (row) => row.processedAt || "" },
+      { key: "lastError", header: "Last Error", value: (row) => row.lastError || "" },
+    ]);
+    downloadCsvFile(csv, `hr-notification-jobs-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="Notification Policy"
         subtitle="Manage reminder templates and queue jobs for employee nudges."
         actions={
-          <Button variant="secondary" onClick={loadData} disabled={loading}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={handleExportTemplatesCsv} disabled={loading || templates.length === 0}>
+              Download CSV: Templates
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportJobsCsv} disabled={loading || jobs.length === 0}>
+              Download CSV: Jobs
+            </Button>
+            <Button variant="secondary" onClick={loadData} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 

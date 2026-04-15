@@ -9,6 +9,7 @@ import { Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader, RatingDropWarningSection } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   ApprovedKpiTemplateItem,
   approveKpiTemplate,
@@ -581,6 +582,84 @@ export default function HrDashboardPage() {
     XLSX.writeFile(wb, `org-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  function handleExportManagersCsv() {
+    const csv = buildCsv(managerRows, [
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId },
+      { key: "managerName", header: "Manager Name", value: (row) => row.managerName },
+      { key: "managerEmail", header: "Manager Email", value: (row) => row.managerEmail },
+      { key: "teamSize", header: "Team Size", value: (row) => row.teamSize },
+      { key: "teamGoals", header: "Team Goals", value: (row) => row.teamGoals },
+      { key: "teamAverageProgress", header: "Team Average Progress", value: (row) => row.teamAverageProgress },
+      { key: "pendingManagerGoalApprovals", header: "Pending Goal Approvals", value: (row) => row.pendingManagerGoalApprovals },
+      { key: "pendingCheckInApprovals", header: "Pending Check-in Approvals", value: (row) => row.pendingCheckInApprovals },
+    ]);
+    downloadCsvFile(csv, `hr-dashboard-managers-${dateStamp()}.csv`);
+  }
+
+  function handleExportPendingTemplatesCsv() {
+    const csv = buildCsv(pendingTemplateRows, [
+      { key: "templateId", header: "Template ID", value: (row) => row.templateId },
+      { key: "title", header: "Title", value: (row) => row.title },
+      { key: "role", header: "Role", value: (row) => row.role },
+      { key: "department", header: "Department", value: (row) => row.department },
+    ]);
+    downloadCsvFile(csv, `hr-dashboard-pending-templates-${dateStamp()}.csv`);
+  }
+
+  function handleExportApprovedTemplatesCsv() {
+    const csv = buildCsv(approvedTemplateRows, [
+      { key: "templateId", header: "Template ID", value: (row) => row.templateId },
+      { key: "title", header: "Title", value: (row) => row.title },
+      { key: "role", header: "Role", value: (row) => row.role },
+      { key: "department", header: "Department", value: (row) => row.department },
+      { key: "sourceType", header: "Source", value: (row) => row.sourceType },
+      { key: "approvedBy", header: "Approved By", value: (row) => row.approvedBy },
+    ]);
+    downloadCsvFile(csv, `hr-dashboard-approved-templates-${dateStamp()}.csv`);
+  }
+
+  function handleExportRatingDropsCsv() {
+    const csv = buildCsv(orgRatingDropInsights, [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId || "" },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName || "" },
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId || "" },
+      { key: "managerName", header: "Manager Name", value: (row) => row.managerName || "" },
+      { key: "goalId", header: "Goal ID", value: (row) => row.goalId || "" },
+      { key: "goalTitle", header: "Goal Title", value: (row) => row.goalTitle || "" },
+      { key: "fromRating", header: "From Rating", value: (row) => row.fromRating ?? "" },
+      { key: "toRating", header: "To Rating", value: (row) => row.toRating ?? "" },
+      { key: "dropValue", header: "Drop Value", value: (row) => row.dropValue ?? "" },
+      { key: "cycleId", header: "Cycle", value: (row) => row.cycleId || "" },
+    ]);
+    downloadCsvFile(csv, `hr-dashboard-rating-drops-${dateStamp()}.csv`);
+  }
+
+  function handleExportHeatMapCsv() {
+    const flattenedRows = heatMapRows.flatMap((row) =>
+      row.goals.map((goal) => ({
+        employeeId: row.employeeId,
+        employeeName: row.employeeName,
+        department: row.department,
+        role: row.role,
+        goalId: goal.goalId,
+        goalTitle: goal.goalTitle,
+        progressPercent: goal.progressPercent,
+        ragState: goal.ragState,
+      }))
+    );
+    const csv = buildCsv(flattenedRows, [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "department", header: "Department", value: (row) => row.department },
+      { key: "role", header: "Role", value: (row) => row.role },
+      { key: "goalId", header: "Goal ID", value: (row) => row.goalId },
+      { key: "goalTitle", header: "Goal Title", value: (row) => row.goalTitle },
+      { key: "progressPercent", header: "Progress Percent", value: (row) => row.progressPercent },
+      { key: "ragState", header: "RAG State", value: (row) => row.ragState },
+    ]);
+    downloadCsvFile(csv, `hr-dashboard-heatmap-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
@@ -607,6 +686,26 @@ export default function HrDashboardPage() {
           onDismiss={() => setSuccess("")}
         />
       )}
+
+      <Card title="Export Reports" description="Download CSV per report block for HR record-keeping.">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={handleExportManagersCsv} disabled={loading || managerRows.length === 0}>
+            Download CSV: Managers
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportPendingTemplatesCsv} disabled={loading || pendingTemplateRows.length === 0}>
+            Download CSV: Pending Templates
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportApprovedTemplatesCsv} disabled={loading || approvedTemplateRows.length === 0}>
+            Download CSV: Approved Templates
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportRatingDropsCsv} disabled={loading || orgRatingDropInsights.length === 0}>
+            Download CSV: Rating Drops
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportHeatMapCsv} disabled={loading || heatMapRows.length === 0}>
+            Download CSV: Heat Map
+          </Button>
+        </div>
+      </Card>
 
       <Card
         title="Policy Management"

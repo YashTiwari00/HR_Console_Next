@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Select, Textarea, Tooltip } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   fetchHrSuccessionDashboard,
   HrSuccessionDashboardData,
@@ -204,12 +205,51 @@ export default function HrSuccessionPage() {
     finally { setSavingForEmployeeId(null); }
   };
 
+  function handleExportSuccessionRowsCsv() {
+    const csv = buildCsv(data.rows || [], [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "name", header: "Employee Name", value: (row) => row.name },
+      { key: "role", header: "Role", value: (row) => row.role || "" },
+      { key: "performanceBand", header: "Performance Band", value: (row) => row.performanceBand || "" },
+      { key: "potentialBand", header: "Potential Band", value: (row) => row.potentialBand || "" },
+      { key: "readinessScore", header: "Readiness Score", value: (row) => row.readinessScore ?? "" },
+      { key: "successionTag", header: "Succession Tag", value: (row) => row.successionTag || "" },
+      { key: "trendLabel", header: "Trend", value: (row) => row.trendLabel || "" },
+      { key: "readinessReason", header: "Readiness Reason", value: (row) => row.readinessReason || "" },
+    ]);
+    downloadCsvFile(csv, `hr-succession-rows-${dateStamp()}.csv`);
+  }
+
+  function handleExportDistributionCsv() {
+    const distributionRows = [
+      { tag: "ready", count: counts.ready },
+      { tag: "needs_development", count: counts.needs_development },
+      { tag: "watch", count: counts.watch },
+      { tag: "total", count: data.total },
+    ];
+    const csv = buildCsv(distributionRows, [
+      { key: "tag", header: "Tag", value: (row) => row.tag },
+      { key: "count", header: "Count", value: (row) => row.count },
+    ]);
+    downloadCsvFile(csv, `hr-succession-distribution-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4" className="fade-in">
       <PageHeader
         title="Succession Planning"
         subtitle="Readiness signals, 9-box mapping, and promotion pipeline."
-        actions={<Button variant="secondary" onClick={loadData} disabled={loading}>Refresh</Button>}
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={handleExportDistributionCsv} disabled={loading}>
+              Download CSV: Distribution
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportSuccessionRowsCsv} disabled={loading || data.rows.length === 0}>
+              Download CSV: Rows
+            </Button>
+            <Button variant="secondary" onClick={loadData} disabled={loading}>Refresh</Button>
+          </div>
+        }
       />
 
       {error && <Alert variant="error" title="Error" description={error} onDismiss={() => setError("")} />}

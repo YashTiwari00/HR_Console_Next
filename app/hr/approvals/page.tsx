@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   fetchHrCheckInApprovals,
   formatDate,
@@ -113,6 +114,56 @@ export default function HrApprovalsPage() {
     loadQueues();
   }, [loadQueues]);
 
+  function handleExportGoalQueueCsv() {
+    const csv = buildCsv(goalRows, [
+      { key: "id", header: "Goal ID", value: (row) => row.$id },
+      { key: "title", header: "Title", value: (row) => row.title },
+      { key: "description", header: "Description", value: (row) => row.description },
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId },
+      { key: "cycleId", header: "Cycle", value: (row) => row.cycleId },
+      { key: "status", header: "Status", value: (row) => row.status },
+      { key: "weightage", header: "Weightage", value: (row) => row.weightage },
+      {
+        key: "progress",
+        header: "Progress Percent",
+        value: (row) => row.progressPercent ?? row.processPercent ?? 0,
+      },
+    ]);
+    downloadCsvFile(csv, `hr-manager-goal-queue-${dateStamp()}.csv`);
+  }
+
+  function handleExportCheckInQueueCsv() {
+    const csv = buildCsv(checkInRows, [
+      { key: "checkInId", header: "Check-in ID", value: (row) => row.checkInId },
+      { key: "goalId", header: "Goal ID", value: (row) => row.goalId },
+      { key: "goalTitle", header: "Goal Title", value: (row) => row.goalTitle },
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId },
+      { key: "managerName", header: "Manager Name", value: (row) => row.managerName },
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "scheduledAt", header: "Scheduled At", value: (row) => row.scheduledAt },
+      { key: "completedAt", header: "Completed At", value: (row) => row.completedAt || "" },
+      { key: "reviewStatus", header: "Review Status", value: (row) => row.reviewStatus },
+      { key: "managerRating", header: "Manager Rating", value: (row) => row.managerRating ?? "" },
+      { key: "isFinalCheckIn", header: "Is Final Check-in", value: (row) => row.isFinalCheckIn ? "yes" : "no" },
+      { key: "managerCycleId", header: "Manager Cycle", value: (row) => row.managerCycleId || "" },
+      { key: "managerNotes", header: "Manager Notes", value: (row) => row.managerNotes || "" },
+      { key: "transcriptText", header: "Transcript Summary", value: (row) => row.transcriptText || "" },
+      {
+        key: "latestReviewDecision",
+        header: "Latest HR Decision",
+        value: (row) => row.latestReview?.decision || "",
+      },
+      {
+        key: "latestReviewAt",
+        header: "Latest HR Decision At",
+        value: (row) => row.latestReview?.decidedAt || "",
+      },
+    ]);
+    downloadCsvFile(csv, `hr-manager-checkin-queue-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
@@ -143,6 +194,11 @@ export default function HrApprovalsPage() {
 
       <Card title="Manager Goal Queue" description="Manager-submitted goals shown for monitoring.">
         <Stack gap="3">
+          <div className="flex justify-end">
+            <Button variant="secondary" size="sm" onClick={handleExportGoalQueueCsv} disabled={loading || goalRows.length === 0}>
+              Download CSV: Goal Queue
+            </Button>
+          </div>
           <Input
             label="Search manager goals"
             value={managerApprovalQuery}
@@ -195,6 +251,16 @@ export default function HrApprovalsPage() {
         description="Completed check-ins and prior reviews visible for HR supervision."
       >
         <Stack gap="3">
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportCheckInQueueCsv}
+              disabled={loading || checkInRows.length === 0}
+            >
+              Download CSV: Check-in Queue
+            </Button>
+          </div>
           <Input
             label="Search manager check-ins"
             value={employeeApprovalQuery}

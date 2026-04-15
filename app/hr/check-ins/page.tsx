@@ -7,6 +7,7 @@ import { DataTable, PageHeader } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
 import { fetchHrManagers, HrManagerSummary } from "@/app/employee/_lib/pmsClient";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 
 interface ManagerCadenceRow extends Record<string, unknown> {
   managerId: string;
@@ -122,15 +123,37 @@ export default function HrCheckInsPage() {
     []
   );
 
+  function handleExportCadenceCsv() {
+    const csv = buildCsv(cadenceRows, [
+      { key: "managerName", header: "Manager", value: (row) => row.managerName },
+      { key: "managerEmail", header: "Manager Email", value: (row) => row.managerEmail },
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId },
+      { key: "teamSize", header: "Team Size", value: (row) => row.teamSize },
+      { key: "plannedCheckIns", header: "Planned Check-ins", value: (row) => row.plannedCheckIns },
+      { key: "completedCheckIns", header: "Completed Check-ins", value: (row) => row.completedCheckIns },
+      {
+        key: "pendingCheckInApprovals",
+        header: "Pending Review Check-ins",
+        value: (row) => row.pendingCheckInApprovals,
+      },
+    ]);
+    downloadCsvFile(csv, `hr-checkin-cadence-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="Manager Check-in Monitoring"
         subtitle="Track check-in cadence across all managers and identify queues needing supervision follow-up."
         actions={
-          <Button variant="secondary" onClick={loadRows} disabled={loading}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" onClick={handleExportCadenceCsv} disabled={loading || cadenceRows.length === 0}>
+              Download CSV: Cadence
+            </Button>
+            <Button variant="secondary" onClick={loadRows} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 

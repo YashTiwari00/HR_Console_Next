@@ -10,6 +10,7 @@ import {
   type DataTableColumn,
 } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   CheckInItem,
   DecisionInsightsData,
@@ -831,15 +832,72 @@ export default function HrTeamAnalyticsPage() {
     [openExplainability]
   );
 
+  function handleExportAnalyticsCsv() {
+    const csv = buildCsv(analyticsRows, [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "role", header: "Role", value: (row) => row.role },
+      { key: "department", header: "Department", value: (row) => row.department },
+      { key: "rank", header: "Rank", value: (row) => row.rank ?? "" },
+      { key: "weightedScore", header: "Weighted Score", value: (row) => row.weightedScore ?? "" },
+      { key: "avgProgress", header: "Average Progress", value: (row) => row.avgProgress },
+      { key: "ratedGoals", header: "Rated Goals", value: (row) => row.ratedGoalsCount },
+      { key: "totalGoals", header: "Total Goals", value: (row) => row.totalGoalsCount },
+      { key: "trendLabel", header: "Trend", value: (row) => row.trendLabel },
+      { key: "trendDeltaPercent", header: "Trend Delta Percent", value: (row) => row.trendDeltaPercent },
+      { key: "riskLevel", header: "Risk Level", value: (row) => row.riskLevel },
+      { key: "consistencyScore", header: "Consistency Score", value: (row) => row.consistencyScore ?? "" },
+    ]);
+    downloadCsvFile(csv, `hr-team-analytics-${dateStamp()}.csv`);
+  }
+
+  function handleExportRiskAlertsCsv() {
+    const csv = buildCsv(riskAlerts, [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "role", header: "Role", value: (row) => row.role },
+      { key: "department", header: "Department", value: (row) => row.department },
+      { key: "riskLevel", header: "Risk Level", value: (row) => row.riskLevel },
+      { key: "decliningTrend", header: "Declining Trend", value: (row) => row.decliningTrend ? "yes" : "no" },
+      { key: "lowRating", header: "Low Rating", value: (row) => row.lowRating ? "yes" : "no" },
+      { key: "missedCheckIns", header: "Missed Check-ins", value: (row) => row.missedCheckIns },
+    ]);
+    downloadCsvFile(csv, `hr-team-risk-alerts-${dateStamp()}.csv`);
+  }
+
+  function handleExportAiInsightsCsv() {
+    const insightRows = [
+      { section: "top_performers_pattern", summary: aiInsightsSummary.topPerformersPattern },
+      { section: "declining_trends", summary: aiInsightsSummary.decliningTrends },
+      { section: "team_performance_summary", summary: aiInsightsSummary.teamPerformanceSummary },
+    ];
+    const csv = buildCsv(insightRows, [
+      { key: "section", header: "Section", value: (row) => row.section },
+      { key: "summary", header: "Summary", value: (row) => row.summary },
+    ]);
+    downloadCsvFile(csv, `hr-team-ai-insights-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="Team Ranking & Graph"
         subtitle="Organization-wide ranking and weighted performance graph across all departments."
         actions={
-          <Button variant="secondary" onClick={loadAnalytics} disabled={loading}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={handleExportAnalyticsCsv} disabled={loading || analyticsRows.length === 0}>
+              Download CSV: Analytics
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportRiskAlertsCsv} disabled={loading || riskAlerts.length === 0}>
+              Download CSV: Risk
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportAiInsightsCsv} disabled={loading}>
+              Download CSV: AI Insights
+            </Button>
+            <Button variant="secondary" onClick={loadAnalytics} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 

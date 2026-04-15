@@ -415,7 +415,7 @@ export async function POST(request) {
 
     const body = await request.json();
     const goalId = (body.goalId || "").trim();
-    const employeeId = (body.employeeId || profile.$id).trim();
+    const requestedEmployeeId = (body.employeeId || "").trim();
     const managerIdInput = (body.managerId || "").trim();
     const scheduledAt = body.scheduledAt;
     const status = (body.status || CHECKIN_STATUSES.PLANNED).trim();
@@ -425,7 +425,7 @@ export async function POST(request) {
     const isFinalCheckIn = Boolean(body.isFinalCheckIn);
     const attachmentIds = Array.isArray(body.attachmentIds) ? body.attachmentIds : [];
 
-    if (!goalId || !employeeId || !scheduledAt) {
+    if (!goalId || !scheduledAt) {
       return Response.json(
         { error: "goalId, employeeId and scheduledAt are required." },
         { status: 400 }
@@ -444,8 +444,19 @@ export async function POST(request) {
 
     const goalOwnerId = String(goal.employeeId || "").trim();
     const goalManagerId = String(goal.managerId || "").trim();
+    const isManagerActor = profile.role === "manager" || profile.role === "leadership";
+    const employeeId = isManagerActor
+      ? goalOwnerId
+      : (requestedEmployeeId || String(profile.$id || "").trim());
     const isManagerSelfGoal =
       (profile.role === "manager" || profile.role === "leadership") && goalOwnerId === String(profile.$id || "").trim();
+
+    if (!employeeId) {
+      return Response.json(
+        { error: "goalId, employeeId and scheduledAt are required." },
+        { status: 400 }
+      );
+    }
 
     const managerId = managerIdInput || (isManagerSelfGoal ? String(profile.$id || "").trim() : goalManagerId);
 
@@ -469,7 +480,7 @@ export async function POST(request) {
       }
     }
 
-    if (employeeId !== goalOwnerId) {
+    if (requestedEmployeeId && requestedEmployeeId !== goalOwnerId) {
       return Response.json(
         { error: "employeeId must match the goal owner." },
         { status: 400 }

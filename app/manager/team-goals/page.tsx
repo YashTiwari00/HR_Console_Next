@@ -476,6 +476,12 @@ export default function ManagerTeamGoalsPage() {
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Bulk Team Goal Assignment" description="Upload Excel or use a Google Sheet link, preview, then save in bulk.">
           <Stack gap="3">
+            <div className="flex flex-wrap items-center gap-2">
+              <a href="/api/goals/import/template" className="caption text-[var(--color-primary)] hover:underline">
+                Download template
+              </a>
+              <span className="caption">Fill this format to speed up team goal uploads.</span>
+            </div>
             <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
               <Button
                 type="button"

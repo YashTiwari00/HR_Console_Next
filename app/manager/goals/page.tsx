@@ -657,24 +657,32 @@ export default function ManagerGoalsPage() {
       {aiError && <Alert variant="warning" title="AI suggestion issue" description={aiError} onDismiss={() => setAiError("")} />}
 
       <Card title="Goal Import Options" description="Switch between Excel AI allocation import and Google Sheet import.">
-        <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
-          <Button
-            type="button"
-            size="sm"
-            variant={bulkImportMode === "excel_ai" ? undefined : "secondary"}
-            onClick={() => setBulkImportMode("excel_ai")}
-          >
-            Bulk Goal Import & Allocation
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={bulkImportMode === "google_sheet" ? undefined : "secondary"}
-            onClick={() => setBulkImportMode("google_sheet")}
-          >
-            Google Sheet Goal Import
-          </Button>
+        <Stack gap="2">
+          <div className="inline-flex rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={bulkImportMode === "excel_ai" ? undefined : "secondary"}
+              onClick={() => setBulkImportMode("excel_ai")}
+            >
+              Bulk Goal Import & Allocation
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={bulkImportMode === "google_sheet" ? undefined : "secondary"}
+              onClick={() => setBulkImportMode("google_sheet")}
+            >
+              Google Sheet Goal Import
+            </Button>
         </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <a href="/api/goals/import/template" className="caption text-[var(--color-primary)] hover:underline">
+              Download template
+            </a>
+            <span className="caption">Use this format before Excel or Google Sheet import.</span>
+          </div>
+        </Stack>
       </Card>
 
       {bulkImportMode === "excel_ai" ? (

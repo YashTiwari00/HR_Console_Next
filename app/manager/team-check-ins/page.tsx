@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
-import { PageHeader } from "@/src/components/patterns";
-import { Alert, Badge, Button, Card, Checkbox, Input, SpeechToTextButton, Textarea } from "@/src/components/ui";
+import { FormSection, PageHeader } from "@/src/components/patterns";
+import { Alert, Badge, Button, Card, Checkbox, Input, Modal, Select, SpeechToTextButton, Textarea, Tooltip } from "@/src/components/ui";
 import { account } from "@/lib/appwrite";
 import { isManagerRoleValue } from "@/src/lib/auth/useManagerRole";
-import { fetchCurrentUserContext, formatDate } from "@/app/employee/_lib/pmsClient";
+import { createCheckIn, fetchCurrentUserContext, formatDate } from "@/app/employee/_lib/pmsClient";
 
 type CheckInStatus = "planned" | "completed";
 
@@ -54,6 +54,15 @@ function getManagerRatingBlockMessage(row: ManagerCheckIn) {
 export default function ManagerCheckInsPage() {
   const MIN_AI_FEEDBACK_LENGTH = 12;
   const [rows, setRows] = useState<ManagerCheckIn[]>([]);
+  const [teamGoals, setTeamGoals] = useState<
+    Array<{
+      $id: string;
+      employeeId?: string;
+      cycleId?: string;
+      title?: string;
+      status?: string;
+    }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [aiWorking, setAiWorking] = useState<Record<string, boolean>>({});
@@ -105,6 +114,13 @@ export default function ManagerCheckInsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"pending" | "all">("pending");
   const [lastFailedIds, setLastFailedIds] = useState<string[]>([]);
+  const [initiateModalOpen, setInitiateModalOpen] = useState(false);
+  const [initiateTargetEmployeeId, setInitiateTargetEmployeeId] = useState("");
+  const [initiateGoalId, setInitiateGoalId] = useState("");
+  const [initiateScheduledAt, setInitiateScheduledAt] = useState("");
+  const [initiateNotes, setInitiateNotes] = useState("");
+  const [initiateSubmitting, setInitiateSubmitting] = useState(false);
+  const [initiateError, setInitiateError] = useState("");
 
   async function requestJson(url: string, init?: RequestInit) {
     let jwtHeader: Record<string, string> = {};
@@ -163,8 +179,10 @@ export default function ManagerCheckInsPage() {
       const data = (checkInsPayload.data || []) as ManagerCheckIn[];
       const goals = (goalsPayload.data || []) as Array<{
         $id: string;
+        employeeId?: string;
         cycleId?: string;
         title?: string;
+        status?: string;
       }>;
       const teamMembers = (teamMembersPayload.data || []) as Array<{ $id: string }>;
       const teamMemberIds = new Set(teamMembers.map((item) => String(item.$id || "").trim()).filter(Boolean));
@@ -185,6 +203,7 @@ export default function ManagerCheckInsPage() {
       }, {});
 
       setRows(filteredData);
+      setTeamGoals(goals);
       setGoalCycleById(cycleMap);
       setGoalTitleById(titleMap);
 
@@ -287,10 +306,149 @@ export default function ManagerCheckInsPage() {
   }
 
   const visibleRows = viewMode === "pending" ? rows.filter((row) => row.status === "planned") : rows;
+  const checkInCountByGoalId = useMemo(() => {
+    return rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.goalId] = (acc[row.goalId] || 0) + 1;
+      return acc;
+    }, {});
+  }, [rows]);
+  const goalStatusById = useMemo(() => {
+    return teamGoals.reduce<Record<string, string>>((acc, goal) => {
+      acc[goal.$id] = String(goal.status || "").trim().toLowerCase();
+      return acc;
+    }, {});
+  }, [teamGoals]);
   const visiblePlannedIds = visibleRows
     .filter((row) => row.status === "planned")
     .map((row) => row.$id);
   const selectedVisibleCount = visiblePlannedIds.filter((id) => selectedIds.has(id)).length;
+
+  const initiateEmployeeApprovedGoals = useMemo(() => {
+    return teamGoals.filter((goal) => {
+      const employeeId = String(goal.employeeId || "").trim();
+      const status = String(goal.status || "").trim().toLowerCase();
+      return employeeId === initiateTargetEmployeeId && status === "approved";
+    });
+  }, [initiateTargetEmployeeId, teamGoals]);
+
+  const initiateEmployeeOptions = useMemo(() => {
+    const employeeIds = new Set(
+      teamGoals
+        .filter((goal) => String(goal.status || "").trim().toLowerCase() === "approved")
+        .map((goal) => String(goal.employeeId || "").trim())
+        .filter(Boolean)
+    );
+
+    return Array.from(employeeIds).map((employeeId) => ({
+      value: employeeId,
+      label: employeeId,
+    }));
+  }, [teamGoals]);
+
+  const initiateGoalOptions = useMemo(() => {
+    return initiateEmployeeApprovedGoals.map((goal) => {
+      const usedCount = checkInCountByGoalId[goal.$id] || 0;
+      const reachedLimit = usedCount >= 5;
+      const title = String(goal.title || goal.$id).trim();
+      return {
+        value: goal.$id,
+        label: reachedLimit ? `${title} (5/5 check-ins)` : title,
+        disabled: reachedLimit,
+      };
+    });
+  }, [checkInCountByGoalId, initiateEmployeeApprovedGoals]);
+
+  const selectedInitiateGoalCount = checkInCountByGoalId[initiateGoalId] || 0;
+  const selectedInitiateGoalReachedLimit = selectedInitiateGoalCount >= 5;
+
+  const canInitiateAnyGoal = useMemo(() => {
+    return teamGoals.some((goal) => {
+      const status = String(goal.status || "").trim().toLowerCase();
+      if (status !== "approved") return false;
+      return (checkInCountByGoalId[goal.$id] || 0) < 5;
+    });
+  }, [checkInCountByGoalId, teamGoals]);
+
+  function openInitiateModalForEmployee(targetEmployeeId: string, preferredGoalId?: string) {
+    const approvedGoals = teamGoals.filter((goal) => {
+      const employeeId = String(goal.employeeId || "").trim();
+      const status = String(goal.status || "").trim().toLowerCase();
+      return employeeId === targetEmployeeId && status === "approved";
+    });
+
+    const preferredGoalEligible = Boolean(
+      preferredGoalId &&
+      String(goalStatusById[preferredGoalId] || "") === "approved" &&
+      (checkInCountByGoalId[preferredGoalId] || 0) < 5
+    );
+
+    const firstAvailableGoal = approvedGoals.find((goal) => (checkInCountByGoalId[goal.$id] || 0) < 5);
+
+    setInitiateTargetEmployeeId(targetEmployeeId);
+    setInitiateGoalId(preferredGoalEligible ? String(preferredGoalId || "") : firstAvailableGoal?.$id || "");
+    setInitiateScheduledAt("");
+    setInitiateNotes("");
+    setInitiateError("");
+    setInitiateModalOpen(true);
+  }
+
+  function openInitiateModalFromToolbar() {
+    const firstEmployeeId = initiateEmployeeOptions[0]?.value || "";
+    if (!firstEmployeeId) {
+      setError("No approved team goals are available for check-in initiation.");
+      return;
+    }
+
+    openInitiateModalForEmployee(firstEmployeeId);
+  }
+
+  function openInitiateModal(row: ManagerCheckIn) {
+    const targetEmployeeId = String(row.employeeId || "").trim();
+    openInitiateModalForEmployee(targetEmployeeId, row.goalId);
+  }
+
+  function closeInitiateModal() {
+    if (initiateSubmitting) return;
+    setInitiateModalOpen(false);
+    setInitiateError("");
+  }
+
+  async function handleInitiateSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    if (!initiateGoalId || !initiateScheduledAt) {
+      setInitiateError("Goal and date/time are required.");
+      return;
+    }
+
+    if (selectedInitiateGoalReachedLimit) {
+      setInitiateError("Maximum 5 check-ins allowed for this goal cycle.");
+      return;
+    }
+
+    setInitiateSubmitting(true);
+    setInitiateError("");
+
+    try {
+      await createCheckIn({
+        goalId: initiateGoalId,
+        scheduledAt: initiateScheduledAt,
+        employeeNotes: initiateNotes || undefined,
+        status: "planned",
+      });
+
+      setSuccess("Check-in initiated successfully.");
+      setInitiateModalOpen(false);
+      setInitiateGoalId("");
+      setInitiateScheduledAt("");
+      setInitiateNotes("");
+      await loadCheckIns();
+    } catch (err) {
+      setInitiateError(err instanceof Error ? err.message : "Failed to initiate check-in.");
+    } finally {
+      setInitiateSubmitting(false);
+    }
+  }
 
   function selectAllVisiblePlanned() {
     setSelectedIds((prev) => {
@@ -593,9 +751,24 @@ export default function ManagerCheckInsPage() {
         title="Team Check-ins"
         subtitle="Track team conversations and close completed sessions."
         actions={
-          <Button variant="secondary" onClick={loadCheckIns} disabled={loading || working}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canInitiateAnyGoal ? (
+              <Button variant="primary" onClick={openInitiateModalFromToolbar} disabled={loading || working}>
+                Initiate Check-in
+              </Button>
+            ) : (
+              <Tooltip content="No approved team goals available or all approved goals reached 5/5 check-ins." position="top">
+                <span>
+                  <Button variant="primary" disabled>
+                    Initiate Check-in
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+            <Button variant="secondary" onClick={loadCheckIns} disabled={loading || working}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -693,6 +866,14 @@ export default function ManagerCheckInsPage() {
               {(() => {
                 const blockedMessage = getManagerRatingBlockMessage(row);
                 const isRatingBlocked = Boolean(blockedMessage);
+                const goalStatus = String(goalStatusById[row.goalId] || "");
+                const checkInCount = checkInCountByGoalId[row.goalId] || 0;
+                const initiateDisabledReason =
+                  goalStatus !== "approved"
+                    ? "Goal must be approved before initiating a check-in."
+                    : checkInCount >= 5
+                      ? "Maximum 5 check-ins reached for this goal."
+                      : "";
                 return (
                   <>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -709,6 +890,33 @@ export default function ManagerCheckInsPage() {
                 <Badge variant={row.status === "completed" ? "success" : "info"}>
                   {row.status === "completed" ? "approved" : "pending approval"}
                 </Badge>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {initiateDisabledReason ? (
+                  <Tooltip content={initiateDisabledReason} position="top">
+                    <span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled
+                      >
+                        Initiate Check-in
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={working}
+                    onClick={() => openInitiateModal(row)}
+                  >
+                    Initiate Check-in
+                  </Button>
+                )}
               </div>
 
               <div className="mt-2 flex flex-wrap gap-3">
@@ -974,6 +1182,101 @@ export default function ManagerCheckInsPage() {
         </Stack>
       </Card>
       )}
+
+      <Modal
+        open={initiateModalOpen}
+        onClose={closeInitiateModal}
+        title="Initiate Check-in"
+        description="Schedule a planned check-in for a team member goal."
+      >
+        <form onSubmit={handleInitiateSubmit} className="space-y-3">
+          {initiateError && (
+            <Alert
+              variant="error"
+              title="Unable to initiate"
+              description={initiateError}
+              onDismiss={() => setInitiateError("")}
+            />
+          )}
+
+          <FormSection
+            title="Check-in Details"
+            description="Choose an approved goal and schedule date/time for the employee."
+          >
+            {initiateEmployeeApprovedGoals.length === 0 ? (
+              <Alert
+                variant="info"
+                title="No approved goals"
+                description="This employee has no approved goals available for check-in initiation."
+              />
+            ) : (
+              <>
+                <Select
+                  label="Employee"
+                  value={initiateTargetEmployeeId}
+                  onChange={(event) => {
+                    const nextEmployeeId = event.target.value;
+                    setInitiateTargetEmployeeId(nextEmployeeId);
+                    const nextGoal = teamGoals.find((goal) => {
+                      const employeeId = String(goal.employeeId || "").trim();
+                      const status = String(goal.status || "").trim().toLowerCase();
+                      return (
+                        employeeId === nextEmployeeId &&
+                        status === "approved" &&
+                        (checkInCountByGoalId[goal.$id] || 0) < 5
+                      );
+                    });
+                    setInitiateGoalId(nextGoal?.$id || "");
+                  }}
+                  options={initiateEmployeeOptions}
+                  placeholder="Select employee"
+                />
+
+                <Select
+                  label="Goal"
+                  value={initiateGoalId}
+                  onChange={(event) => setInitiateGoalId(event.target.value)}
+                  options={initiateGoalOptions}
+                  placeholder="Select approved goal"
+                />
+
+                <Input
+                  label="Scheduled Date and Time"
+                  type="datetime-local"
+                  value={initiateScheduledAt}
+                  onChange={(event) => setInitiateScheduledAt(event.target.value)}
+                  required
+                />
+
+                <Textarea
+                  label="Notes (Optional)"
+                  value={initiateNotes}
+                  onChange={(event) => setInitiateNotes(event.target.value)}
+                  placeholder="Context or coaching focus for this check-in"
+                />
+              </>
+            )}
+          </FormSection>
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={closeInitiateModal} disabled={initiateSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={initiateSubmitting}
+              disabled={
+                initiateEmployeeApprovedGoals.length === 0 ||
+                !initiateGoalId ||
+                !initiateScheduledAt ||
+                selectedInitiateGoalReachedLimit
+              }
+            >
+              Create Planned Check-in
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </Stack>
   );
 }

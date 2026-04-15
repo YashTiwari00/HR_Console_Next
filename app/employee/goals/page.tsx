@@ -695,6 +695,12 @@ export default function EmployeeGoalsPage() {
               <Stack gap="1">
                 <h3 className="heading-lg text-[var(--color-text)]">Import Goals</h3>
                 <p className="caption">Upload an Excel file or paste a Google Sheet link to bulk-create goals. Preview before saving.</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <a href="/api/goals/import/template" className="caption text-[var(--color-primary)] hover:underline">
+                    Download template
+                  </a>
+                  <span className="caption">Use this format for faster upload and fewer validation errors.</span>
+                </div>
               </Stack>
 
                 <Stack gap="3">

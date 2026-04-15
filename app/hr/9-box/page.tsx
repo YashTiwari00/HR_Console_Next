@@ -6,6 +6,7 @@ import { AiModeToggle, PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Input } from "@/src/components/ui";
 import { useAiMode } from "@/src/context/AiModeContext";
 import { HrNineBoxSnapshot, fetchHrNineBoxSnapshot } from "@/app/employee/_lib/pmsClient";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 
 const DEEP_MODE_NUDGE_SESSION_KEY = "hr_console_deep_mode_nudge_shown";
 
@@ -73,15 +74,55 @@ export default function HrNineBoxPage() {
     return map;
   }, [snapshot.matrixRows]);
 
+  function handleExportMatrixCsv() {
+    const matrixRows = POTENTIAL_ORDER.flatMap((potentialBand) =>
+      PERFORMANCE_ORDER.map((performanceBand) => ({
+        potentialBand,
+        performanceBand,
+        count: matrixMap.get(`${potentialBand}_${performanceBand}`) || 0,
+      }))
+    );
+
+    const csv = buildCsv(matrixRows, [
+      { key: "potentialBand", header: "Potential Band", value: (row) => row.potentialBand },
+      { key: "performanceBand", header: "Performance Band", value: (row) => row.performanceBand },
+      { key: "count", header: "Count", value: (row) => row.count },
+    ]);
+    downloadCsvFile(csv, `hr-nine-box-matrix-${dateStamp()}.csv`);
+  }
+
+  function handleExportTalentRowsCsv() {
+    const csv = buildCsv(snapshot.employees || [], [
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "department", header: "Department", value: (row) => row.department },
+      { key: "scoreX100", header: "Score", value: (row) => row.scoreX100 },
+      { key: "trendLabel", header: "Trend", value: (row) => row.trendLabel },
+      { key: "trendDeltaPercent", header: "Trend Delta Percent", value: (row) => row.trendDeltaPercent },
+      { key: "performanceBand", header: "Performance Band", value: (row) => row.performanceBand },
+      { key: "potentialBand", header: "Potential Band", value: (row) => row.potentialBand },
+      { key: "readinessBand", header: "Readiness Band", value: (row) => row.readinessBand },
+    ]);
+    downloadCsvFile(csv, `hr-nine-box-talent-rows-${dateStamp()}.csv`);
+  }
+
   return (
     <Stack gap="4">
       <PageHeader
         title="9-Box Talent Map"
         subtitle="HR snapshot of performance-potential distribution and succession readiness bands."
         actions={
-          <Button variant="secondary" onClick={loadSnapshot} disabled={loading}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={handleExportMatrixCsv} disabled={loading}>
+              Download CSV: Matrix
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportTalentRowsCsv} disabled={loading || (snapshot.employees || []).length === 0}>
+              Download CSV: Talent Rows
+            </Button>
+            <Button variant="secondary" onClick={loadSnapshot} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 

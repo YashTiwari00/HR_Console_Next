@@ -24,6 +24,7 @@ const managerNavItems = [
   { label: "Meeting Calendar",      href: "/manager/meeting-calendar",     route: "/manager/meeting-calendar",     tutorialId: "nav-meeting-calendar" },
   { label: "Team Goal Assignment",  href: "/manager/team-goals",           route: "/manager/team-goals",           tutorialId: "nav-team-goals"       },
   { label: "Team Progress Overview",href: "/manager/team-progress",        route: "/manager/team-progress",        tutorialId: "nav-team-progress"    },
+  { label: "Team Check-ins",        href: "/manager/team-check-ins",       route: "/manager/team-check-ins",       tutorialId: "nav-team-checkins"    },
   { label: "Matrix Reviews",        href: "/manager/matrix-reviews",       route: "/manager/matrix-reviews",       tutorialId: "nav-matrix-reviews"   },
   { label: "Team Ranking & Graph",  href: "/manager/team-analytics",       route: "/manager/team-analytics",       tutorialId: "nav-team-analytics"   },
   { label: "Team Approvals",        href: "/manager/team-approvals",       route: "/manager/team-approvals",       tutorialId: "nav-team-approvals"   },
@@ -40,6 +41,7 @@ const employeeNavItems = [
 
 const managerQuickActions = [
   { label: "Assign Team Goal", href: "/manager/team-goals" },
+  { label: "Open Team Check-ins", href: "/manager/team-check-ins" },
   { label: "Review Team Approvals", href: "/manager/team-approvals" },
   { label: "Schedule Meeting", href: "/manager/meeting-calendar" },
   { label: "View Talent Bench", href: "/manager/talent-bench" },

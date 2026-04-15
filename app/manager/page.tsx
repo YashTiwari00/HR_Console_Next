@@ -421,7 +421,7 @@ export default function ManagerPage() {
       <Grid cols={1} colsLg={2} gap="3">
         <Card title="Feature Pages" description="Use dedicated pages for manager workflows.">
           <Stack gap="2">
-            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/check-ins">
+            <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/team-check-ins">
               Open Team Check-ins
             </Link>
             <Link className="body-sm rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]" href="/manager/meetings">

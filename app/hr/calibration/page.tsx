@@ -5,6 +5,7 @@ import { Container, Grid, Stack } from "@/src/components/layout";
 import { DataTable, PageHeader } from "@/src/components/patterns";
 import type { DataTableColumn } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card, Dropdown, Textarea } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   CalibrationBulkDecisionItem,
   CalibrationSessionItem,
@@ -336,6 +337,49 @@ export default function HrCalibrationPage() {
     [draftById, isLocked, saving]
   );
 
+  function handleExportDecisionsCsv() {
+    const csv = buildCsv(tableRows, [
+      { key: "decisionId", header: "Decision ID", value: (row) => row.decisionId },
+      { key: "sessionId", header: "Session ID", value: (row) => row.sessionId },
+      { key: "employeeId", header: "Employee ID", value: (row) => row.employeeId },
+      { key: "employeeName", header: "Employee Name", value: (row) => row.employeeName },
+      { key: "managerId", header: "Manager ID", value: (row) => row.managerId || "" },
+      { key: "managerName", header: "Manager Name", value: (row) => row.managerName || "" },
+      { key: "previousRating", header: "Previous Rating", value: (row) => row.previousRating ?? "" },
+      { key: "proposedRating", header: "Proposed Rating", value: (row) => row.proposedRating ?? "" },
+      {
+        key: "finalRating",
+        header: "Final Rating",
+        value: (row) => Number.parseInt(draftById[row.decisionId]?.finalRating || defaultFinalRating(row), 10) || "",
+      },
+      {
+        key: "drift",
+        header: "Drift",
+        value: (row) => {
+          const finalRating = Number.parseInt(draftById[row.decisionId]?.finalRating || defaultFinalRating(row), 10);
+          const proposed = Number(row.proposedRating || 0);
+          return Number.isInteger(finalRating) ? finalRating - proposed : 0;
+        },
+      },
+      { key: "rationale", header: "Rationale", value: (row) => draftById[row.decisionId]?.rationale || row.rationale || "" },
+    ]);
+    downloadCsvFile(csv, `hr-calibration-decisions-${selectedSessionId || "all"}-${dateStamp()}.csv`);
+  }
+
+  function handleExportDistributionCsv() {
+    const distRows = ([1, 2, 3, 4, 5] as const).map((bucket) => ({
+      rating: bucket,
+      count: distribution[bucket].count,
+      percent: distribution[bucket].percent,
+    }));
+    const csv = buildCsv(distRows, [
+      { key: "rating", header: "Rating", value: (row) => row.rating },
+      { key: "count", header: "Count", value: (row) => row.count },
+      { key: "percent", header: "Percent", value: (row) => row.percent },
+    ]);
+    downloadCsvFile(csv, `hr-calibration-distribution-${selectedSessionId || "all"}-${dateStamp()}.csv`);
+  }
+
   return (
     <Container maxWidth="xl">
       <Stack gap="4">
@@ -372,6 +416,17 @@ export default function HrCalibrationPage() {
             </div>
           </Card>
         )}
+
+        <Card title="Export Reports" description="Download CSV files for each calibration report block.">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={handleExportDistributionCsv} disabled={tableLoading}>
+              Download CSV: Distribution
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleExportDecisionsCsv} disabled={tableLoading || tableRows.length === 0}>
+              Download CSV: Decisions
+            </Button>
+          </div>
+        </Card>
 
         <Grid cols={1} colsMd={2} colsLg={4} gap="3">
           <Card title="Total Decisions">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@/src/components/layout";
 import { PageHeader } from "@/src/components/patterns";
 import { Alert, Badge, Button, Card } from "@/src/components/ui";
+import { buildCsv, dateStamp, downloadCsvFile } from "@/src/lib/csvExport";
 import {
   fetchTeamMembers,
   fetchHrManagers,
@@ -151,6 +152,21 @@ export default function HrTeamAssignmentsPage() {
   }
 
   const selectedEmployee = employees.find((e) => e.$id === selectedEmployeeId);
+  const dualReportingRows = useMemo(
+    () => employees.filter((employee) => employee.managerId),
+    [employees]
+  );
+
+  function handleExportDualReportingCsv() {
+    const csv = buildCsv(dualReportingRows, [
+      { key: "employeeName", header: "Employee Name", value: (row) => row.name || "" },
+      { key: "employeeEmail", header: "Employee Email", value: (row) => row.email || "" },
+      { key: "employeeId", header: "Employee ID", value: (row) => row.$id },
+      { key: "department", header: "Department", value: (row) => row.department || "" },
+      { key: "primaryManagerId", header: "Primary Manager ID", value: (row) => row.managerId || "" },
+    ]);
+    downloadCsvFile(csv, `hr-dual-reporting-${dateStamp()}.csv`);
+  }
 
   return (
     <Stack gap="4">
@@ -158,9 +174,14 @@ export default function HrTeamAssignmentsPage() {
         title="Dual Reporting Assignments"
         subtitle="Assign one or two managers to an employee with weighted responsibility. Weights must sum to 100%."
         actions={
-          <Button variant="secondary" onClick={loadBase} disabled={loading}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" onClick={handleExportDualReportingCsv} disabled={loading || dualReportingRows.length === 0}>
+              Download CSV: Assignments
+            </Button>
+            <Button variant="secondary" onClick={loadBase} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -315,8 +336,7 @@ export default function HrTeamAssignmentsPage() {
         {loading && <p className="caption">Loading...</p>}
         {!loading && (
           <div className="space-y-2">
-            {employees
-              .filter((e) => e.managerId)
+            {dualReportingRows
               .slice(0, 5)
               .map((e) => (
                 <div
